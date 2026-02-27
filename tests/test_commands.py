@@ -1018,6 +1018,22 @@ class TestNestTabInFabricatorCommand:
         assert tab in fab.tabs
         assert tab.parent_tab_path == "MyFab"
 
+    def test_undo_when_tab_not_in_top_level(self) -> None:
+        """Undo when tab was not in top-level only removes from fab.tabs."""
+        tab = CraftingTab(tab_id="WeaponsTab")
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = NestTabInFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        cmd.execute()
+        cmd.undo()
+        assert tab not in fab.tabs
+        assert tab not in pf.crafting_tabs  # was never there, stays not there
+        assert tab.parent_tab_path == ""
+
 
 # ---------------------------------------------------------------------------
 # NestRecipeInFabricatorCommand
@@ -1109,3 +1125,22 @@ class TestNestRecipeInFabricatorCommand:
         )
         assert "LaserGun" in cmd.description
         assert "MyFab" in cmd.description
+
+    def test_modified_recipe_is_silently_skipped(self) -> None:
+        """ModifiedRecipe cannot be nested in a fabricator; execute is a no-op."""
+        recipe = ModifiedRecipe(item_id="Titanium")
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            modified_recipes=[recipe],
+            custom_fabricators=[fab],
+        )
+        cmd = NestRecipeInFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",  # type: ignore[arg-type]
+        )
+        cmd.execute()
+        assert recipe in pf.modified_recipes  # not moved
+        assert len(fab.added_recipes) == 0
+        cmd.undo()  # should be a safe no-op
+        assert recipe in pf.modified_recipes

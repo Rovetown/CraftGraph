@@ -486,7 +486,7 @@ class NestRecipeInFabricatorCommand(EditCommand):
 
     parsed_file: ParsedFile
     fabricator: CustomFabricator
-    recipe: ModifiedRecipe
+    recipe: AddedRecipe
     path: str
     _pf_attr: str = ""
     _fab_attr: str = ""
@@ -495,7 +495,6 @@ class NestRecipeInFabricatorCommand(EditCommand):
     _old_path: str = ""
 
     def execute(self) -> None:
-        self._old_path = getattr(self.recipe, "path", "")
         # Resolve which list pair to use
         for cls, (pf_a, fab_a) in _RECIPE_NESTING_MAP.items():
             if type(self.recipe) is cls:
@@ -506,6 +505,7 @@ class NestRecipeInFabricatorCommand(EditCommand):
             # ModifiedRecipe cannot be nested in a fabricator in CC3.
             # Silently skip (validation layer will warn later in Step 11j).
             return
+        self._old_path = self.recipe.path
 
         # Remove from top-level list if present
         pf_list: list[ModifiedRecipe] = getattr(self.parsed_file, self._pf_attr)
