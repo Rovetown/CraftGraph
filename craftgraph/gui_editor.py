@@ -39,6 +39,8 @@ from craftgraph.commands import (
     RemoveIngredientCommand,
     RemoveNonRecipeCommand,
     RemoveRecipeCommand,
+    UnnestRecipeFromFabricatorCommand,
+    UnnestTabFromFabricatorCommand,
 )
 from craftgraph.graph import NodeType, build_graph, classify_nodes, find_cycles
 from craftgraph.gui_autocomplete import AutocompletePopup
@@ -634,6 +636,110 @@ class InteractiveNodeEditor:
 
         return None
 
+    def _try_hierarchy_delink(
+        self,
+        source_node: RecipeNode,
+        target_node: RecipeNode,
+    ) -> EditCommand | None:
+        """Attempt to reverse a hierarchy connection on delink.
+
+        Returns an ``EditCommand`` that un-nests the child from the parent,
+        or ``None`` if this link does not represent a hierarchy relationship.
+        """
+        parent = source_node
+        child = target_node
+
+        if self.parsed_file.block_type == BlockType.CUSTOM_FABRICATORS:
+            return self._try_fabricator_hierarchy_delink(parent, child)
+
+        return self._try_standalone_hierarchy_delink(parent, child)
+
+    def _try_fabricator_hierarchy_delink(
+        self,
+        parent: RecipeNode,
+        child: RecipeNode,
+    ) -> EditCommand | None:
+        """Handle hierarchy delinks inside a CustomFabricators file."""
+        # Fabricator -> Tab (unnest tab from fabricator)
+        if (
+            parent.kind == NodeKind.CUSTOM_FABRICATOR
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(parent.non_recipe, CustomFabricator)
+            and isinstance(child.non_recipe, CraftingTab)
+            and child.non_recipe in parent.non_recipe.tabs
+        ):
+            return UnnestTabFromFabricatorCommand(
+                parsed_file=self.parsed_file,
+                fabricator=parent.non_recipe,
+                tab=child.non_recipe,
+            )
+
+        # Fabricator/Tab -> Recipe (unnest recipe from fabricator)
+        if (
+            parent.is_non_recipe
+            and child.is_recipe
+            and isinstance(child.recipe, AddedRecipe)
+        ):
+            if isinstance(parent.non_recipe, CustomFabricator):
+                fab = parent.non_recipe
+            elif isinstance(parent.non_recipe, CraftingTab):
+                fab = self._find_fab_owning_tab(parent.non_recipe)
+            else:
+                return None
+            if fab is None:
+                return None
+            return UnnestRecipeFromFabricatorCommand(
+                parsed_file=self.parsed_file,
+                fabricator=fab,
+                recipe=child.recipe,
+            )
+
+        # Tab -> Sub-tab (clear child's parent_tab_path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(child.non_recipe, CraftingTab)
+        ):
+            return ChangeNonRecipeFieldCommand(
+                entry=child.non_recipe,
+                field_name="parent_tab_path",
+                new_value="",
+            )
+
+        return None
+
+    def _try_standalone_hierarchy_delink(
+        self,
+        parent: RecipeNode,
+        child: RecipeNode,
+    ) -> EditCommand | None:
+        """Handle hierarchy delinks in standalone files."""
+        # Tab -> Recipe (clear recipe's path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.is_recipe
+            and child.recipe is not None
+        ):
+            return ChangeRecipeFieldCommand(
+                recipe=child.recipe,
+                field_name="path",
+                new_value="",
+            )
+
+        # Tab -> Sub-tab (clear child's parent_tab_path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(child.non_recipe, CraftingTab)
+        ):
+            return ChangeNonRecipeFieldCommand(
+                entry=child.non_recipe,
+                field_name="parent_tab_path",
+                new_value="",
+            )
+
+        return None
+
     # -- Checkbox 1 + 2: Drag-and-drop wiring --------------------------------
 
     def on_link(self, sender: int, app_data: tuple[int, int]) -> None:
@@ -852,6 +958,14 @@ class InteractiveNodeEditor:
 
             if target_node.is_ingredient or target_role in ("__output__", "__empty__"):
                 break
+
+            # Hierarchy delink: source is non-recipe, target is non-recipe or recipe
+            if source_node.is_non_recipe and (target_node.is_non_recipe or target_node.is_recipe):
+                hierarchy_undo = self._try_hierarchy_delink(source_node, target_node)
+                if hierarchy_undo is not None:
+                    self.history.execute(hierarchy_undo)
+                    return
+
             if target_node.recipe is None:
                 break
 

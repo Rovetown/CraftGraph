@@ -28,6 +28,8 @@ from craftgraph.commands import (
     RemoveIngredientCommand,
     RemoveNonRecipeCommand,
     RemoveRecipeCommand,
+    UnnestRecipeFromFabricatorCommand,
+    UnnestTabFromFabricatorCommand,
 )
 from craftgraph.models import (
     AddedRecipe,
@@ -1144,3 +1146,285 @@ class TestNestRecipeInFabricatorCommand:
         assert len(fab.added_recipes) == 0
         cmd.undo()  # should be a safe no-op
         assert recipe in pf.modified_recipes
+
+
+# ---------------------------------------------------------------------------
+# UnnestTabFromFabricatorCommand
+# ---------------------------------------------------------------------------
+
+
+class TestUnnestTabFromFabricatorCommand:
+    """UnnestTabFromFabricatorCommand: moves a tab from a fabricator back to top-level."""
+
+    def test_execute_moves_tab_to_top_level(self) -> None:
+        tab = CraftingTab(tab_id="WeaponsTab", parent_tab_path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", tabs=[tab])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        cmd.execute()
+        assert tab not in fab.tabs
+        assert tab in pf.crafting_tabs
+        assert tab.parent_tab_path == ""
+
+    def test_undo_restores_tab_in_fabricator(self) -> None:
+        tab = CraftingTab(tab_id="WeaponsTab", parent_tab_path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", tabs=[tab])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        cmd.execute()
+        cmd.undo()
+        assert tab in fab.tabs
+        assert tab not in pf.crafting_tabs
+        assert tab.parent_tab_path == "MyFab"
+
+    def test_undo_preserves_index(self) -> None:
+        tab_a = CraftingTab(tab_id="TabA")
+        tab_b = CraftingTab(tab_id="TabB", parent_tab_path="MyFab")
+        tab_c = CraftingTab(tab_id="TabC")
+        fab = CustomFabricator(item_id="MyFab", tabs=[tab_a, tab_b, tab_c])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab_b)
+        cmd.execute()
+        assert len(fab.tabs) == 2
+        cmd.undo()
+        assert fab.tabs[1].tab_id == "TabB"
+
+    def test_description_includes_tab_and_fab(self) -> None:
+        tab = CraftingTab(tab_id="WeaponsTab")
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+        )
+        cmd = UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        assert "WeaponsTab" in cmd.description
+        assert "MyFab" in cmd.description
+
+    def test_round_trip_with_nest_command(self) -> None:
+        """Unnest is the exact reverse of nest: nest then unnest returns to original state."""
+        tab = CraftingTab(tab_id="Tools")
+        fab = CustomFabricator(item_id="CraftFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            crafting_tabs=[tab],
+            custom_fabricators=[fab],
+        )
+        nest_cmd = NestTabInFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        nest_cmd.execute()
+        assert tab in fab.tabs
+        assert tab not in pf.crafting_tabs
+
+        unnest_cmd = UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        unnest_cmd.execute()
+        assert tab not in fab.tabs
+        assert tab in pf.crafting_tabs
+        assert tab.parent_tab_path == ""
+
+    def test_with_history_undo_redo(self) -> None:
+        tab = CraftingTab(tab_id="Gear", parent_tab_path="Fab1")
+        fab = CustomFabricator(item_id="Fab1", tabs=[tab])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        history = EditHistory()
+        history.execute(
+            UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
+        )
+        assert tab in pf.crafting_tabs
+        assert tab not in fab.tabs
+
+        history.undo()
+        assert tab in fab.tabs
+        assert tab not in pf.crafting_tabs
+        assert tab.parent_tab_path == "Fab1"
+
+        history.redo()
+        assert tab in pf.crafting_tabs
+        assert tab.parent_tab_path == ""
+
+
+# ---------------------------------------------------------------------------
+# UnnestRecipeFromFabricatorCommand
+# ---------------------------------------------------------------------------
+
+
+class TestUnnestRecipeFromFabricatorCommand:
+    """UnnestRecipeFromFabricatorCommand: moves a recipe from a fabricator back to top-level."""
+
+    def test_execute_moves_added_recipe_to_top_level(self) -> None:
+        recipe = AddedRecipe(item_id="LaserGun", path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", added_recipes=[recipe])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        cmd.execute()
+        assert recipe not in fab.added_recipes
+        assert recipe in pf.added_recipes
+        assert recipe.path == ""
+
+    def test_execute_moves_alias_recipe_to_top_level(self) -> None:
+        recipe = AliasRecipe(item_id="QuickKnife", path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", alias_recipes=[recipe])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        cmd.execute()
+        assert recipe not in fab.alias_recipes
+        assert recipe in pf.alias_recipes
+        assert recipe.path == ""
+
+    def test_execute_moves_custom_food_to_top_level(self) -> None:
+        recipe = CustomFood(item_id="SuperMeal", path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", custom_foods=[recipe])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        cmd.execute()
+        assert recipe not in fab.custom_foods
+        assert recipe in pf.custom_foods
+        assert recipe.path == ""
+
+    def test_undo_restores_recipe_in_fabricator(self) -> None:
+        recipe = AddedRecipe(item_id="LaserGun", path="MyFab")
+        fab = CustomFabricator(item_id="MyFab", added_recipes=[recipe])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        cmd.execute()
+        cmd.undo()
+        assert recipe in fab.added_recipes
+        assert recipe not in pf.added_recipes
+        assert recipe.path == "MyFab"
+
+    def test_undo_preserves_index(self) -> None:
+        r1 = AddedRecipe(item_id="A", path="Fab")
+        r2 = AddedRecipe(item_id="B", path="Fab")
+        r3 = AddedRecipe(item_id="C", path="Fab")
+        fab = CustomFabricator(item_id="Fab", added_recipes=[r1, r2, r3])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=r2,
+        )
+        cmd.execute()
+        assert len(fab.added_recipes) == 2
+        cmd.undo()
+        assert fab.added_recipes[1].item_id == "B"
+
+    def test_description_includes_recipe_and_fab(self) -> None:
+        recipe = AddedRecipe(item_id="LaserGun")
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        assert "LaserGun" in cmd.description
+        assert "MyFab" in cmd.description
+
+    def test_modified_recipe_is_silently_skipped(self) -> None:
+        """ModifiedRecipe cannot be nested/unnested; execute is a no-op."""
+        recipe = ModifiedRecipe(item_id="Titanium")
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            custom_fabricators=[fab],
+        )
+        cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,  # type: ignore[arg-type]
+        )
+        cmd.execute()
+        assert len(pf.added_recipes) == 0
+        cmd.undo()  # safe no-op
+
+    def test_round_trip_with_nest_command(self) -> None:
+        """Unnest is the exact reverse of nest: nest then unnest returns to original state."""
+        recipe = AddedRecipe(item_id="PlasmaSword")
+        fab = CustomFabricator(item_id="WeaponsFab")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            added_recipes=[recipe],
+            custom_fabricators=[fab],
+        )
+        nest_cmd = NestRecipeInFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe, path="WeaponsFab",
+        )
+        nest_cmd.execute()
+        assert recipe in fab.added_recipes
+        assert recipe not in pf.added_recipes
+
+        unnest_cmd = UnnestRecipeFromFabricatorCommand(
+            parsed_file=pf, fabricator=fab, recipe=recipe,
+        )
+        unnest_cmd.execute()
+        assert recipe not in fab.added_recipes
+        assert recipe in pf.added_recipes
+        assert recipe.path == ""
+
+    def test_with_history_undo_redo(self) -> None:
+        recipe = AddedRecipe(item_id="ThermalBlade", path="CraftFab")
+        fab = CustomFabricator(item_id="CraftFab", added_recipes=[recipe])
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[fab],
+        )
+        history = EditHistory()
+        history.execute(
+            UnnestRecipeFromFabricatorCommand(
+                parsed_file=pf, fabricator=fab, recipe=recipe,
+            )
+        )
+        assert recipe in pf.added_recipes
+        assert recipe not in fab.added_recipes
+
+        history.undo()
+        assert recipe in fab.added_recipes
+        assert recipe not in pf.added_recipes
+        assert recipe.path == "CraftFab"
+
+        history.redo()
+        assert recipe in pf.added_recipes
+        assert recipe.path == ""

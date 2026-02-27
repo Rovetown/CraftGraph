@@ -534,6 +534,88 @@ class NestRecipeInFabricatorCommand(EditCommand):
         return f"Nest {self.recipe.item_id} in {self.fabricator.item_id}"
 
 
+@dataclass
+class UnnestTabFromFabricatorCommand(EditCommand):
+    """Move a crafting tab from a fabricator's nested tabs back to top-level.
+
+    The reverse of ``NestTabInFabricatorCommand``: removes the tab from
+    ``fabricator.tabs``, appends it to ``parsed_file.crafting_tabs``, and
+    clears ``tab.parent_tab_path``.
+    """
+
+    parsed_file: ParsedFile
+    fabricator: CustomFabricator
+    tab: CraftingTab
+    _fab_index: int = -1
+    _old_parent_tab_path: str = ""
+
+    def execute(self) -> None:
+        self._old_parent_tab_path = self.tab.parent_tab_path
+        self._fab_index = self.fabricator.tabs.index(self.tab)
+        self.fabricator.tabs.remove(self.tab)
+        self.parsed_file.crafting_tabs.append(self.tab)
+        self.tab.parent_tab_path = ""
+
+    def undo(self) -> None:
+        self.parsed_file.crafting_tabs.remove(self.tab)
+        self.fabricator.tabs.insert(self._fab_index, self.tab)
+        self.tab.parent_tab_path = self._old_parent_tab_path
+
+    @property
+    def description(self) -> str:
+        return f"Unnest tab {self.tab.tab_id} from {self.fabricator.item_id}"
+
+
+@dataclass
+class UnnestRecipeFromFabricatorCommand(EditCommand):
+    """Move a recipe from a fabricator's nested list back to top-level.
+
+    The reverse of ``NestRecipeInFabricatorCommand``: removes the recipe from
+    ``fabricator.<type>_recipes``, appends it to ``parsed_file.<type>_recipes``,
+    and clears ``recipe.path``.
+    """
+
+    parsed_file: ParsedFile
+    fabricator: CustomFabricator
+    recipe: AddedRecipe
+    _pf_attr: str = ""
+    _fab_attr: str = ""
+    _fab_index: int = -1
+    _old_path: str = ""
+
+    def execute(self) -> None:
+        # Resolve which list pair to use
+        for cls, (pf_a, fab_a) in _RECIPE_NESTING_MAP.items():
+            if type(self.recipe) is cls:
+                self._pf_attr = pf_a
+                self._fab_attr = fab_a
+                break
+        else:
+            # ModifiedRecipe cannot be unnested from a fabricator in CC3.
+            return
+        self._old_path = self.recipe.path
+        fab_list: list[AddedRecipe] = getattr(self.fabricator, self._fab_attr)
+        if self.recipe in fab_list:
+            self._fab_index = fab_list.index(self.recipe)
+            fab_list.remove(self.recipe)
+        pf_list: list[AddedRecipe] = getattr(self.parsed_file, self._pf_attr)
+        pf_list.append(self.recipe)
+        self.recipe.path = ""
+
+    def undo(self) -> None:
+        if not self._fab_attr:
+            return
+        pf_list: list[AddedRecipe] = getattr(self.parsed_file, self._pf_attr)
+        pf_list.remove(self.recipe)
+        fab_list: list[AddedRecipe] = getattr(self.fabricator, self._fab_attr)
+        fab_list.insert(self._fab_index, self.recipe)
+        self.recipe.path = self._old_path
+
+    @property
+    def description(self) -> str:
+        return f"Unnest {self.recipe.item_id} from {self.fabricator.item_id}"
+
+
 # ---------------------------------------------------------------------------
 # Compound command (groups multiple commands into one undo step)
 # ---------------------------------------------------------------------------
