@@ -523,7 +523,7 @@ class InteractiveNodeEditor:
             target_node, target_role = target_info
             source_node, _source_role = source_info
 
-            if target_node.is_ingredient or target_role == "__output__":
+            if target_node.is_ingredient or target_role in ("__output__", "__empty__"):
                 break
             if target_node.recipe is None:
                 break
