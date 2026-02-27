@@ -260,7 +260,13 @@ class InteractiveNodeEditor:
         self,
         saved_positions: dict[str, list[float]] | None,
     ) -> None:
-        """Create visual placeholder nodes for all non-recipe entries in the model."""
+        """Create visual placeholder nodes for all non-recipe entries in the model.
+
+        Handles two passes:
+          1. Top-level non-recipe entries (fabricators, tabs, sizes, etc.)
+          2. Nested fabricator contents (tabs, moved_recipes inside each fab)
+             plus hierarchy links from fab -> tab -> recipe nodes.
+        """
         entries: list[tuple[NodeKind, NonRecipeEntry]] = []
 
         for fab in self.parsed_file.custom_fabricators:
@@ -312,6 +318,167 @@ class InteractiveNodeEditor:
             self.editor._attr_to_node[node.output_attr] = (node, "__output__")
             for attr_name, attr_id in node.input_attrs.items():
                 self.editor._attr_to_node[attr_id] = (node, attr_name)
+
+        # Pass 2: spawn nested fabricator contents and create hierarchy links
+        self._spawn_nested_fab_contents(saved_positions)
+
+    def _spawn_nested_fab_contents(
+        self,
+        saved_positions: dict[str, list[float]] | None,
+    ) -> None:
+        """Spawn nested tabs/moved_recipes inside each fab, wire hierarchy links."""
+        source = str(self.parsed_file.source_path)
+
+        for fab in self.parsed_file.custom_fabricators:
+            fab_key = f"{NodeKind.CUSTOM_FABRICATOR.value}::{fab.item_id}"
+            fab_node = self.editor.nodes.get(fab_key)
+            if fab_node is None:
+                continue
+
+            # Track tab nodes spawned for this fab (tab_id -> node)
+            # so recipe hierarchy matching can look them up by path.
+            tab_nodes: dict[str, RecipeNode] = {}
+
+            # Spawn nested tabs
+            for tab in fab.tabs:
+                tab_key = (
+                    f"{NodeKind.CUSTOM_CRAFTING_TAB.value}::{tab.tab_id}"
+                    f"::fab::{fab.item_id}"
+                )
+                if tab_key in self.editor.nodes:
+                    tab_nodes[tab.tab_id] = self.editor.nodes[tab_key]
+                    continue
+
+                tab_node = self._spawn_nested_node(
+                    tab_key, tab.tab_id, NodeKind.CUSTOM_CRAFTING_TAB,
+                    source, tab, saved_positions,
+                )
+                tab_nodes[tab.tab_id] = tab_node
+                self._create_hierarchy_link(fab_node, tab_node)
+
+            # Spawn nested moved_recipes
+            for mr in fab.moved_recipes:
+                mr_key = (
+                    f"{NodeKind.MOVED_RECIPE.value}::{mr.item_id}"
+                    f"::fab::{fab.item_id}"
+                )
+                if mr_key not in self.editor.nodes:
+                    mr_node = self._spawn_nested_node(
+                        mr_key, mr.item_id, NodeKind.MOVED_RECIPE,
+                        source, mr, saved_positions,
+                    )
+                    self._create_hierarchy_link(fab_node, mr_node)
+
+            # Wire hierarchy links from fab/tab to nested recipe nodes.
+            # Nested recipes (added_recipes, alias_recipes, custom_foods)
+            # are already spawned by RecipeNodeEditor.load() via all_recipes.
+            # We just need to create the hierarchy link from the correct parent.
+            nested_recipes: list[ModifiedRecipe] = []
+            nested_recipes.extend(fab.added_recipes)
+            nested_recipes.extend(fab.alias_recipes)
+            nested_recipes.extend(fab.custom_foods)
+
+            for recipe in nested_recipes:
+                recipe_node = self.editor.nodes.get(recipe.item_id)
+                if recipe_node is None:
+                    continue
+                parent_node = self._find_hierarchy_parent(
+                    fab, recipe, fab_node, tab_nodes,
+                )
+                self._create_hierarchy_link(parent_node, recipe_node)
+
+    def _spawn_nested_node(
+        self,
+        node_key: str,
+        entry_id: str,
+        kind: NodeKind,
+        source: str,
+        entry: NonRecipeEntry,
+        saved_positions: dict[str, list[float]] | None,
+    ) -> RecipeNode:
+        """Create a single nested non-recipe node and register it in the editor."""
+        default_pos = [800.0, 50.0 + len(self.editor.nodes) * 120.0]
+        pos = (
+            saved_positions.get(node_key, default_pos)
+            if saved_positions
+            else default_pos
+        )
+
+        node = RecipeNode(
+            item_id=entry_id,
+            node_type=NodeType.RAW_MATERIAL,
+            kind=kind,
+            source_file=source,
+            ingredients=[],
+            non_recipe=entry,
+            sprite_path=self._resolve_sprite(entry_id),
+        )
+        node.create(
+            self.editor._editor_id, pos, self.editor.theme,
+            texture_cache=self.editor.texture_cache,
+        )
+        self.editor.nodes[node_key] = node
+        self.editor._attr_to_node[node.output_attr] = (node, "__output__")
+        for attr_name, attr_id in node.input_attrs.items():
+            self.editor._attr_to_node[attr_id] = (node, attr_name)
+        return node
+
+    def _create_hierarchy_link(
+        self,
+        parent_node: RecipeNode,
+        child_node: RecipeNode,
+    ) -> None:
+        """Create a visual hierarchy link from parent's output to child's empty input.
+
+        Connects ``parent_node.output_attr`` to the ``__empty__`` input pin on the
+        child node, representing a containment relationship (fab -> tab, tab -> recipe).
+        """
+        target_attr = child_node.input_attrs.get("__empty__")
+        if target_attr is None or not parent_node.output_attr:
+            return
+
+        link_id = int(
+            dpg.add_node_link(
+                parent_node.output_attr,
+                target_attr,
+                parent=self.editor._editor_id,
+            )
+        )
+        self.editor.links.append(
+            Link(
+                source_attr=parent_node.output_attr,
+                target_attr=target_attr,
+                link_id=link_id,
+            )
+        )
+
+    @staticmethod
+    def _find_hierarchy_parent(
+        fab: CustomFabricator,
+        recipe: ModifiedRecipe,
+        fab_node: RecipeNode,
+        tab_nodes: dict[str, RecipeNode],
+    ) -> RecipeNode:
+        """Determine the visual parent for a nested recipe based on its path.
+
+        If the recipe has a ``path`` field (AddedRecipe/AliasRecipe/CustomFood),
+        the last segment is matched against tab IDs spawned for this fabricator.
+        Falls back to the fabricator node when no matching tab is found.
+        """
+        path = ""
+        if isinstance(recipe, AddedRecipe):
+            path = recipe.path
+
+        if path:
+            # The path is slash-separated (e.g. "FabId/TabId/SubTabId").
+            # Match the last segment against known tab IDs for this fab.
+            segments = path.rstrip("/").split("/")
+            # Walk from deepest to shallowest segment to find the nearest tab
+            for segment in reversed(segments):
+                if segment in tab_nodes:
+                    return tab_nodes[segment]
+
+        return fab_node
 
     # -- Checkbox 1 + 2: Drag-and-drop wiring --------------------------------
 
