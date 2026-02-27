@@ -32,7 +32,10 @@ from craftgraph.commands import (
     ChangeNonRecipeFieldCommand,
     ChangeRecipeFieldCommand,
     CompoundCommand,
+    EditCommand,
     EditHistory,
+    NestRecipeInFabricatorCommand,
+    NestTabInFabricatorCommand,
     RemoveIngredientCommand,
     RemoveNonRecipeCommand,
     RemoveRecipeCommand,
@@ -51,6 +54,7 @@ from craftgraph.layout_store import layout_path_for, load_layout, save_layout
 from craftgraph.models import (
     AddedRecipe,
     AliasRecipe,
+    BlockType,
     CraftingTab,
     CustomBioFuel,
     CustomFabricator,
@@ -383,7 +387,7 @@ class InteractiveNodeEditor:
                 if recipe_node is None:
                     continue
                 parent_node = self._find_hierarchy_parent(
-                    fab, recipe, fab_node, tab_nodes,
+                    recipe, fab_node, tab_nodes,
                 )
                 self._create_hierarchy_link(parent_node, recipe_node)
 
@@ -454,7 +458,6 @@ class InteractiveNodeEditor:
 
     @staticmethod
     def _find_hierarchy_parent(
-        fab: CustomFabricator,
         recipe: ModifiedRecipe,
         fab_node: RecipeNode,
         tab_nodes: dict[str, RecipeNode],
@@ -479,6 +482,157 @@ class InteractiveNodeEditor:
                     return tab_nodes[segment]
 
         return fab_node
+
+    # -- Hierarchy connection dispatch ---------------------------------------
+
+    def _find_fab_owning_tab(self, tab: CraftingTab) -> CustomFabricator | None:
+        """Find the CustomFabricator that contains the given tab in its nested list."""
+        for fab in self.parsed_file.custom_fabricators:
+            if tab in fab.tabs:
+                return fab
+        return None
+
+    def _try_hierarchy_link(
+        self,
+        source_node: RecipeNode,
+        target_node: RecipeNode,
+        source_role: str,
+        target_role: str,
+    ) -> EditCommand | None:
+        """Attempt to interpret a drag-link as a hierarchy connection.
+
+        Returns an ``EditCommand`` if the source/target pair represents a valid
+        hierarchy relationship (fabricator->tab, fabricator->recipe, tab->recipe,
+        tab->sub-tab).  Returns ``None`` for unrecognized patterns.
+        """
+        # Only handle output -> empty-input connections
+        if source_role != "__output__" or target_role != "__empty__":
+            return None
+
+        # Reject self-connections
+        if source_node is target_node:
+            return None
+
+        parent = source_node
+        child = target_node
+
+        if self.parsed_file.block_type == BlockType.CUSTOM_FABRICATORS:
+            return self._try_fabricator_hierarchy(parent, child)
+
+        return self._try_standalone_hierarchy(parent, child)
+
+    def _try_fabricator_hierarchy(
+        self,
+        parent: RecipeNode,
+        child: RecipeNode,
+    ) -> EditCommand | None:
+        """Handle hierarchy links inside a CustomFabricators file."""
+        # Fabricator -> Tab
+        if (
+            parent.kind == NodeKind.CUSTOM_FABRICATOR
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(parent.non_recipe, CustomFabricator)
+            and isinstance(child.non_recipe, CraftingTab)
+        ):
+            return NestTabInFabricatorCommand(
+                parsed_file=self.parsed_file,
+                fabricator=parent.non_recipe,
+                tab=child.non_recipe,
+            )
+
+        # Fabricator -> Recipe (nest at fabricator root)
+        if (
+            parent.kind == NodeKind.CUSTOM_FABRICATOR
+            and child.is_recipe
+            and isinstance(parent.non_recipe, CustomFabricator)
+            and isinstance(child.recipe, AddedRecipe)
+        ):
+            return NestRecipeInFabricatorCommand(
+                parsed_file=self.parsed_file,
+                fabricator=parent.non_recipe,
+                recipe=child.recipe,
+                path=parent.non_recipe.item_id,
+            )
+
+        # Tab -> Recipe (nest under tab's full path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.is_recipe
+            and isinstance(parent.non_recipe, CraftingTab)
+            and isinstance(child.recipe, AddedRecipe)
+        ):
+            fab = self._find_fab_owning_tab(parent.non_recipe)
+            if fab is None:
+                return None
+            tab_path = parent.non_recipe.tab_id
+            if parent.non_recipe.parent_tab_path:
+                tab_path = f"{parent.non_recipe.parent_tab_path}/{parent.non_recipe.tab_id}"
+            full_path = f"{fab.item_id}/{tab_path}"
+            return NestRecipeInFabricatorCommand(
+                parsed_file=self.parsed_file,
+                fabricator=fab,
+                recipe=child.recipe,
+                path=full_path,
+            )
+
+        # Tab -> Sub-tab (set child's parent_tab_path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(parent.non_recipe, CraftingTab)
+            and isinstance(child.non_recipe, CraftingTab)
+        ):
+            tab_path = parent.non_recipe.tab_id
+            if parent.non_recipe.parent_tab_path:
+                tab_path = f"{parent.non_recipe.parent_tab_path}/{parent.non_recipe.tab_id}"
+            return ChangeNonRecipeFieldCommand(
+                entry=child.non_recipe,
+                field_name="parent_tab_path",
+                new_value=tab_path,
+            )
+
+        # Fabricator -> Fabricator: reject
+        return None
+
+    def _try_standalone_hierarchy(
+        self,
+        parent: RecipeNode,
+        child: RecipeNode,
+    ) -> EditCommand | None:
+        """Handle hierarchy links in standalone files (CustomCraftingTabs, etc.)."""
+        # Tab -> Recipe (set recipe's path field)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.is_recipe
+            and isinstance(parent.non_recipe, CraftingTab)
+            and child.recipe is not None
+        ):
+            tab_path = parent.non_recipe.tab_id
+            if parent.non_recipe.parent_tab_path:
+                tab_path = f"{parent.non_recipe.parent_tab_path}/{parent.non_recipe.tab_id}"
+            return ChangeRecipeFieldCommand(
+                recipe=child.recipe,
+                field_name="path",
+                new_value=tab_path,
+            )
+
+        # Tab -> Sub-tab (set child's parent_tab_path)
+        if (
+            parent.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and child.kind == NodeKind.CUSTOM_CRAFTING_TAB
+            and isinstance(parent.non_recipe, CraftingTab)
+            and isinstance(child.non_recipe, CraftingTab)
+        ):
+            tab_path = parent.non_recipe.tab_id
+            if parent.non_recipe.parent_tab_path:
+                tab_path = f"{parent.non_recipe.parent_tab_path}/{parent.non_recipe.tab_id}"
+            return ChangeNonRecipeFieldCommand(
+                entry=child.non_recipe,
+                field_name="parent_tab_path",
+                new_value=tab_path,
+            )
+
+        return None
 
     # -- Checkbox 1 + 2: Drag-and-drop wiring --------------------------------
 
@@ -540,6 +694,12 @@ class InteractiveNodeEditor:
                 target_recipe = source_node.recipe
 
         if target_recipe is None or ingredient_item_id is None:
+            # Try hierarchy connection before giving up
+            hierarchy_cmd = self._try_hierarchy_link(
+                source_node, target_node, source_role, target_role,
+            )
+            if hierarchy_cmd is not None:
+                self.history.execute(hierarchy_cmd)
             return
 
         # Validate: no self-loops
