@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+
+# Virtual environment
+/.venv/
+.python-version
+
+# Build artifacts
+build/
+dist/
+*.spec
+
+# IDE
+.idea/
+
+# Claude Code and project-internal docs
+.claude/
+CLAUDE.md
+PLAN.md
+
+craftgraph/cc3_reference_files/
+
+# Generated output
+craftgraph.html
+
+# Testing sandbox
+test_sandbox/

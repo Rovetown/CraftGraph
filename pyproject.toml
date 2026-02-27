@@ -1,0 +1,56 @@
+[project]
+name = "craftgraph"
+version = "0.1.0"
+description = "CraftGraph - A Node based Editor for CustomCraft3 (and CustomBatteries)"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "networkx>=3.0",
+    "watchdog>=4.0",
+    "pyvis>=0.3",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+gui = [
+    "dearpygui>=1.10",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "types-networkx>=3.6.1.20260210",
+    "pyinstaller>=6.19.0",
+]
+
+[project.scripts]
+craftgraph = "craftgraph.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 99
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["pyvis", "pyvis.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = "craftgraph.visualizer"
+disallow_untyped_calls = false
