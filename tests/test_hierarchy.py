@@ -264,3 +264,56 @@ class TestTabPathConstruction:
         cmd.execute()
         full_path = f"{level3.parent_tab_path}/{level3.tab_id}"
         assert full_path == "Weapons/Heavy/Experimental"
+
+
+class TestNestNonAddedRecipeTypes:
+    """Verify that AliasRecipe and CustomFood can be nested in fabricators."""
+
+    def test_alias_recipe_nests_in_fabricator(self) -> None:
+        recipe = AliasRecipe(
+            item_id="CustomBlade",
+            display_name="Custom Blade",
+            tooltip="A blade",
+        )
+        fab = CustomFabricator(item_id="WeaponFab")
+        pf = ParsedFile(
+            source_path=Path("t.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            alias_recipes=[recipe],
+            custom_fabricators=[fab],
+        )
+        cmd = NestRecipeInFabricatorCommand(
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="WeaponFab",
+        )
+        cmd.execute()
+        assert recipe in fab.alias_recipes
+        assert recipe not in pf.alias_recipes
+        assert recipe.path == "WeaponFab"
+
+    def test_custom_food_nests_in_fabricator(self) -> None:
+        recipe = CustomFood(
+            item_id="SuperMeal",
+            display_name="Super Meal",
+            tooltip="Delicious",
+            food_value=50,
+        )
+        fab = CustomFabricator(item_id="KitchenFab")
+        pf = ParsedFile(
+            source_path=Path("t.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_foods=[recipe],
+            custom_fabricators=[fab],
+        )
+        cmd = NestRecipeInFabricatorCommand(
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="KitchenFab",
+        )
+        cmd.execute()
+        assert recipe in fab.custom_foods
+        assert recipe not in pf.custom_foods
+        assert recipe.path == "KitchenFab"
