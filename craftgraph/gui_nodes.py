@@ -262,6 +262,7 @@ class RecipeNode:
     dpg_tag: int = 0
     output_attr: int = 0
     input_attrs: dict[str, int] = field(default_factory=dict)
+    hierarchy_input_attr: int = 0
     recipe: ModifiedRecipe | None = None
     non_recipe: NonRecipeEntry | None = None
     sprite_path: Path | None = None
@@ -333,6 +334,17 @@ class RecipeNode:
                     ) as in_attr:
                         dpg.add_text(f"{ing_id} x{required}")
                     self.input_attrs[ing_id] = in_attr
+
+            # Hierarchy input pin: connection point for parent containment
+            # links (fabricator -> tab, tab -> recipe). Separate from the
+            # __empty__ pin so hierarchy links don't consume the drop target.
+            if not self.is_ingredient:
+                hier_in: int
+                with dpg.node_attribute(
+                    attribute_type=dpg.mvNode_Attr_Input,
+                ) as hier_in:
+                    dpg.add_text("")  # invisible label, just a pin
+                self.hierarchy_input_attr = hier_in
 
             # Always-present empty input pin (UE5-style dynamic slots).
             # Recipe nodes: drop target for adding new ingredients.
@@ -637,6 +649,11 @@ class RecipeNodeEditor:
             )
             for ing_name, attr_id in recipe_node.input_attrs.items():
                 self._attr_to_node[attr_id] = (recipe_node, ing_name)
+            if recipe_node.hierarchy_input_attr:
+                self._attr_to_node[recipe_node.hierarchy_input_attr] = (
+                    recipe_node,
+                    "__hierarchy__",
+                )
 
             # Override: cycle -> red, no ingredients -> gray
             if item_id in cycle_nodes:

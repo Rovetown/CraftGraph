@@ -328,6 +328,8 @@ class InteractiveNodeEditor:
             self.editor._attr_to_node[node.output_attr] = (node, "__output__")
             for attr_name, attr_id in node.input_attrs.items():
                 self.editor._attr_to_node[attr_id] = (node, attr_name)
+            if node.hierarchy_input_attr:
+                self.editor._attr_to_node[node.hierarchy_input_attr] = (node, "__hierarchy__")
 
         # Pass 2: spawn nested fabricator contents and create hierarchy links
         self._spawn_nested_fab_contents(saved_positions)
@@ -433,6 +435,8 @@ class InteractiveNodeEditor:
         self.editor._attr_to_node[node.output_attr] = (node, "__output__")
         for attr_name, attr_id in node.input_attrs.items():
             self.editor._attr_to_node[attr_id] = (node, attr_name)
+        if node.hierarchy_input_attr:
+            self.editor._attr_to_node[node.hierarchy_input_attr] = (node, "__hierarchy__")
         return node
 
     def _create_hierarchy_link(
@@ -440,13 +444,13 @@ class InteractiveNodeEditor:
         parent_node: RecipeNode,
         child_node: RecipeNode,
     ) -> None:
-        """Create a visual hierarchy link from parent's output to child's empty input.
+        """Create a visual hierarchy link from parent's output to child's hierarchy input.
 
-        Connects ``parent_node.output_attr`` to the ``__empty__`` input pin on the
-        child node, representing a containment relationship (fab -> tab, tab -> recipe).
+        Connects ``parent_node.output_attr`` to the dedicated ``hierarchy_input_attr``
+        on the child node, keeping the ``__empty__`` pin free for ingredient drops.
         """
-        target_attr = child_node.input_attrs.get("__empty__")
-        if target_attr is None or not parent_node.output_attr:
+        target_attr = child_node.hierarchy_input_attr
+        if not target_attr or not parent_node.output_attr:
             return
 
         link_id = int(
@@ -513,8 +517,8 @@ class InteractiveNodeEditor:
         hierarchy relationship (fabricator->tab, fabricator->recipe, tab->recipe,
         tab->sub-tab).  Returns ``None`` for unrecognized patterns.
         """
-        # Only handle output -> empty-input connections
-        if source_role != "__output__" or target_role != "__empty__":
+        # Only handle output -> hierarchy/empty-input connections
+        if source_role != "__output__" or target_role not in ("__empty__", "__hierarchy__"):
             return None
 
         # Reject self-connections
@@ -765,6 +769,20 @@ class InteractiveNodeEditor:
 
         source_node, source_role = source_info
         target_node, target_role = target_info
+
+        # Hierarchy pin: always dispatch as hierarchy connection, never
+        # as an ingredient drop.  This prevents the ingredient logic
+        # from intercepting fab/tab -> recipe hierarchy links.
+        if target_role == "__hierarchy__" or source_role == "__hierarchy__":
+            hierarchy_cmd = self._try_hierarchy_link(
+                source_node,
+                target_node,
+                source_role,
+                target_role,
+            )
+            if hierarchy_cmd is not None:
+                self.history.execute(hierarchy_cmd)
+            return
 
         # Determine which direction the link was drawn and resolve the
         # ingredient item ID, target recipe, and any replaced ingredient.
