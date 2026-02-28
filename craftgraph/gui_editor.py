@@ -264,6 +264,55 @@ class InteractiveNodeEditor:
         """Resolve sprite path: manual overrides, then auto-assign."""
         return resolve_sprite(item_id, self._manual_sprites, self._sprite_lookup)
 
+    def _compute_non_recipe_positions(
+        self,
+        entries: list[tuple[NodeKind, NonRecipeEntry]],
+    ) -> dict[str, list[float]]:
+        """Compute hierarchy-aware positions for non-recipe nodes.
+
+        Fabricators go in a column left of tabs, tabs go left of recipes.
+        Non-hierarchy entries (sizes, biofuels, etc.) cluster below.
+        """
+        # Find the leftmost and average Y of existing recipe nodes
+        recipe_positions = [
+            dpg.get_item_pos(n.dpg_tag)
+            for n in self.editor.nodes.values()
+            if n.is_recipe and n.dpg_tag and dpg.does_item_exist(n.dpg_tag)
+        ]
+
+        if recipe_positions:
+            min_recipe_x = min(p[0] for p in recipe_positions)
+            avg_recipe_y = sum(p[1] for p in recipe_positions) / len(recipe_positions)
+        else:
+            min_recipe_x = 400.0
+            avg_recipe_y = 200.0
+
+        # Column offsets relative to leftmost recipe node
+        fab_x = min_recipe_x - 500.0
+        tab_x = min_recipe_x - 250.0
+        other_x = min_recipe_x - 500.0
+
+        positions: dict[str, list[float]] = {}
+        fab_y = avg_recipe_y - 100.0
+        tab_y = avg_recipe_y - 100.0
+        other_y = avg_recipe_y + 300.0
+
+        for kind, entry in entries:
+            entry_id = self._non_recipe_entry_id(entry)
+            node_key = f"{kind.value}::{entry_id}"
+
+            if kind == NodeKind.CUSTOM_FABRICATOR:
+                positions[node_key] = [fab_x, fab_y]
+                fab_y += 200.0
+            elif kind == NodeKind.CUSTOM_CRAFTING_TAB:
+                positions[node_key] = [tab_x, tab_y]
+                tab_y += 150.0
+            else:
+                positions[node_key] = [other_x, other_y]
+                other_y += 120.0
+
+        return positions
+
     def _spawn_non_recipe_nodes(
         self,
         saved_positions: dict[str, list[float]] | None,
@@ -294,6 +343,8 @@ class InteractiveNodeEditor:
             return
 
         source = str(self.parsed_file.source_path)
+        default_positions = self._compute_non_recipe_positions(entries)
+
         for i, (kind, entry) in enumerate(entries):
             entry_id = self._non_recipe_entry_id(entry)
             node_key = f"{kind.value}::{entry_id}"
@@ -302,11 +353,11 @@ class InteractiveNodeEditor:
             if node_key in self.editor.nodes:
                 node_key = f"{kind.value}::{entry_id}::{i}"
 
-            default_y = 50.0 + i * 120.0
+            default_pos = default_positions.get(node_key, [600.0, 50.0 + i * 120.0])
             pos = (
-                saved_positions.get(node_key, [600.0, default_y])
+                saved_positions.get(node_key, default_pos)
                 if saved_positions
-                else [600.0, default_y]
+                else default_pos
             )
 
             node = RecipeNode(
@@ -439,7 +490,7 @@ class InteractiveNodeEditor:
         saved_positions: dict[str, list[float]] | None,
     ) -> RecipeNode:
         """Create a single nested non-recipe node and register it in the editor."""
-        default_pos = [800.0, 50.0 + len(self.editor.nodes) * 120.0]
+        default_pos = [650.0, 50.0 + len(self.editor.nodes) * 120.0]
         pos = saved_positions.get(node_key, default_pos) if saved_positions else default_pos
 
         node = RecipeNode(
