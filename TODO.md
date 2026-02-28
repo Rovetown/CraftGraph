@@ -424,23 +424,19 @@ connections, matching the CC3 data model's containment structure:
   `_spawn_non_recipe_nodes()` only shows top-level entries. Fabricators contain nested
   `tabs`, `added_recipes`, `alias_recipes`, `moved_recipes`, and `custom_foods` that are
   invisible in the GUI. Spawn these as connected child nodes during visual rebuild.
-- [ ] **Fabricator/tab output pin semantics** (`gui_nodes.py`): Fabricator and tab output
-  pins should visually indicate they are "containers" (label like "Contains:" or child
-  count). Consider whether fabricators need multiple output pins (one per nested list type)
-  or a single output with dispatch-on-connect.
-- [ ] **Layout for hierarchy** (`gui_nodes.py`): The current two-layer layout does not
-  account for fabricator -> tab -> recipe depth. Add hierarchy-aware positioning so that
-  fabricators appear leftmost, tabs in the middle, and their recipes on the right.
-- [ ] **Filled slot labels for non-recipe connections**: When a tab is connected to a
-  fabricator's `__empty__` pin, the filled slot should show the tab's ID. When a recipe
-  is connected to a tab, the slot should show the recipe's ItemID. Matches the UE5 pattern
-  from the Dynamic Input Slots design.
-- [ ] **Label hierarchy input pins**: The dedicated `hierarchy_input_attr` pin (added to
-  prevent `__empty__` consumption) currently shows an invisible empty string. Give it a
-  meaningful label that hints at what should be connected. Examples: "Parent" or
-  "Container" for recipe/tab nodes (expects a fab or tab connection), "Fabricator" for
-  tab nodes (expects a fab connection). The label should be subtle (dimmed or small text)
-  so it doesn't compete with ingredient pin labels.
+- [x] **Fabricator/tab output pin semantics** (`gui_nodes.py`): Fabricator and tab output
+  pins show "Contains: N" with the total child count (tabs + recipes + moved_recipes).
+  Updated dynamically during `_spawn_nested_fab_contents()` via `update_output_label()`.
+- [x] **Layout for hierarchy** (`gui_editor.py`): 3-column hierarchy-aware positioning:
+  fabricators leftmost (min_recipe_x - 500), tabs in the middle (min_recipe_x - 250),
+  recipes on the right. Other non-recipe entries (sizes, biofuels) cluster below.
+  Implemented via `_compute_non_recipe_positions()`.
+- [x] **Filled slot labels for non-recipe connections**: When a hierarchy link is created
+  via `_create_hierarchy_link()`, the child node's hierarchy pin label updates from
+  "Parent" to "Parent: {parent_id}". Resets on rebuild when no link exists.
+- [x] **Label hierarchy input pins**: Hierarchy input pins show "Parent" in dimmed gray
+  text (150, 150, 150, 128 alpha). Fabricators have no hierarchy input pin (top-level).
+  Label stored in `hierarchy_label_id` for dynamic updates.
 - [x] **Enforce CC3 processing order in serializer** (`serializer.py`): CC3 processes blocks
   in a strict global order: `CustomFabricators -> CustomCraftingTabs -> AddedRecipes ->
   AliasRecipes -> ModifiedRecipes -> CustomFoods -> MovedRecipes -> CustomSizes ->
@@ -451,10 +447,10 @@ connections, matching the CC3 data model's containment structure:
 - [x] **Connection-time order validation**: `_try_fabricator_hierarchy()` returns `None`
   when a tab's parent fabricator is not found, and rejects fabricator-to-fabricator
   connections. Basic validation is in place; user-facing warnings deferred to Step 11j.
-- [ ] **Tests**: Verify fabricator-tab, tab-recipe, and fabricator-recipe connections
-  dispatch to the correct commands. Verify disconnect reverses the field changes. Verify
-  nested content is spawned during rebuild. Verify serializer output order matches CC3
-  processing order.
+- [x] **Tests**: Command round-trip tests in `test_hierarchy.py` (15 tests including
+  AliasRecipe and CustomFood nesting). Serializer order tests in `test_serializer.py`
+  (`TestFabricatorInternalOrder`: tabs before recipes, full CC3 order). 566 total tests
+  passing.
 
 ---
 
