@@ -276,6 +276,7 @@ class RecipeNode:
     ingredients: list[tuple[str, int]] = field(default_factory=list)
     dpg_tag: int = 0
     output_attr: int = 0
+    output_label_id: int = 0
     input_attrs: dict[str, int] = field(default_factory=dict)
     hierarchy_input_attr: int = 0
     hierarchy_label_id: int = 0
@@ -318,8 +319,9 @@ class RecipeNode:
             with dpg.node_attribute(
                 attribute_type=dpg.mvNode_Attr_Output,
             ) as out_attr:
-                dpg.add_text(self._build_type_label())
+                out_label = dpg.add_text(self._build_type_label())
             self.output_attr = out_attr
+            self.output_label_id = out_label
 
             # Sprite thumbnail (static, no pin)
             if self.sprite_path is not None and texture_cache is not None:
@@ -429,6 +431,11 @@ class RecipeNode:
         if isinstance(nr, CustomFragmentCount):
             return [f"Fragments: {nr.fragments_to_scan}"]
         return []
+
+    def update_output_label(self, child_count: int) -> None:
+        """Update the output pin text to show the number of contained children."""
+        if self.output_label_id and dpg.does_item_exist(self.output_label_id):
+            dpg.set_value(self.output_label_id, f"Contains: {child_count}")
 
 
 # -- Texture cache for node sprites -------------------------------------------
