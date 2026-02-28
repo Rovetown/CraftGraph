@@ -474,6 +474,7 @@ class InteractiveNodeEditor:
 
         Connects ``parent_node.output_attr`` to the dedicated ``hierarchy_input_attr``
         on the child node, keeping the ``__empty__`` pin free for ingredient drops.
+        Also updates the child's hierarchy label to show the parent's ID.
         """
         target_attr = child_node.hierarchy_input_attr
         if not target_attr or not parent_node.output_attr:
@@ -493,6 +494,15 @@ class InteractiveNodeEditor:
                 link_id=link_id,
             )
         )
+
+        # Update the hierarchy pin label to show the parent's ID
+        if child_node.hierarchy_label_id and dpg.does_item_exist(
+            child_node.hierarchy_label_id
+        ):
+            dpg.set_value(
+                child_node.hierarchy_label_id,
+                f"Parent: {parent_node.item_id}",
+            )
 
     @staticmethod
     def _find_hierarchy_parent(
