@@ -445,7 +445,10 @@ class TextureCache:
         width, height, _channels, data = result
         registry = self._ensure_registry()
         tag = dpg.add_static_texture(
-            width=width, height=height, default_value=data, parent=registry,
+            width=width,
+            height=height,
+            default_value=data,
+            parent=registry,
         )
         self._cache[sprite_path] = tag
         return tag

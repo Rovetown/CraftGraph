@@ -253,7 +253,6 @@ class TestTabPathConstruction:
 
     def test_deeply_nested_tab_path(self) -> None:
         """Three levels deep: Weapons/Heavy/Experimental."""
-        level1 = CraftingTab(tab_id="Weapons")
         level2 = CraftingTab(tab_id="Heavy", parent_tab_path="Weapons")
         level3 = CraftingTab(tab_id="Experimental")
         full_parent_path = f"{level2.parent_tab_path}/{level2.tab_id}"

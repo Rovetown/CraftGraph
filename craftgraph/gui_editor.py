@@ -210,7 +210,9 @@ class InteractiveNodeEditor:
                 sprite_path=self._resolve_sprite(item_id),
             )
             orphan.create(
-                self.editor._editor_id, pos, self.editor.theme,
+                self.editor._editor_id,
+                pos,
+                self.editor.theme,
                 texture_cache=self.editor.texture_cache,
             )
             self.editor.nodes[orphan_key] = orphan
@@ -317,7 +319,9 @@ class InteractiveNodeEditor:
                 sprite_path=self._resolve_sprite(entry_id),
             )
             node.create(
-                self.editor._editor_id, pos, self.editor.theme,
+                self.editor._editor_id,
+                pos,
+                self.editor.theme,
                 texture_cache=self.editor.texture_cache,
             )
             self.editor.nodes[node_key] = node
@@ -347,31 +351,33 @@ class InteractiveNodeEditor:
 
             # Spawn nested tabs
             for tab in fab.tabs:
-                tab_key = (
-                    f"{NodeKind.CUSTOM_CRAFTING_TAB.value}::{tab.tab_id}"
-                    f"::fab::{fab.item_id}"
-                )
+                tab_key = f"{NodeKind.CUSTOM_CRAFTING_TAB.value}::{tab.tab_id}::fab::{fab.item_id}"
                 if tab_key in self.editor.nodes:
                     tab_nodes[tab.tab_id] = self.editor.nodes[tab_key]
                     continue
 
                 tab_node = self._spawn_nested_node(
-                    tab_key, tab.tab_id, NodeKind.CUSTOM_CRAFTING_TAB,
-                    source, tab, saved_positions,
+                    tab_key,
+                    tab.tab_id,
+                    NodeKind.CUSTOM_CRAFTING_TAB,
+                    source,
+                    tab,
+                    saved_positions,
                 )
                 tab_nodes[tab.tab_id] = tab_node
                 self._create_hierarchy_link(fab_node, tab_node)
 
             # Spawn nested moved_recipes
             for mr in fab.moved_recipes:
-                mr_key = (
-                    f"{NodeKind.MOVED_RECIPE.value}::{mr.item_id}"
-                    f"::fab::{fab.item_id}"
-                )
+                mr_key = f"{NodeKind.MOVED_RECIPE.value}::{mr.item_id}::fab::{fab.item_id}"
                 if mr_key not in self.editor.nodes:
                     mr_node = self._spawn_nested_node(
-                        mr_key, mr.item_id, NodeKind.MOVED_RECIPE,
-                        source, mr, saved_positions,
+                        mr_key,
+                        mr.item_id,
+                        NodeKind.MOVED_RECIPE,
+                        source,
+                        mr,
+                        saved_positions,
                     )
                     self._create_hierarchy_link(fab_node, mr_node)
 
@@ -389,7 +395,9 @@ class InteractiveNodeEditor:
                 if recipe_node is None:
                     continue
                 parent_node = self._find_hierarchy_parent(
-                    recipe, fab_node, tab_nodes,
+                    recipe,
+                    fab_node,
+                    tab_nodes,
                 )
                 self._create_hierarchy_link(parent_node, recipe_node)
 
@@ -404,11 +412,7 @@ class InteractiveNodeEditor:
     ) -> RecipeNode:
         """Create a single nested non-recipe node and register it in the editor."""
         default_pos = [800.0, 50.0 + len(self.editor.nodes) * 120.0]
-        pos = (
-            saved_positions.get(node_key, default_pos)
-            if saved_positions
-            else default_pos
-        )
+        pos = saved_positions.get(node_key, default_pos) if saved_positions else default_pos
 
         node = RecipeNode(
             item_id=entry_id,
@@ -420,7 +424,9 @@ class InteractiveNodeEditor:
             sprite_path=self._resolve_sprite(entry_id),
         )
         node.create(
-            self.editor._editor_id, pos, self.editor.theme,
+            self.editor._editor_id,
+            pos,
+            self.editor.theme,
             texture_cache=self.editor.texture_cache,
         )
         self.editor.nodes[node_key] = node
@@ -675,11 +681,7 @@ class InteractiveNodeEditor:
             )
 
         # Fabricator/Tab -> Recipe (unnest recipe from fabricator)
-        if (
-            parent.is_non_recipe
-            and child.is_recipe
-            and isinstance(child.recipe, AddedRecipe)
-        ):
+        if parent.is_non_recipe and child.is_recipe and isinstance(child.recipe, AddedRecipe):
             if isinstance(parent.non_recipe, CustomFabricator):
                 fab = parent.non_recipe
             elif isinstance(parent.non_recipe, CraftingTab):
@@ -802,7 +804,10 @@ class InteractiveNodeEditor:
         if target_recipe is None or ingredient_item_id is None:
             # Try hierarchy connection before giving up
             hierarchy_cmd = self._try_hierarchy_link(
-                source_node, target_node, source_role, target_role,
+                source_node,
+                target_node,
+                source_role,
+                target_role,
             )
             if hierarchy_cmd is not None:
                 self.history.execute(hierarchy_cmd)
@@ -1301,9 +1306,7 @@ class InteractiveNodeEditor:
                     raw_sid = str(dpg.get_value(_sprite_item_id_input)).strip()
                     new_sid: str | None = raw_sid if raw_sid else None
                     if new_sid != _recipe.sprite_item_id:
-                        cmds.append(
-                            ChangeRecipeFieldCommand(_recipe, "sprite_item_id", new_sid)
-                        )
+                        cmds.append(ChangeRecipeFieldCommand(_recipe, "sprite_item_id", new_sid))
                 if isinstance(_recipe, AddedRecipe) and _path_input:
                     new_path = str(dpg.get_value(_path_input))
                     if new_path != _recipe.path:
@@ -1598,7 +1601,8 @@ class InteractiveNodeEditor:
             )
 
             self._create_sprite_browse_section(
-                ingredient_node.item_id, parent=ing_win_id,
+                ingredient_node.item_id,
+                parent=ing_win_id,
             )
 
             _connection = connection
@@ -1793,9 +1797,7 @@ class InteractiveNodeEditor:
                 cmd = AddNonRecipeCommand(self.parsed_file, new_entry)
                 self.history.execute(cmd)
                 self.item_id_registry.add(new_id)
-                self._autocomplete.set_items(
-                    self.item_id_registry, vanilla_ids=self._vanilla_ids
-                )
+                self._autocomplete.set_items(self.item_id_registry, vanilla_ids=self._vanilla_ids)
                 self._autocomplete.hide()
                 if dpg.does_item_exist(tag):
                     dpg.delete_item(tag)
@@ -1822,9 +1824,7 @@ class InteractiveNodeEditor:
             cmd = RemoveNonRecipeCommand(self.parsed_file, node.non_recipe)
             self.history.execute(cmd)
 
-    def _open_non_recipe_edit_dialog(
-        self, entry: NonRecipeEntry, node: RecipeNode
-    ) -> None:
+    def _open_non_recipe_edit_dialog(self, entry: NonRecipeEntry, node: RecipeNode) -> None:
         """Open a modal dialog for editing non-recipe entry fields."""
         self._close_context_menu()
         self._close_edit_window()
@@ -1847,14 +1847,18 @@ class InteractiveNodeEditor:
 
             if isinstance(entry, CraftingTab):
                 field_inputs["tab_id"] = dpg.add_input_text(
-                    label="TabID", default_value=entry.tab_id, width=250,
+                    label="TabID",
+                    default_value=entry.tab_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["tab_id"],
                     self._make_ac_callback(field_inputs["tab_id"]),
                 )
                 field_inputs["display_name"] = dpg.add_input_text(
-                    label="Display Name", default_value=entry.display_name, width=250,
+                    label="Display Name",
+                    default_value=entry.display_name,
+                    width=250,
                 )
                 field_inputs["sprite_item_id"] = dpg.add_input_text(
                     label="Sprite ItemID",
@@ -1873,28 +1877,38 @@ class InteractiveNodeEditor:
 
             elif isinstance(entry, MovedRecipe):
                 field_inputs["item_id"] = dpg.add_input_text(
-                    label="ItemID", default_value=entry.item_id, width=250,
+                    label="ItemID",
+                    default_value=entry.item_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["item_id"],
                     self._make_ac_callback(field_inputs["item_id"]),
                 )
                 field_inputs["old_path"] = dpg.add_input_text(
-                    label="Old Path", default_value=entry.old_path or "", width=250,
+                    label="Old Path",
+                    default_value=entry.old_path or "",
+                    width=250,
                 )
                 field_inputs["new_path"] = dpg.add_input_text(
-                    label="New Path", default_value=entry.new_path or "", width=250,
+                    label="New Path",
+                    default_value=entry.new_path or "",
+                    width=250,
                 )
                 field_inputs["copied"] = dpg.add_checkbox(
-                    label="Copied", default_value=entry.copied,
+                    label="Copied",
+                    default_value=entry.copied,
                 )
                 field_inputs["hidden"] = dpg.add_checkbox(
-                    label="Hidden", default_value=entry.hidden,
+                    label="Hidden",
+                    default_value=entry.hidden,
                 )
 
             elif isinstance(entry, CustomSize):
                 field_inputs["item_id"] = dpg.add_input_text(
-                    label="ItemID", default_value=entry.item_id, width=250,
+                    label="ItemID",
+                    default_value=entry.item_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["item_id"],
@@ -1921,7 +1935,9 @@ class InteractiveNodeEditor:
 
             elif isinstance(entry, CustomBioFuel):
                 field_inputs["item_id"] = dpg.add_input_text(
-                    label="ItemID", default_value=entry.item_id, width=250,
+                    label="ItemID",
+                    default_value=entry.item_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["item_id"],
@@ -1937,7 +1953,9 @@ class InteractiveNodeEditor:
 
             elif isinstance(entry, CustomFragmentCount):
                 field_inputs["item_id"] = dpg.add_input_text(
-                    label="ItemID", default_value=entry.item_id, width=250,
+                    label="ItemID",
+                    default_value=entry.item_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["item_id"],
@@ -1953,17 +1971,23 @@ class InteractiveNodeEditor:
 
             elif isinstance(entry, CustomFabricator):
                 field_inputs["item_id"] = dpg.add_input_text(
-                    label="ItemID", default_value=entry.item_id, width=250,
+                    label="ItemID",
+                    default_value=entry.item_id,
+                    width=250,
                 )
                 dpg.set_item_callback(
                     field_inputs["item_id"],
                     self._make_ac_callback(field_inputs["item_id"]),
                 )
                 field_inputs["display_name"] = dpg.add_input_text(
-                    label="Display Name", default_value=entry.display_name, width=250,
+                    label="Display Name",
+                    default_value=entry.display_name,
+                    width=250,
                 )
                 field_inputs["tooltip"] = dpg.add_input_text(
-                    label="Tooltip", default_value=entry.tooltip, width=250,
+                    label="Tooltip",
+                    default_value=entry.tooltip,
+                    width=250,
                 )
                 field_inputs["model"] = dpg.add_combo(
                     label="Model",
@@ -1972,10 +1996,12 @@ class InteractiveNodeEditor:
                     width=180,
                 )
                 field_inputs["allowed_in_base"] = dpg.add_checkbox(
-                    label="Allowed In Base", default_value=entry.allowed_in_base,
+                    label="Allowed In Base",
+                    default_value=entry.allowed_in_base,
                 )
                 field_inputs["allowed_in_cyclops"] = dpg.add_checkbox(
-                    label="Allowed In Cyclops", default_value=entry.allowed_in_cyclops,
+                    label="Allowed In Cyclops",
+                    default_value=entry.allowed_in_cyclops,
                 )
 
             self._create_sprite_browse_section(entry_id, parent=win_id)
@@ -2010,9 +2036,7 @@ class InteractiveNodeEditor:
                         new_value = raw_value
 
                     if new_value != old_value:
-                        cmds.append(
-                            ChangeNonRecipeFieldCommand(_entry, field_name, new_value)
-                        )
+                        cmds.append(ChangeNonRecipeFieldCommand(_entry, field_name, new_value))
 
                 if cmds:
                     compound = CompoundCommand(

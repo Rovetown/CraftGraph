@@ -1055,7 +1055,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",
         )
         cmd.execute()
         assert recipe not in pf.added_recipes
@@ -1072,7 +1075,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",
         )
         cmd.execute()
         assert recipe not in pf.alias_recipes
@@ -1089,7 +1095,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",
         )
         cmd.execute()
         assert recipe not in pf.custom_foods
@@ -1106,7 +1115,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",
         )
         cmd.execute()
         cmd.undo()
@@ -1123,7 +1135,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",
         )
         assert "LaserGun" in cmd.description
         assert "MyFab" in cmd.description
@@ -1139,7 +1154,10 @@ class TestNestRecipeInFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="MyFab",  # type: ignore[arg-type]
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="MyFab",  # type: ignore[arg-type]
         )
         cmd.execute()
         assert recipe in pf.modified_recipes  # not moved
@@ -1242,9 +1260,7 @@ class TestUnnestTabFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         history = EditHistory()
-        history.execute(
-            UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab)
-        )
+        history.execute(UnnestTabFromFabricatorCommand(parsed_file=pf, fabricator=fab, tab=tab))
         assert tab in pf.crafting_tabs
         assert tab not in fab.tabs
 
@@ -1275,7 +1291,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         cmd.execute()
         assert recipe not in fab.added_recipes
@@ -1291,7 +1309,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         cmd.execute()
         assert recipe not in fab.alias_recipes
@@ -1307,7 +1327,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         cmd.execute()
         assert recipe not in fab.custom_foods
@@ -1323,7 +1345,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         cmd.execute()
         cmd.undo()
@@ -1342,7 +1366,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=r2,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=r2,
         )
         cmd.execute()
         assert len(fab.added_recipes) == 2
@@ -1357,7 +1383,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             block_type=BlockType.CUSTOM_FABRICATORS,
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         assert "LaserGun" in cmd.description
         assert "MyFab" in cmd.description
@@ -1372,7 +1400,9 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,  # type: ignore[arg-type]
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,  # type: ignore[arg-type]
         )
         cmd.execute()
         assert len(pf.added_recipes) == 0
@@ -1389,14 +1419,19 @@ class TestUnnestRecipeFromFabricatorCommand:
             custom_fabricators=[fab],
         )
         nest_cmd = NestRecipeInFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe, path="WeaponsFab",
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
+            path="WeaponsFab",
         )
         nest_cmd.execute()
         assert recipe in fab.added_recipes
         assert recipe not in pf.added_recipes
 
         unnest_cmd = UnnestRecipeFromFabricatorCommand(
-            parsed_file=pf, fabricator=fab, recipe=recipe,
+            parsed_file=pf,
+            fabricator=fab,
+            recipe=recipe,
         )
         unnest_cmd.execute()
         assert recipe not in fab.added_recipes
@@ -1414,7 +1449,9 @@ class TestUnnestRecipeFromFabricatorCommand:
         history = EditHistory()
         history.execute(
             UnnestRecipeFromFabricatorCommand(
-                parsed_file=pf, fabricator=fab, recipe=recipe,
+                parsed_file=pf,
+                fabricator=fab,
+                recipe=recipe,
             )
         )
         assert recipe in pf.added_recipes
