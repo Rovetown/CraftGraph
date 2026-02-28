@@ -403,6 +403,32 @@ class InteractiveNodeEditor:
                 )
                 self._create_hierarchy_link(parent_node, recipe_node)
 
+            # Update child count label on fabricator output pin
+            fab_child_count = (
+                len(fab.tabs)
+                + len(fab.added_recipes)
+                + len(fab.alias_recipes)
+                + len(fab.moved_recipes)
+                + len(fab.custom_foods)
+            )
+            fab_node.update_output_label(fab_child_count)
+
+            # Update child count labels on tab nodes
+            for tab_id, tab_node in tab_nodes.items():
+                tab_child_count = 0
+                for recipe in nested_recipes:
+                    recipe_path = ""
+                    if isinstance(recipe, AddedRecipe):
+                        recipe_path = recipe.path
+                    if recipe_path and recipe_path.rstrip("/").split("/")[-1] == tab_id:
+                        tab_child_count += 1
+                # Count child sub-tabs
+                for t in fab.tabs:
+                    parent_tail = t.parent_tab_path.rstrip("/").split("/")[-1]
+                    if t.parent_tab_path and parent_tail == tab_id:
+                        tab_child_count += 1
+                tab_node.update_output_label(tab_child_count)
+
     def _spawn_nested_node(
         self,
         node_key: str,
