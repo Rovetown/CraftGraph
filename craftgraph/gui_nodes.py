@@ -201,6 +201,21 @@ class NodeTheme:
         self._cache["cycle_link"] = theme_id
         return theme_id
 
+    def get_dimmed_text(self) -> int:
+        """Gray dimmed theme for secondary labels (hierarchy pins)."""
+        cached = self._cache.get("dimmed_text")
+        if cached is not None:
+            return cached
+
+        theme_id: int
+        with dpg.theme() as theme_id, dpg.theme_component(dpg.mvText):
+            dpg.add_theme_color(
+                dpg.mvThemeCol_Text,
+                (150, 150, 150, 128),
+            )
+        self._cache["dimmed_text"] = theme_id
+        return theme_id
+
     def _ensure_node_theme(self, key: str, color: tuple[int, int, int]) -> int:
         """Create or return a cached node theme for the given color."""
         cached = self._cache.get(key)
@@ -263,6 +278,7 @@ class RecipeNode:
     output_attr: int = 0
     input_attrs: dict[str, int] = field(default_factory=dict)
     hierarchy_input_attr: int = 0
+    hierarchy_label_id: int = 0
     recipe: ModifiedRecipe | None = None
     non_recipe: NonRecipeEntry | None = None
     sprite_path: Path | None = None
@@ -338,13 +354,16 @@ class RecipeNode:
             # Hierarchy input pin: connection point for parent containment
             # links (fabricator -> tab, tab -> recipe). Separate from the
             # __empty__ pin so hierarchy links don't consume the drop target.
-            if not self.is_ingredient:
+            # Fabricators are always top-level and never receive hierarchy links.
+            if not self.is_ingredient and self.kind != NodeKind.CUSTOM_FABRICATOR:
                 hier_in: int
                 with dpg.node_attribute(
                     attribute_type=dpg.mvNode_Attr_Input,
                 ) as hier_in:
-                    dpg.add_text("")  # invisible label, just a pin
+                    hier_label = dpg.add_text("Parent")
+                    dpg.bind_item_theme(hier_label, theme.get_dimmed_text())
                 self.hierarchy_input_attr = hier_in
+                self.hierarchy_label_id = hier_label
 
             # Always-present empty input pin (UE5-style dynamic slots).
             # Recipe nodes: drop target for adding new ingredients.
