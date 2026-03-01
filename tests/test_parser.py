@@ -29,6 +29,7 @@ from craftgraph.models import (
     Ingredient,
     ModifiedRecipe,
     MovedRecipe,
+    ParsedFile,
 )
 from craftgraph.parser import (
     EntryBlock,
@@ -48,9 +49,12 @@ from craftgraph.parser import (
     parse_blocks,
     parse_directory,
     parse_file,
+    parse_text,
     resolve_block_type,
     unescape_value,
+    validate_parsed_file,
 )
+from craftgraph.serializer import serialize_file
 
 # ---------------------------------------------------------------------------
 # clean_value -- whitespace stripping
@@ -1872,85 +1876,249 @@ class TestParseDirectory:
 
 
 # ---------------------------------------------------------------------------
+# validate_parsed_file -- ingredient range validation
+# ---------------------------------------------------------------------------
+
+
+class TestValidateParsedFile:
+    """Post-parse validation: ingredient Required range (CC3 enforces 1-25)."""
+
+    def _make_parsed(
+        self,
+        ingredients: list[Ingredient] | None = None,
+        *,
+        fab_ingredients: list[Ingredient] | None = None,
+    ) -> ParsedFile:
+        """Build a minimal ParsedFile with one recipe and/or one fabricator."""
+        pf = ParsedFile(source_path=Path("test.txt"))
+        if ingredients is not None:
+            pf.modified_recipes = [
+                ModifiedRecipe(item_id="TestRecipe", ingredients=ingredients),
+            ]
+        if fab_ingredients is not None:
+            pf.custom_fabricators = [
+                CustomFabricator(item_id="TestFab", ingredients=fab_ingredients),
+            ]
+        return pf
+
+    def test_valid_range_no_warnings(self) -> None:
+        """Required=1 (min) and Required=25 (max) produce no warnings."""
+        pf = self._make_parsed(
+            [
+                Ingredient(item_id="A", required=1),
+                Ingredient(item_id="B", required=25),
+            ]
+        )
+        assert validate_parsed_file(pf) == []
+
+    def test_required_zero_warns(self) -> None:
+        """Required=0 is below minimum, produces a warning."""
+        pf = self._make_parsed([Ingredient(item_id="Titanium", required=0)])
+        warnings = validate_parsed_file(pf)
+        assert len(warnings) == 1
+        assert "Required=0" in warnings[0]
+        assert "Titanium" in warnings[0]
+
+    def test_required_above_max_warns(self) -> None:
+        """Required=26 exceeds maximum, produces a warning."""
+        pf = self._make_parsed([Ingredient(item_id="Quartz", required=26)])
+        warnings = validate_parsed_file(pf)
+        assert len(warnings) == 1
+        assert "Required=26" in warnings[0]
+
+    def test_negative_required_warns(self) -> None:
+        """Required=-1 is out of range."""
+        pf = self._make_parsed([Ingredient(item_id="Glass", required=-1)])
+        warnings = validate_parsed_file(pf)
+        assert len(warnings) == 1
+        assert "Required=-1" in warnings[0]
+
+    def test_multiple_bad_ingredients(self) -> None:
+        """Two out-of-range ingredients produce two warnings."""
+        pf = self._make_parsed(
+            [
+                Ingredient(item_id="A", required=0),
+                Ingredient(item_id="B", required=5),
+                Ingredient(item_id="C", required=99),
+            ]
+        )
+        warnings = validate_parsed_file(pf)
+        assert len(warnings) == 2
+        warned_ids = {w.split("'")[1] for w in warnings}
+        assert warned_ids == {"A", "C"}
+
+    def test_empty_file_no_warnings(self) -> None:
+        """An empty ParsedFile (no recipes) produces no warnings."""
+        pf = ParsedFile(source_path=Path("empty.txt"))
+        assert validate_parsed_file(pf) == []
+
+    def test_fabricator_build_cost_validated(self) -> None:
+        """CustomFabricator.ingredients (build cost) are also validated."""
+        pf = self._make_parsed(
+            fab_ingredients=[
+                Ingredient(item_id="Titanium", required=0),
+            ]
+        )
+        warnings = validate_parsed_file(pf)
+        assert len(warnings) == 1
+        assert "fabricator" in warnings[0]
+        assert "Titanium" in warnings[0]
+
+    def test_parsing_not_blocked(self) -> None:
+        """Out-of-range Required values still parse into Ingredient."""
+        pf = self._make_parsed(
+            [
+                Ingredient(item_id="X", required=0),
+                Ingredient(item_id="Y", required=100),
+            ]
+        )
+        assert len(pf.modified_recipes) == 1
+        assert pf.modified_recipes[0].ingredients[0].required == 0
+        assert pf.modified_recipes[0].ingredients[1].required == 100
+
+
+# ---------------------------------------------------------------------------
 # Integration tests -- real reference files
 # ---------------------------------------------------------------------------
 
 # Root of the cc3_reference_files directory, resolved relative to this test file.
 _REF_DIR = Path(__file__).resolve().parent.parent / "craftgraph" / "cc3_reference_files"
-_ORIGINAL_RECIPES = _REF_DIR / "original-layout" / "OriginalRecipes"
 _REAL_MOD_EXAMPLES = _REF_DIR / "real-mod-examples"
+_SAMPLE_FILES = _REF_DIR / "original-source" / "CustomCraft3" / "SampleFiles"
 
 
-class TestIntegrationBasicMaterials:
-    """Integration test: parse Resources_BasicMaterials.txt."""
+class TestIntegrationSampleFiles:
+    """Integration tests: parse official CC3 SampleFiles (all 10 block types)."""
 
-    _FILE = _ORIGINAL_RECIPES / "Resources_BasicMaterials.txt"
-
-    def test_file_exists(self) -> None:
-        assert self._FILE.exists(), f"Reference file missing: {self._FILE}"
-
-    def test_block_type(self) -> None:
-        result = parse_file(self._FILE)
+    def test_modified_recipes(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "ModifiedRecipes_Samples.txt")
         assert result.block_type is BlockType.MODIFIED_RECIPES
+        assert len(result.modified_recipes) == 4
 
-    def test_recipe_count(self) -> None:
-        result = parse_file(self._FILE)
-        assert len(result.modified_recipes) == 76
+        welder = result.modified_recipes[0]
+        assert welder.item_id == "Welder"
+        assert len(welder.ingredients) == 4
+        assert welder.ingredients[3] == Ingredient("Battery", 1)
 
-    def test_first_recipe_titanium(self) -> None:
-        result = parse_file(self._FILE)
-        titanium = result.modified_recipes[0]
-        assert titanium.item_id == "Titanium"
-        assert titanium.amount_crafted == 4
-        assert titanium.ingredients == [Ingredient("ScrapMetal", 1)]
+        reactor = result.modified_recipes[2]
+        assert reactor.item_id == "ReactorRod"
+        assert reactor.unlocks == ["DepletedReactorRod"]
 
-    def test_fiber_mesh_two_ingredients(self) -> None:
-        result = parse_file(self._FILE)
-        fiber_mesh = result.modified_recipes[2]
-        assert fiber_mesh.item_id == "FiberMesh"
-        assert len(fiber_mesh.ingredients) == 2
-        assert fiber_mesh.ingredients[0] == Ingredient("CreepvinePiece", 1)
-        assert fiber_mesh.ingredients[1] == Ingredient("PurpleFanSeed", 1)
+        seaglide = result.modified_recipes[3]
+        assert seaglide.item_id == "Seaglide"
+        assert seaglide.force_unlock_at_start is True
 
-    def test_enameled_glass_four_ingredients(self) -> None:
-        result = parse_file(self._FILE)
-        enameled = result.modified_recipes[7]
-        assert enameled.item_id == "EnameledGlass"
-        assert enameled.amount_crafted == 2
-        assert len(enameled.ingredients) == 4
-        assert enameled.ingredients[0] == Ingredient("StalkerTooth", 3)
-        assert enameled.ingredients[3] == Ingredient("Glass", 3)
+    def test_added_recipes(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "AddedRecipes_Samples.txt")
+        assert result.block_type is BlockType.ADDED_RECIPES
+        assert len(result.added_recipes) == 1
 
-    def test_linked_item_ids(self) -> None:
-        """Alch_LabContainer3 uses LinkedItemIDs with duplicates."""
-        result = parse_file(self._FILE)
-        lab3 = result.modified_recipes[13]
-        assert lab3.item_id == "Alch_LabContainer3"
-        assert lab3.amount_crafted == 0
-        assert lab3.linked_item_ids == ["Alch_LabContainer3", "Alch_LabContainer3"]
+        rod = result.added_recipes[0]
+        assert rod.item_id == "DepletedReactorRod"
+        assert rod.path == "Fabricator/Resources/Electronics"
+        assert rod.linked_item_ids == ["UraniniteCrystal"] * 3
+        assert rod.force_unlock_at_start is False
 
-    def test_synthetic_manure_six_ingredients(self) -> None:
-        """Alch_SyntheticManure has 6 ingredients -- stress tests large blocks."""
-        result = parse_file(self._FILE)
-        manure = result.modified_recipes[16]
-        assert manure.item_id == "Alch_SyntheticManure"
-        assert len(manure.ingredients) == 6
-        assert manure.linked_item_ids == [
-            "Alch_SyntheticManure",
-            "Alch_SyntheticManure",
-            "Alch_SyntheticManure",
-        ]
+    def test_alias_recipes(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "AliasRecipes_Samples.txt")
+        assert result.block_type is BlockType.ALIAS_RECIPES
+        assert len(result.alias_recipes) == 2
 
-    def test_last_recipe(self) -> None:
-        result = parse_file(self._FILE)
-        last = result.modified_recipes[-1]
-        assert last.item_id == "Alch_UraniniteCrystal_Block"
-        assert last.ingredients == [Ingredient("UraniniteCrystal", 10)]
+        gallon = result.alias_recipes[0]
+        assert gallon.item_id == "GallonWater"
+        assert gallon.display_name == "Water Jug - 1 gallon"
+        assert gallon.path == "Fabricator/Survival/Water"
 
-    def test_all_recipes_property(self) -> None:
-        """all_recipes returns the same list since there are no fabricators."""
-        result = parse_file(self._FILE)
-        assert len(result.all_recipes) == 76
+        water = result.alias_recipes[1]
+        assert water.item_id == "WaterFromGallon"
+        assert water.amount_crafted == 0
+        assert len(water.linked_item_ids) == 10
+
+    def test_custom_fabricator(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomFabricator_Sample.txt")
+        assert result.block_type is BlockType.CUSTOM_FABRICATORS
+        assert len(result.custom_fabricators) == 1
+
+        fab = result.custom_fabricators[0]
+        assert fab.item_id == "SampleFabricator"
+        assert fab.display_name == "Simple Decorations Fabricator"
+        assert fab.model == "Workbench"
+        assert fab.force_unlock_at_start is True
+        assert fab.color_tint == [1.0, 0.64, 0.0]
+        assert len(fab.tabs) == 1
+        assert fab.tabs[0].tab_id == "ScienceTab"
+        assert fab.tabs[0].display_name == "Science!"
+        assert len(fab.added_recipes) == 1
+        assert fab.added_recipes[0].item_id == "LabEquipment1"
+
+    def test_custom_crafting_tabs(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomTab_Samples.txt")
+        assert result.block_type is BlockType.CUSTOM_CRAFTING_TABS
+        assert len(result.crafting_tabs) == 5
+
+        doodads = result.crafting_tabs[0]
+        assert doodads.tab_id == "Doodads"
+        assert doodads.display_name == "Doodas and Gizmos"
+        assert doodads.sprite_item_id == "AdvancedWiringKit"
+        assert doodads.parent_tab_path == "Fabricator/Personal"
+
+    def test_moved_recipes(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "MovedRecipes_Samples2.txt")
+        assert result.block_type is BlockType.MOVED_RECIPES
+        assert len(result.moved_recipes) == 4
+
+        move = result.moved_recipes[0]
+        assert move.item_id == "TitaniumIngot"
+        assert move.old_path == "Fabricator/Resources/BasicMaterials"
+        assert move.new_path == "Fabricator/Resources/AdvancedMaterials"
+
+        hide = result.moved_recipes[1]
+        assert hide.item_id == "StasisRifle"
+        assert hide.hidden is True
+
+        copy_ = result.moved_recipes[3]
+        assert copy_.item_id == "UltraGlideFins"
+        assert copy_.copied is True
+
+    def test_custom_sizes(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomSizes_Samples.txt")
+        assert result.block_type is BlockType.CUSTOM_SIZES
+        assert len(result.custom_sizes) == 2
+        assert result.custom_sizes[0] == CustomSize("CreepvineSeedCluster", 1, 1)
+
+    def test_custom_bio_fuels(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomBioFuels_Samples.txt")
+        assert result.block_type is BlockType.CUSTOM_BIO_FUELS
+        assert len(result.custom_bio_fuels) == 3
+
+        oculus = result.custom_bio_fuels[0]
+        assert oculus.item_id == "Oculus"
+        assert oculus.energy == 650
+
+        zero_energy = result.custom_bio_fuels[2]
+        assert zero_energy.item_id == "CreepvineSeedCluster"
+        assert zero_energy.energy == 0
+
+    def test_custom_fragment_counts(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomFragments_Samples2.txt")
+        assert result.block_type is BlockType.CUSTOM_FRAGMENT_COUNTS
+        assert len(result.custom_fragment_counts) == 3
+        assert result.custom_fragment_counts[0].item_id == "Seaglide"
+        assert result.custom_fragment_counts[0].fragments_to_scan == 4
+
+    def test_custom_foods(self) -> None:
+        result = parse_file(_SAMPLE_FILES / "CustomFoods_Samplefile.txt")
+        assert result.block_type is BlockType.CUSTOM_FOODS
+        assert len(result.custom_foods) == 1
+
+        burger = result.custom_foods[0]
+        assert burger.item_id == "Peeperburger"
+        assert burger.display_name == "Peeperburger"
+        assert burger.food_value == 20
+        assert burger.water_value == 11
+        assert burger.decay_rate_mod == 0.5
+        assert len(burger.ingredients) == 3
+        assert burger.force_unlock_at_start is True
 
 
 class TestIntegrationAlchCustomFab:
@@ -2183,3 +2351,56 @@ class TestIntegrationCustomSizes:
     def test_last_entry(self) -> None:
         result = parse_file(self._FILE)
         assert result.custom_sizes[-1] == CustomSize("assemmech", 6, 3)
+
+
+# ---------------------------------------------------------------------------
+# parse_text -- string-based parsing entry point
+# ---------------------------------------------------------------------------
+
+
+class TestParseText:
+    """Tests for parse_text() -- string-based parsing entry point."""
+
+    def test_parse_modified_recipe_from_text(self) -> None:
+        text = (
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    AmountCrafted: 2;\n"
+            ");\n"
+        )
+        pf = parse_text(text, source_path=Path("test.txt"))
+        assert pf.block_type == BlockType.MODIFIED_RECIPES
+        assert len(pf.modified_recipes) == 1
+        assert pf.modified_recipes[0].item_id == "Titanium"
+        assert pf.modified_recipes[0].amount_crafted == 2
+
+    def test_parse_text_empty_string(self) -> None:
+        pf = parse_text("", source_path=Path("empty.txt"))
+        assert pf.block_type is None
+        assert pf.source_path == Path("empty.txt")
+
+    def test_parse_text_round_trip_with_serializer(self) -> None:
+        """parse -> serialize -> parse_text must yield identical data."""
+        text = (
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: MyItem;\n"
+            "    Path: Fabricator/Resources;\n"
+            ");\n"
+        )
+        pf1 = parse_text(text, source_path=Path("test.txt"))
+        serialized = serialize_file(pf1)
+        pf2 = parse_text(serialized, source_path=Path("test.txt"))
+        assert pf2.block_type == pf1.block_type
+        assert len(pf2.added_recipes) == len(pf1.added_recipes)
+        assert pf2.added_recipes[0].item_id == pf1.added_recipes[0].item_id
+
+    def test_parse_text_invalid_raises_parse_error(self) -> None:
+        with pytest.raises((ParseError, MappingError)):
+            parse_text("NotABlockType:\n(\n);\n", source_path=Path("bad.txt"))
+
+    def test_parse_text_source_path_preserved(self) -> None:
+        text = "ModifiedRecipes:\n(\n    ItemID: X;\n);\n"
+        pf = parse_text(text, source_path=Path("my/path.txt"))
+        assert pf.source_path == Path("my/path.txt")

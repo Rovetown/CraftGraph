@@ -639,28 +639,31 @@ def _populate_parsed_file(
         result.custom_fragment_counts = [map_custom_fragment_count(e) for e in entries]
 
 
-def parse_file(path: Path) -> ParsedFile:
-    """Parse a single CC3 ``.txt`` file into a fully typed ``ParsedFile``.
+def parse_text(text: str, source_path: Path) -> ParsedFile:
+    """Parse raw EasyMarkup text into a ``ParsedFile``.
 
-    Orchestrates the full pipeline: read file -> clean (Phase 1) ->
-    parse blocks (Phase 3) -> resolve block type -> map entries (Phase 4).
+    Identical to ``parse_file`` but takes a string instead of reading from
+    disk.  Used by the GUI code editor for live re-parsing.
 
-    Raises ``ParseError`` for structural parse failures and ``MappingError``
+    Raises ``ParseError`` for structural failures and ``MappingError``
     for entry-mapping failures (e.g. missing required fields).
     """
-    raw = path.read_text(encoding="utf-8-sig")
-    cleaned = clean_value(raw)
-
+    cleaned = clean_value(text)
     if not cleaned:
-        return ParsedFile(source_path=path)
+        return ParsedFile(source_path=source_path)
 
     block = parse_blocks(cleaned)
     block_type = resolve_block_type(block.block_type)
 
-    result = ParsedFile(source_path=path, block_type=block_type)
+    result = ParsedFile(source_path=source_path, block_type=block_type)
     _populate_parsed_file(result, block_type, block.entries)
-
     return result
+
+
+def parse_file(path: Path) -> ParsedFile:
+    """Parse a single CC3 ``.txt`` file into a fully typed ``ParsedFile``."""
+    raw = path.read_text(encoding="utf-8-sig")
+    return parse_text(raw, source_path=path)
 
 
 # -- Directory-level parsing ---------------------------------------------------
@@ -700,3 +703,37 @@ def parse_directory(path: Path) -> list[ParsedFile]:
         results.append(parsed)
 
     return results
+
+
+# -- Validation ----------------------------------------------------------------
+
+_INGREDIENT_REQUIRED_MIN = 1
+_INGREDIENT_REQUIRED_MAX = 25
+
+
+def validate_parsed_file(parsed: ParsedFile) -> list[str]:
+    """Optional post-parse validation. Returns warning strings (empty = clean)."""
+    warnings: list[str] = []
+    _validate_ingredient_ranges(parsed, warnings)
+    return warnings
+
+
+def _validate_ingredient_ranges(parsed: ParsedFile, warnings: list[str]) -> None:
+    """Check that all ingredient Required values fall within CC3's valid range."""
+    for recipe in parsed.all_recipes:
+        for ing in recipe.ingredients:
+            if not (_INGREDIENT_REQUIRED_MIN <= ing.required <= _INGREDIENT_REQUIRED_MAX):
+                warnings.append(
+                    f"{parsed.source_path.name}: ingredient '{ing.item_id}' "
+                    f"in recipe '{recipe.item_id}' has Required={ing.required} "
+                    f"(valid range: {_INGREDIENT_REQUIRED_MIN}-{_INGREDIENT_REQUIRED_MAX})"
+                )
+    # CustomFabricator build-cost ingredients are NOT in all_recipes
+    for fab in parsed.custom_fabricators:
+        for ing in fab.ingredients:
+            if not (_INGREDIENT_REQUIRED_MIN <= ing.required <= _INGREDIENT_REQUIRED_MAX):
+                warnings.append(
+                    f"{parsed.source_path.name}: ingredient '{ing.item_id}' "
+                    f"in fabricator '{fab.item_id}' has Required={ing.required} "
+                    f"(valid range: {_INGREDIENT_REQUIRED_MIN}-{_INGREDIENT_REQUIRED_MAX})"
+                )
