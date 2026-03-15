@@ -629,51 +629,75 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
 
 
 class AddedRecipeNode(ModifiedRecipeNode):
-    """Visual node for an AddedRecipe.
-
-    Extends ModifiedRecipeNode with a ``path`` widget for the crafting
-    tree placement (e.g. ``"Fabricator/Resources"``).
-    """
+    """Visual node for an AddedRecipe."""
 
     NODE_NAME = "Added Recipe"
+    NODE_COLOR = NODE_COLOR_ADDED_RECIPE
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_ADDED_RECIPE)
-
-        self.add_text_input("path", label="Path", text="")
+    FIELD_REGISTRY = ModifiedRecipeNode.FIELD_REGISTRY + [
+        FieldPin("path", PinType.STRING, label="Path", required=True),
+        FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
+                 enum_items=["", "Uncategorized", "Resources", "Survival", "Personal",
+                             "Machines", "InteriorModules", "InteriorPieces",
+                             "ExteriorModules", "BasePieces", "Cyclops",
+                             "Constructor", "Miscellaneous", "VehicleUpgrades",
+                             "MapRoomUpgrades"]),
+        FieldPin("pda_category", PinType.ENUM, label="PDA Category", nullable=True,
+                 enum_items=["", "Misc", "BasicMaterials", "AdvancedMaterials",
+                             "Electronics", "Water", "CookedFood", "CuredFood",
+                             "FoodAndDrinks", "Equipment", "Tools", "Machines",
+                             "InteriorModule", "InteriorPiece", "ExteriorModule",
+                             "BasePiece", "BaseRoom", "BaseWall", "CyclopsUpgrades",
+                             "Constructor", "VehicleUpgrades", "MapRoomUpgrades",
+                             "Rocket", "Workbench"]),
+    ]
 
 
 class AliasRecipeNode(AddedRecipeNode):
-    """Visual node for an AliasRecipe.
-
-    Extends AddedRecipeNode with display_name and tooltip widgets.
-    """
+    """Visual node for an AliasRecipe."""
 
     NODE_NAME = "Alias Recipe"
+    NODE_COLOR = NODE_COLOR_ALIAS_RECIPE
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_ALIAS_RECIPE)
-
-        self.add_text_input("display_name", label="Display Name", text="")
-        self.add_text_input("tooltip", label="Tooltip", text="")
+    FIELD_REGISTRY = AddedRecipeNode.FIELD_REGISTRY + [
+        FieldPin("display_name", PinType.STRING, label="Display Name"),
+        FieldPin("tooltip", PinType.STRING, label="Tooltip"),
+        FieldPin("functional_id", PinType.STRING, label="Functional ID", nullable=True),
+        FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True),
+    ]
 
 
 class CustomFoodNode(AliasRecipeNode):
-    """Visual node for a CustomFood.
-
-    Extends AliasRecipeNode with food/water/health stat spinboxes.
-    """
+    """Visual node for a CustomFood."""
 
     NODE_NAME = "Custom Food"
+    NODE_COLOR = NODE_COLOR_CUSTOM_FOOD
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_CUSTOM_FOOD)
-
-        self.add_int_edit("food_value", label="Food", value=0, min_value=-100, max_value=100)
-        self.add_int_edit("water_value", label="Water", value=0, min_value=-100, max_value=100)
+    FIELD_REGISTRY = AliasRecipeNode.FIELD_REGISTRY + [
+        FieldPin("food_value", PinType.INT, label="Food", default=0, min_val=-200, max_val=200),
+        FieldPin("water_value", PinType.INT, label="Water", default=0, min_val=-200, max_val=200),
+        FieldPin("oxygen_value", PinType.INT, label="Oxygen", default=0, min_val=-200, max_val=200),
+        FieldPin("health_value", PinType.INT, label="Health", default=0, min_val=-200, max_val=200),
+        FieldPin("decay_rate_mod", PinType.FLOAT, label="Decay Rate", default=0.0,
+                 min_val=0.0, max_val=100.0, step=0.1),
+        FieldPin("food_type", PinType.ENUM, label="Food Type", nullable=True,
+                 enum_items=["", "None", "BigFilteredWater", "DisinfectedWater",
+                             "FilteredWater", "WaterFiltrationSuitWater",
+                             "BulboTreePiece", "PurpleVegetable", "CreepvinePiece",
+                             "JellyPlant", "KooshChunk", "HangingFruit", "Melon",
+                             "NutrientBlock", "CookedPeeper", "CookedHoleFish",
+                             "CookedGarryFish", "CookedReginald", "CookedBladderfish",
+                             "CookedHoverfish", "CookedSpadefish", "CookedBoomerang",
+                             "CookedEyeye", "CookedOculus", "CookedHoopfish",
+                             "CookedSpinefish", "CookedLavaEyeye", "CookedLavaBoomerang",
+                             "CuredPeeper", "CuredHoleFish", "CuredGarryFish",
+                             "CuredReginald", "CuredBladderfish", "CuredHoverfish",
+                             "CuredSpadefish", "CuredBoomerang", "CuredEyeye",
+                             "CuredOculus", "CuredHoopfish", "CuredSpinefish",
+                             "CuredLavaEyeye", "CuredLavaBoomerang"]),
+        FieldPin("use_drink_sound", PinType.ENUM, label="Drink Sound", nullable=True,
+                 enum_items=["auto", "YES", "NO"]),
+    ]
 
 
 # ---------------------------------------------------------------------------

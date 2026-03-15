@@ -172,6 +172,101 @@ class TestModifiedRecipeRegistry:
         assert recipe.get_input("ingredient_1") is not None
 
 
+class TestAddedRecipeRegistry:
+
+    def test_inherits_parent_fields(self, graph):
+        from craftgraph.qt_nodes import ModifiedRecipeNode
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        parent_names = {fp.name for fp in ModifiedRecipeNode.FIELD_REGISTRY}
+        node_names = {fp.name for fp in node.FIELD_REGISTRY}
+        assert parent_names.issubset(node_names)
+
+    def test_own_fields_present(self, graph):
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        assert node.get_widget("path") is not None
+        assert node.get_widget("pda_group") is not None
+        assert node.get_widget("pda_category") is not None
+
+    def test_populate_path(self, graph):
+        from craftgraph.models import AddedRecipe
+        recipe = AddedRecipe(item_id="Knife", path="Fabricator/Tools")
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        node.model_ref = recipe
+        node.populate_from_model()
+        assert node.get_property("path") == "Fabricator/Tools"
+
+    def test_pda_group_nullable(self, graph):
+        from craftgraph.models import AddedRecipe
+        recipe = AddedRecipe(item_id="Knife", pda_group=None)
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        node.model_ref = recipe
+        node.populate_from_model()
+        assert node.get_property("pda_group") == ""
+
+
+class TestAliasRecipeRegistry:
+
+    def test_inherits_added_fields(self, graph):
+        node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        assert node.get_widget("path") is not None
+        assert node.get_widget("pda_group") is not None
+
+    def test_own_fields_present(self, graph):
+        node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        assert node.get_widget("display_name") is not None
+        assert node.get_widget("tooltip") is not None
+        assert node.get_widget("functional_id") is not None
+        assert node.get_widget("sprite_item_id") is not None
+
+    def test_nullable_string_roundtrip(self, graph):
+        from craftgraph.models import AliasRecipe
+        recipe = AliasRecipe(item_id="SuperKnife", functional_id=None, sprite_item_id="Knife")
+        node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        node.model_ref = recipe
+        node.populate_from_model()
+        assert node.get_property("functional_id") == ""
+        assert node.get_property("sprite_item_id") == "Knife"
+
+
+class TestCustomFoodRegistry:
+
+    def test_inherits_alias_fields(self, graph):
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        assert node.get_widget("display_name") is not None
+        assert node.get_widget("tooltip") is not None
+
+    def test_all_food_stat_fields(self, graph):
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        for field_name in ("food_value", "water_value", "oxygen_value",
+                           "health_value", "decay_rate_mod"):
+            assert node.get_widget(field_name) is not None, f"Missing: {field_name}"
+
+    def test_food_type_and_drink_sound(self, graph):
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        assert node.get_widget("food_type") is not None
+        assert node.get_widget("use_drink_sound") is not None
+
+    def test_populate_food_stats(self, graph):
+        from craftgraph.models import CustomFood
+        food = CustomFood(
+            item_id="SpicyTuna", food_value=30, water_value=-5,
+            oxygen_value=10, health_value=5, decay_rate_mod=1.5,
+        )
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node.model_ref = food
+        node.populate_from_model()
+        assert int(node.get_property("food_value")) == 30
+        assert int(node.get_property("water_value")) == -5
+        assert int(node.get_property("oxygen_value")) == 10
+        assert float(node.get_property("decay_rate_mod")) == 1.5
+
+    def test_field_count_includes_all_ancestors(self, graph):
+        """CustomFoodNode should have all fields from the full inheritance chain."""
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        # Modified(7) + Added(3) + Alias(4) + Food(7) = 21
+        assert len(node.FIELD_REGISTRY) == 21
+
+
 # ---------------------------------------------------------------------------
 # Checkbox 2: Recipe nodes
 # ---------------------------------------------------------------------------
