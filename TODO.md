@@ -1,16 +1,31 @@
 # CraftGraph -- TODO
 
-> Priority-ordered, step-by-step build plan.
-> Each step lists what it depends on so nothing is started out of order.
-> Checkboxes track completion; update as we go.
->
-> Completed steps have been moved to [CHANGELOG.md](CHANGELOG.md).
+> Priority-ordered build plan. Checkboxes track completion.
+> Completed Phase 1 (CLI pipeline) and GUI migration (Steps M1-M8) are in
+> [CHANGELOG.md](CHANGELOG.md).
+
+---
+
+## GUI Stack
+
+> **Stack:** PySide6 (Qt6 bindings, LGPL) + NodeGraphQt (node editor, MIT)
+> + QPlainTextEdit + QSyntaxHighlighter (code editor, built into Qt).
+> Install: `pip install craftgraph[qt]`. See [chatgpt.md](chatgpt.md) for
+> the original DPG-to-Qt migration evaluation.
+
+### Optional Fallbacks (Do NOT use unless needed)
+
+- [ ] **OdenGraphQt** ([PyPI](https://pypi.org/project/OdenGraphQt/)): NodeGraphQt fork
+  with PySide6 type hints. Fall back if upstream has blocking PySide6 issues.
+- [ ] **QtMonaco** ([PyPI](https://pypi.org/project/qtmonaco/)): Monaco editor as Qt
+  widget. **Currently incompatible** with PySide6 6.10.2 (pins `<=6.9.0`).
+  Monitor for updates.
 
 ---
 
 ## Cross-Platform Distribution Notes
 
-> Reference for distribution and Phase 2 planning.
+> Reference for distribution planning.
 
 ### Platform compatibility
 
@@ -21,7 +36,8 @@
 | Click | Yes | Yes | Yes | Pure Python |
 | Watchdog | Yes | Yes | Yes | Platform-specific backends (ReadDirectoryChangesW / inotify / FSEvents) |
 | Pyvis | Yes | Yes | Yes | Generates static HTML |
-| Dear PyGui | Yes | Yes | Yes | Pre-built wheels; OpenGL on Win/Linux, Metal on macOS |
+| PySide6 | Yes | Yes | Yes | Pre-built wheels; Qt6 native rendering per platform |
+| NodeGraphQt | Yes | Yes | Yes | Pure Python (depends on PySide6) |
 | PyInstaller | Yes | Yes | Yes | **Cannot cross-compile** (see below) |
 
 ### PyInstaller limitation: no cross-compilation
@@ -44,17 +60,124 @@ binary size or cold-start time becomes an issue.
 ### CLI + GUI coexistence
 
 The architecture supports both in a single binary:
-- `craftgraph check|view|watch` -- CLI commands, no GUI window
-- `craftgraph gui` (Phase 2) -- native Dear PyGui window via OpenGL/Metal
+- `craftgraph check|view|watch|export` -- CLI commands, no GUI window
+- `craftgraph gui` -- PySide6 + NodeGraphQt node editor window
 
-Dear PyGui is an optional dependency (`pip install craftgraph[gui]`), so
-the CLI-only binary stays small. The GUI binary includes the extra dependency.
+PySide6/NodeGraphQt are optional dependencies (`pip install craftgraph[qt]`),
+so the CLI-only binary stays small. The GUI binary includes the extra deps.
 
 ---
 
 ## Phase 2 -- GUI Editor (Continued)
 
 > Remaining sub-steps for the interactive GUI editor.
+
+### References and Knowledge Base
+
+- [ ] **Mini Dependency Graph Panel** -- Evaluate rendering options for an interactive
+  mini dependency graph inside PySide6 (bottom-right panel, zoomable/pannable overview
+  of recipe dependencies). Candidates: QGraphicsView, Pyvis in QWebEngineView,
+  matplotlib FigureCanvas, Mermaid via QWebEngineView, dedicated graph-viz libraries.
+- [x] **CC3/EasyMarkup Source Knowledge Document** -- Create `docs/source-knowledge.md`
+  covering all CC3 block types, EasyMarkup syntax rules, recipe file structure, field
+  semantics, and practical examples. Audience: developers, modders, and players alike.
+
+#### Mini Dependency Graph Panel -- Evaluation
+
+Six approaches were evaluated. Top two recommendations:
+
+| Option | New Deps | Weight | Zoom/Pan | Click | 1000 Nodes | Lines | Risk |
+|--------|----------|--------|----------|-------|------------|-------|------|
+| **1. QGraphicsView** (built-in) | None | 0 MB | Native Qt | Native Qt | Excellent | ~200 | None |
+| **2. PyQtGraph GraphItem** | pyqtgraph | ~15 MB | Native Qt | sigClicked | Very good | ~50 | PySide6 compat TBD |
+
+**Rejected options:**
+- **Pyvis in QWebEngineView:** Works but adds Chromium (+130 MB disk, +175 MB PyInstaller). Overkill.
+- **Matplotlib FigureCanvas:** Toolbar-only zoom, blurry on zoom (rasterized), known memory leak.
+- **Mermaid via QWebEngineView:** Cannot handle 500+ nodes. Layout engine (dagre) designed for docs.
+- **QtGraphVisuals:** Ideal API but dormant (last release Oct 2023), no community adoption.
+
+**Recommendation:** Start with **QGraphicsView** (zero deps, native Qt, full control). Qt's
+official [NetworkX Viewer Example](https://doc.qt.io/qtforpython-6/examples/example_external_networkx.html)
+provides `Node(QGraphicsObject)` + `GraphView(QGraphicsView)` starter code. If code
+brevity matters more, **PyQtGraph** (`GraphItem.setData(pos=..., adj=...)`) is ~50 lines
+but needs PySide6 6.10+ compatibility testing first.
+
+#### CC3/EasyMarkup Source Knowledge
+
+> See [`docs/source-knowledge.md`](docs/source-knowledge.md) for the full reference.
+
+**Scope:** Complete reference for CC3 recipe files, covering:
+- EasyMarkup syntax (7 special characters, quoting, escaping, comments, nesting)
+- All 10 block types with field tables, validation rules, and annotated examples
+- Recipe type inheritance chain (Modified -> Added -> Alias -> CustomFood)
+- CustomFabricator nesting structure and ownership diagram
+- Ingredients syntax (compact and expanded forms, Required range 1-25)
+- Crafting path format and built-in fabricator types
+- Unlock system (Unlocks vs UnlockedBy, OR logic)
+- Sprite resolution order
+- Full enum reference (FabricatorModel, FoodModel, TechGroup, TechCategory)
+- CC3 processing order (10-step global sequence)
+- Common mistakes section for new modders
+
+**Audience:** Written for three levels -- players tweaking recipes, modders building
+fabricators, and developers working on CraftGraph.
+
+---
+
+### Phase 2 Node System Overhaul -- UE5-Style Field-Level Nodes
+
+> Full plan and detailed specs: [`phase2-plan.md`](phase2-plan.md)
+
+#### Phase A -- Pin Infrastructure (foundation)
+
+- [x] Refactor node classes to declare input pins from a field registry
+- [x] Add inline widget rendering per pin type (text, spin, combo, checkbox)
+- [x] Add output pins based on block type capabilities
+- [x] Wire pin connections to model field updates
+
+#### Phase B -- Variable Nodes
+
+- [ ] Create variable node base class with output pin
+- [ ] Implement all 9 variable node types (StringVar, IntVar, FloatVar, BoolVar,
+  CSVListVar, EnumVar, IngredientListVar, PathVar, ColorVar)
+- [ ] Implement connected-overrides-inline behavior
+- [ ] "Promote to Variable" context menu action on pins
+- [ ] **Fabricator/Tab reference nodes (Get/Set pattern)** -- Specialized reference
+  nodes ("Get Fabricator", "Get Tab") that, when connected to a recipe's Path field
+  pin, auto-resolve and set the full fabricator path (e.g., `MyFab/ScienceTab`).
+  The app computes the path from the tab's actual hierarchy position. Eliminates
+  manual path typing. Similar to UE5 Get Variable nodes.
+
+#### Phase C -- Context Menu and File/Project Creation
+
+- [ ] Restructure context menu into categorized submenus (Recipe/Container/Utility/Variables)
+- [ ] Implement New File dialog with block type templates and starter nodes
+- [ ] Implement New Project dialog (name, location, 10 starter files + Assets/ + .craftgraph/)
+- [ ] Starter node spawning per block type
+
+#### Phase D -- Layout and Placement
+
+- [ ] Processing-order column layout for initial file load (left-to-right: Fabricators -> ... -> BioFuels)
+- [ ] Variable node smart placement algorithm (between earliest non-connected and first connected consumer)
+- [ ] Layout persistence updates for new node types
+
+#### Phase E -- Validation and Error Prevention
+
+- [ ] Required-field highlighting (red border on empty required pins)
+- [ ] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
+- [ ] Path reference validation (does the referenced tab exist?)
+- [ ] Export-time validation summary dialog
+- [ ] Syntax highlighter rules for common text-level mistakes (missing `;`, wrong separator, unquoted spaces)
+
+#### Phase F -- Reference Panel and Polish
+
+- [ ] Vanilla ItemID categorized reference panel (dockable, 498 IDs by TechGroup/TechCategory)
+- [ ] Drag-from-panel-to-pin interaction
+- [ ] Enum combo box population with full value lists (FabricatorModel, FoodModel, TechGroup, TechCategory, CraftTree.Type)
+- [ ] CraftTree.Type Centrifuge marked as Below Zero / cut content for SN1
+
+---
 
 ### Step 11f -- Complete Node Types and CC3 Field Inventory
 
@@ -320,8 +443,8 @@ dynamic input slot system:
 5. **This replaces hard-coded pin counts.** No need to pre-allocate ingredient pins or
    Path pins. The node grows organically as connections are made.
 
-Implementation touches: `gui_nodes.py` (node attribute creation, link callbacks),
-`gui_editor.py` (connection handler must detect what was connected and dispatch to the
+Implementation touches: `qt_nodes.py` (node port creation, link callbacks),
+`sync.py` / `qt_gui.py` (connection handler must detect what was connected and dispatch to the
 right command: AddIngredient, ChangeRecipeField for Path, etc.). Likely Step 11h or Step 12.
 
 #### Checkbox 5 -- Color swatch example recipe
@@ -338,7 +461,7 @@ against the dark background. Use the result to tune `_KIND_COLORS` values before
 - [x] Load in `craftgraph gui scripts/color_swatch/` and review all colors side by side.
   **Note:** END_PRODUCT dark gold color never appears in the node editor -- recipe nodes use
   NodeKind colors, and END_PRODUCT items never appear as ingredient instances.
-- [ ] Adjust any `_KIND_COLORS` entries that are too similar or lack contrast; document final palette in a comment in `gui_nodes.py`.
+- [ ] Adjust any node color entries that are too similar or lack contrast; document final palette in a comment in `qt_nodes.py`.
 
 ### Step 11g -- Node Sprite/Image Display
 
@@ -379,8 +502,8 @@ in-game runtime behavior that we don't need to replicate in the editor.
 
 #### Checkboxes 1-4 -- DONE (see CHANGELOG)
 
-All sprite/image work complete: DPG texture pipeline, Assets/ auto-scanning, 48px thumbnails
-on nodes, Browse/Clear image buttons in all edit dialogs, SpriteItemID field for
+All sprite/image work complete: Assets/ auto-scanning, QPixmap thumbnails on nodes,
+Browse/Clear image via SpriteNode connections, SpriteItemID field for
 AliasRecipe/CustomFood/CraftingTab.
 
 ### Step 11i -- Fabricator/Tab/Recipe Hierarchy Connections
@@ -407,7 +530,7 @@ connections, matching the CC3 data model's containment structure:
                                [CustomBlade]
 ```
 
-- [x] **Extend `on_link()` to handle non-recipe targets** (`gui_editor.py`): When the target
+- [x] **Extend `on_link()` to handle non-recipe targets** (`sync.py`): When the target
   node is a non-recipe (fabricator or tab) and the source is a recipe, tab, or fabricator,
   dispatch to the appropriate command instead of silently returning. The dispatch table:
   - Recipe -> Fabricator `__empty__` pin: nest recipe inside `fabricator.added_recipes` (or
@@ -417,17 +540,17 @@ connections, matching the CC3 data model's containment structure:
     `tab.parent_tab_path` to fabricator ID
   - Tab -> Tab `__empty__` pin: set child `tab.parent_tab_path` to parent tab's full path
   - Fabricator -> Fabricator: reject (no nesting of fabricators)
-- [x] **Extend `on_delink()` for non-recipe disconnections** (`gui_editor.py`): Reverse the
+- [x] **Extend `on_delink()` for non-recipe disconnections** (`sync.py`): Reverse the
   above operations. Disconnecting a recipe from a tab clears its `path` field. Disconnecting
   a tab from a fabricator removes it from `fabricator.tabs` and clears `parent_tab_path`.
-- [x] **Display nested fabricator contents** (`gui_editor.py`): Currently
+- [x] **Display nested fabricator contents** (`sync.py`): Currently
   `_spawn_non_recipe_nodes()` only shows top-level entries. Fabricators contain nested
   `tabs`, `added_recipes`, `alias_recipes`, `moved_recipes`, and `custom_foods` that are
   invisible in the GUI. Spawn these as connected child nodes during visual rebuild.
-- [x] **Fabricator/tab output pin semantics** (`gui_nodes.py`): Fabricator and tab output
+- [x] **Fabricator/tab output pin semantics** (`qt_nodes.py`): Fabricator and tab output
   pins show "Contains: N" with the total child count (tabs + recipes + moved_recipes).
   Updated dynamically during `_spawn_nested_fab_contents()` via `update_output_label()`.
-- [x] **Layout for hierarchy** (`gui_editor.py`): 3-column hierarchy-aware positioning:
+- [x] **Layout for hierarchy** (`sync.py`): 3-column hierarchy-aware positioning:
   fabricators leftmost (min_recipe_x - 500), tabs in the middle (min_recipe_x - 250),
   recipes on the right. Other non-recipe entries (sizes, biofuels) cluster below.
   Implemented via `_compute_non_recipe_positions()`.
@@ -473,17 +596,17 @@ intermediate instance node is created. Instance nodes are only created for **raw
 This turns the flat two-layer layout into a true dependency DAG where recipe chains are
 visually connected, making the graph actually useful for understanding crafting dependencies.
 
-- [ ] **Rework `_build_visual_graph()`** (`gui_nodes.py`): For edges where `ing_id` has
+- [ ] **Rework `_build_visual_graph()`** (`qt_nodes.py`): For edges where `ing_id` has
   `is_crafted=True` in the data graph, add a direct edge from `ing_id` to `recipe_id`
   (both are recipe nodes) instead of creating an instance node. Instance nodes remain only
   for edges where `ing_id` is NOT crafted.
-- [ ] **Update `RecipeNodeEditor.load()` wiring loop** (`gui_nodes.py`): After creating
+- [ ] **Update `RecipeNodeEditor.load()` wiring loop** (`qt_nodes.py`): After creating
   recipe nodes, wire direct links from recipe output attrs to consuming recipe input attrs
   for crafted ingredients. Keep the instance-node creation loop for raw materials only.
 - [ ] **Layout adjustments**: The multipartite layout assumed two layers (instances left,
   recipes right). With recipe-to-recipe edges, the layout needs to handle a multi-level
   DAG. Consider topological-sort-based layering or a hierarchical spring layout.
-- [ ] **Interactive editor compatibility** (`gui_editor.py`): Verify that drag-and-drop
+- [ ] **Interactive editor compatibility** (`sync.py`): Verify that drag-and-drop
   wiring, link deletion, and swap logic still work when the source node is a recipe (not
   just an instance). The `_find_recipe_for_ingredient()` helper and delink logic may need
   updates since the source of a link can now be a recipe node, not just an ingredient node.
@@ -547,13 +670,11 @@ needs to stay in sync with the others in real time.
 
 **Scoping notes:**
 - **Code folding: out of scope.** High complexity, low benefit for ~200-line files.
-- **Syntax highlighting approach:** Invisible `input_text` + rendered drawlist
-  overlay (known ImGui pattern). Must handle cursor alignment + scroll sync.
-- **Layout approach:** Use `child_window` with manual sizing or `dearpygui-grid`,
-  NOT DPG's experimental docking API (unstable).
+- **Syntax highlighting and code editor:** Already implemented (QSyntaxHighlighter +
+  QPlainTextEdit via `code_editor.py` and `highlighter.py`). Bidirectional sync done
+  in Step M5.
 - **Thread safety:** Watchdog file watcher runs its own thread. GUI updates must
-  be marshalled into DPG's render loop via a thread-safe queue, not direct
-  DPG calls from the watcher thread (see `dpg-examples` threading pattern).
+  be marshalled into Qt's event loop via signals/slots or QTimer.
 
 - [ ] **Multi-panel layout** -- 1x2 split (or 2x2 grid):
   - **Left panel (large):** Node-based editor from Step 11
@@ -578,14 +699,10 @@ needs to stay in sync with the others in real time.
 
 > Issues observed during testing that impact core editing usability.
 
-- [x] ~~**CRITICAL -- Node connections broken + dynamic input slots missing:**~~ Fixed.
-  Root cause: `on_link()` always routed output-to-input to `_swap_link()`, which silently
-  failed for the default `__input__` pin. Fix: replaced `__input__` with `__empty__` sentinel
-  pin on all nodes; `on_link()` now routes `__empty__` to `AddIngredientCommand` (full rebuild),
-  occupied pins still use incremental swap. 3 contract tests added. Remaining slot semantics
-  (non-recipe dispatch, filled-slot labels) moved to Step 11i.
-- [ ] **Node click-selection not switching focus:** Single-clicking a different node does not always deselect the previously selected node, requiring 2-3 clicks to move selection between nodes. This appears to be a DPG/imnodes interaction issue where the node editor doesn't properly clear the old selection on a new click. Investigate whether `dpg.clear_selected_nodes()` needs to be called on a left-click handler, or if a DPG callback (`node_clicked_handler` / `deselect_handler`) is needed to force single-selection behavior. Files: `gui.py` (input handlers), `gui_editor.py`.
-- ~~**Recipe-to-recipe instance duplication:**~~ Promoted to Step 11h (see above).
+- [ ] **Node click-selection not switching focus:** Single-clicking a different
+  node does not always deselect the previously selected node, requiring 2-3
+  clicks to move selection between nodes. Investigate whether this is a
+  NodeGraphQt quirk or a custom event handler issue. Files: `qt_gui.py`.
 
 ---
 
@@ -601,9 +718,24 @@ needs to stay in sync with the others in real time.
   At minimum: Deuteranopia (red-green), Protanopia (red-green variant), Tritanopia (blue-yellow).
   Each mode remaps `_KIND_COLORS` and `_NODE_COLORS` to a distinguishable palette. Consider using
   established colorblind-safe palettes (e.g., Wong 2011, Okabe-Ito). The active palette should
-  persist across sessions (save to a config file or DPG's built-in value registry).
+  persist across sessions (save to a config file or Qt settings).
 - [ ] **Settings persistence:** Save user settings to a JSON/TOML file (e.g., `~/.craftgraph/settings.toml`
   or alongside the project). Load on startup, apply before building nodes.
+- [ ] **Custom fields and mod imports (Settings > Custom Data):** Allow users to extend
+  CraftGraph's knowledge beyond vanilla + built-in mod-compat IDs:
+  - **Manual custom fields:** Add custom TechType IDs, custom enum values, or custom
+    block fields via a settings dialog. These appear in autocomplete and are valid
+    targets for ItemID pins.
+  - **Import from recipe file:** Point at an existing CC3 `.txt` file and extract all
+    ItemIDs, tab IDs, fabricator IDs, ingredient references, and enum values found in
+    it. Auto-adds them to the custom data pool.
+  - **Import from mod folder:** Scan an entire mod folder and harvest all referenced
+    IDs across all files. Useful for loading another modder's recipes as a dependency.
+  - **Custom data persistence:** Saved per-project (in `.craftgraph/custom_data.json`)
+    and/or globally (in `~/.craftgraph/custom_data.json`). Project-level overrides
+    global.
+  - **Export custom data:** Share your custom ID lists with other modders as a
+    standalone JSON file they can import.
 
 ---
 
@@ -630,23 +762,22 @@ needs to stay in sync with the others in real time.
 - [ ] **Config file for reusable paths and settings:** Create a `craftgraph/config.py` (or TOML
   config loaded at startup) that centralizes frequently reused values: default asset paths,
   sprite thumbnail size, layout constants, debounce intervals, default fabricator models, etc.
-  Currently these are scattered as module-level constants across `gui_nodes.py` (`_THUMB_SIZE`,
-  `_NODE_BOX_PADDING`, `_CLUSTER_GAP`, `_LAYOUT_MARGIN`, `_MAX_ROW_WIDTH`), `watcher.py`
+  Currently these are scattered as module-level constants across `qt_nodes.py`, `sync.py`,
+  `qt_gui.py`, `watcher.py`
   (debounce delay), and others. A single config module makes them discoverable, overridable
   (e.g., via CLI flags or a user config file), and testable.
 - [ ] **Magic number audit and extraction:** Sweep the codebase for unnamed numeric literals
-  (magic numbers) and extract them into named constants. Known candidates: `600.0` default
-  x-position for non-recipe nodes in `gui_editor.py:_spawn_non_recipe_nodes()`, `130` scale
-  factor in `gui_nodes.py:_layout_component()`, `50` margin pixels, `300` debounce ms in
-  `watcher.py`, `48` thumbnail size, `420`/`140` dialog dimensions in cycle warning. Each
+  (magic numbers) and extract them into named constants. Known candidates: layout constants
+  in `sync.py`, `300` debounce ms in `watcher.py`, `48` thumbnail size, dialog dimensions. Each
   should become a named constant in the config module or at module level with a clear name.
 
 ### Editor UX
 
 - [ ] **Enter key to apply in dialogs:** Pressing Enter in the edit/add-recipe dialog should confirm (same as clicking Apply/Create). Optionally Tab to cycle focus between input fields and buttons.
 - [ ] **Spawn new nodes at cursor position:** Right-click > Add Recipe should place the new node where the user clicked, not at a default position. Pass the right-click coordinates through to the recipe creation flow.
-- [ ] Warning triangle icon next to node titles that have issues (circular dependencies, incompatible inputs, missing references). Could use a unicode prefix in the node label or a small DPG text overlay.
+- [ ] Warning triangle icon next to node titles that have issues (circular dependencies, incompatible inputs, missing references). Could use a unicode prefix in the node label or a node widget overlay.
 - [ ] Node search/filter: type an ItemID to highlight or jump to the matching node in the editor.
+- [ ] **"Go to Definition" for nodes:** Double-click (or context menu "Open Source") on a node to switch to the file tab where that node's recipe is defined. Useful for cross-file references: if a recipe in `fabs.txt` uses an ingredient whose recipe lives in `recipes.txt`, opening it jumps to the right tab and selects the node. Two tab concepts: file tabs we *create content in* vs file tabs we *open for reference* (read-only navigation). This lets end users trace ingredients back to their origin without manually searching.
 - [ ] Tooltip on hover showing full recipe details (source file, all fields, cycle membership).
 
 ### Context Menu Improvements
@@ -708,63 +839,20 @@ needs to stay in sync with the others in real time.
 
 ---
 
-## Phase 2 -- Dear PyGui Add-ons and References
-
-> Potential libraries, examples, and inspiration for the GUI editor.
-> Not all of these will be used -- they're here as a reference when
-> deciding what to integrate at each step.
-
-### Libraries / Add-ons
-
-| Repo | What it does | Relevant to |
-|---|---|---|
-| [totallynotdrait/file_dialog](https://github.com/totallynotdrait/file_dialog) | Customizable file dialog with file type icons, drive shortcuts, modern UI | Step 9 (replace built-in DPG file dialog) |
-| [awcook97/DearPyGui_EditThemePlugin](https://github.com/awcook97/DearPyGui_EditThemePlugin) | Runtime theme/font editor plugin with save/load | Step 9-12 (user-customizable themes) |
-| [Atlamillias/dearpygui-grid](https://github.com/Atlamillias/dearpygui-grid) | Grid-based layout manager without separate containers | Step 12 (multi-panel layout) |
-| [fabriciochamon/DearPyGui_Extend](https://github.com/fabriciochamon/DearPyGui_Extend) | Extra widgets: draggable groups, file browser, text-based layout | Step 12 (alternative layout system) |
-| [IvanNazaruk/DearPyGui-ImageController](https://github.com/IvanNazaruk/DearPyGui-ImageController) | Auto load/unload textures by viewport visibility | Step 9-11 (performance with many nodes/icons) |
-
-### Node Editor References
-
-| Repo | What it does | Relevant to |
-|---|---|---|
-| [Cresliant/Cresliant](https://github.com/Cresliant/Cresliant) | Node-based image editor in DPG -- visual node wiring for processing pipelines | Step 9-11 (potential alternative to raw DPG node editor) |
-| [DataExplorerUser/drag_drop_node_editor](https://github.com/DataExplorerUser/drag_drop_node_editor) | Minimal DPG drag-and-drop node editor example | Step 9 (reference for basic node wiring) |
-
-### General Inspiration
-
-| Repo | What it does | Relevant to |
-|---|---|---|
-| [thomasroessl/FlowTutor](https://github.com/thomasroessl/FlowTutor) | Visual flowchart programming environment with node connections and debugging | Step 12 (layout and UX inspiration for the multi-panel flow) |
-| [my1e5/dpg-examples (threading/progress_bar)](https://github.com/my1e5/dpg-examples/blob/main/threading/progress_bar.py) | Background thread with start/pause/resume driving a DPG progress bar | Step 6+9 (async file watching + GUI rebuild without freezing) |
-
----
-
-## Quick Reference: Dependency Graph
+## Quick Reference: Remaining Work
 
 ```
-  Phase 1 (Steps 0-8) ......... DONE (see CHANGELOG.md)
-  Step 9  (Node Viewer) ....... DONE
-  Step 9b (Viewer Polish) ..... DONE
-  Step 10 (Serializer) ........ DONE
-  Step 11  (Interactive Editor)  DONE
-  Step 11b (Autocomplete) ..... DONE
-  Step 11c (Node Kind System) . DONE
-  Step 11e (Parser Refinements) DONE
+  Phase 1 (CLI pipeline) ........... DONE (see CHANGELOG.md)
+  GUI Migration (M1-M8) ............ DONE (see CHANGELOG.md)
+  Steps 11f-11i (Qt GUI) ........... DONE (see CHANGELOG.md)
           |
-  (All above -> CHANGELOG.md)
-  Step 11f (All Node Types + Field Inventory) -- checkbox 5 remaining
-  Step 11g (Sprite/Image Support) ------------- DONE (checkboxes 1-4)
-  BUG FIX: Node connections + dynamic slots ---- DONE
+  Step 11h (Recipe-to-Recipe Links) --- Direct DAG wiring
+  Step 11j (Validation Warnings) ------ User-facing error feedback
           |
-  Step 11i (Fab/Tab/Recipe Hierarchy) --------- High, next up
+  Step 12 (Bidirectional Code Editor) - Multi-panel IDE layout
           |
-  Step 11h (Direct Recipe-to-Recipe Links) ---- Medium, UX correctness
-          |
-  Step 11j (Validation Warnings/Popups) ------- Medium, polish
-          |
-    Step 12  (Multi-Panel + Bidir) -- High, IDE-like experience
-
-  Post-release (no step number):
-    Tab ID Autocomplete ........ Small, extends 11b
+  Known Bugs / UX Fixes
+  Accessibility / Settings
+  Niche QOL Ideas
+  Post-Release Features
 ```
