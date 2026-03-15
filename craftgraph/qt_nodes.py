@@ -324,18 +324,39 @@ def _add_hierarchy_accept_constraints(node: CraftGraphBaseNode, port_name: str) 
     """Constrain a hierarchy/parent port to accept only container children outputs.
 
     This prevents users from dragging a recipe output into a hierarchy slot.
-    Only FabricatorNode.children and CraftingTabNode.children are valid sources.
+    Accepts CraftingTabNode.children and FabricatorNode typed output ports
+    (tabs_out, added_out, alias_out, foods_out, moved_out) for SPLIT_OUTPUTS,
+    plus FabricatorNode.children for backward compatibility.
     """
     port = node.get_input(port_name)
     if port is None:
         return
-    for node_type in (_FABRICATOR_TYPE, _CRAFTING_TAB_TYPE):
+    # Accept CraftingTabNode.children (always valid)
+    node.add_accept_port_type(
+        port,
+        {
+            "port_name": "children",
+            "port_type": PortTypeEnum.OUT.value,
+            "node_type": _CRAFTING_TAB_TYPE,
+        },
+    )
+    # Accept FabricatorNode.children (backward compat when SPLIT_OUTPUTS=False)
+    node.add_accept_port_type(
+        port,
+        {
+            "port_name": "children",
+            "port_type": PortTypeEnum.OUT.value,
+            "node_type": _FABRICATOR_TYPE,
+        },
+    )
+    # Accept typed FabricatorNode output ports (SPLIT_OUTPUTS=True)
+    for typed_port in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
         node.add_accept_port_type(
             port,
             {
-                "port_name": "children",
+                "port_name": typed_port,
                 "port_type": PortTypeEnum.OUT.value,
-                "node_type": node_type,
+                "node_type": _FABRICATOR_TYPE,
             },
         )
 
@@ -706,32 +727,85 @@ class CustomFoodNode(AliasRecipeNode):
 
 
 class FabricatorNode(CraftGraphBaseNode):
-    """Visual node for a CustomFabricator.
-
-    Ports:
-      - output ``children``: tabs and recipes connect here as children
-
-    Widgets:
-      - ``item_id`` (text): fabricator TechType ID
-      - ``display_name`` (text): in-game display name
-      - ``model`` (combo): fabricator model type
-    """
+    """Visual node for a CustomFabricator."""
 
     NODE_NAME = "Fabricator"
+    NODE_COLOR = NODE_COLOR_FABRICATOR
+    SPLIT_OUTPUTS = True
+
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("display_name", PinType.STRING, label="Display Name"),
+        FieldPin("tooltip", PinType.STRING, label="Tooltip"),
+        FieldPin("model", PinType.ENUM, label="Model",
+                 enum_items=["Fabricator", "Workbench", "MoonPool"]),
+        FieldPin("color_tint", PinType.CSV, label="Color Tint"),
+        FieldPin("allowed_in_base", PinType.BOOL, label="In Base", default=True),
+        FieldPin("allowed_in_cyclops", PinType.BOOL, label="In Cyclops", default=True),
+        FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
+                 enum_items=["", "Uncategorized", "Resources", "Survival", "Personal",
+                             "Machines", "InteriorModules", "InteriorPieces",
+                             "ExteriorModules", "BasePieces", "Cyclops",
+                             "Constructor", "Miscellaneous", "VehicleUpgrades",
+                             "MapRoomUpgrades"]),
+        FieldPin("pda_category", PinType.ENUM, label="PDA Category", nullable=True,
+                 enum_items=["", "Misc", "BasicMaterials", "AdvancedMaterials",
+                             "Electronics", "Water", "CookedFood", "CuredFood",
+                             "FoodAndDrinks", "Equipment", "Tools", "Machines",
+                             "InteriorModule", "InteriorPiece", "ExteriorModule",
+                             "BasePiece", "BaseRoom", "BaseWall", "CyclopsUpgrades",
+                             "Constructor", "VehicleUpgrades", "MapRoomUpgrades",
+                             "Rocket", "Workbench"]),
+        FieldPin("force_unlock_at_start", PinType.ENUM, label="Force Unlock",
+                 nullable=True, enum_items=["auto", "YES", "NO"]),
+        FieldPin("unlocked_by", PinType.CSV, label="Unlocked By"),
+        FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
+    ]
+
+    OUTPUT_PINS = [
+        OutputPin("tabs_out", label="Tabs", pin_color=PORT_COLOR_CHILDREN),
+        OutputPin("added_out", label="Added", pin_color=PORT_COLOR_CHILDREN),
+        OutputPin("alias_out", label="Alias", pin_color=PORT_COLOR_CHILDREN),
+        OutputPin("foods_out", label="Foods", pin_color=PORT_COLOR_CHILDREN),
+        OutputPin("moved_out", label="Moved", pin_color=PORT_COLOR_CHILDREN),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.set_color(*NODE_COLOR_FABRICATOR)
 
-        self.add_output("children", multi_output=True, color=PORT_COLOR_CHILDREN)
+        if self.SPLIT_OUTPUTS:
+            # Set accept constraints so typed outputs only connect to correct child types
+            tabs_port = self.get_output("tabs_out")
+            added_port = self.get_output("added_out")
+            alias_port = self.get_output("alias_out")
+            foods_port = self.get_output("foods_out")
+            moved_port = self.get_output("moved_out")
 
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_text_input("display_name", label="Display Name", text="")
-        self.add_combo_menu(
-            "model",
-            label="Model",
-            items=["Fabricator", "Workbench", "MoonPool"],
-        )
+            if tabs_port:
+                tabs_port.add_accept_port_type(
+                    port_name="parent", port_type="in",
+                    node_type="com.craftgraph.CraftingTabNode",
+                )
+            if added_port:
+                added_port.add_accept_port_type(
+                    port_name="hierarchy", port_type="in",
+                    node_type="com.craftgraph.AddedRecipeNode",
+                )
+            if alias_port:
+                alias_port.add_accept_port_type(
+                    port_name="hierarchy", port_type="in",
+                    node_type="com.craftgraph.AliasRecipeNode",
+                )
+            if foods_port:
+                foods_port.add_accept_port_type(
+                    port_name="hierarchy", port_type="in",
+                    node_type="com.craftgraph.CustomFoodNode",
+                )
+            if moved_port:
+                moved_port.add_accept_port_type(
+                    port_name="hierarchy", port_type="in",
+                    node_type="com.craftgraph.MovedRecipeNode",
+                )
 
 
 class CraftingTabNode(CraftGraphBaseNode):

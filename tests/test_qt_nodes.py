@@ -390,7 +390,9 @@ class TestFabricatorNode:
 
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
-        assert node.get_output("children") is not None
+        # SPLIT_OUTPUTS: typed output ports instead of single "children"
+        for name in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
+            assert node.get_output(name) is not None, f"Missing output: {name}"
         # Fabricator has only the sprite_in input (from base class)
         assert node.get_input("sprite_in") is not None
         assert len(node.input_ports()) == 1
@@ -405,6 +407,53 @@ class TestFabricatorNode:
         from craftgraph.qt_nodes import NODE_COLOR_FABRICATOR
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
         assert node.color() == NODE_COLOR_FABRICATOR
+
+
+class TestFabricatorRegistry:
+
+    def test_all_registry_fields_have_widgets(self, graph):
+        from craftgraph.pin_registry import PinType
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        for fp in node.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            assert node.get_widget(fp.name) is not None, f"Missing widget: {fp.name}"
+
+    def test_split_outputs_creates_typed_pins(self, graph):
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        assert node.SPLIT_OUTPUTS is True
+        for name in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
+            assert node.get_output(name) is not None, f"Missing output: {name}"
+
+    def test_no_children_port_when_split(self, graph):
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        assert node.get_output("children") is None
+
+    def test_new_fields_present(self, graph):
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        for name in ("tooltip", "color_tint", "allowed_in_base",
+                      "allowed_in_cyclops", "pda_group", "pda_category",
+                      "force_unlock_at_start", "unlocked_by"):
+            assert node.get_widget(name) is not None, f"Missing widget: {name}"
+
+    def test_populate_from_model(self, graph):
+        from craftgraph.models import CustomFabricator
+        fab = CustomFabricator(
+            item_id="MyFab", display_name="My Fabricator",
+            model="Workbench", allowed_in_base=False,
+            color_tint=[0.5, 0.3, 0.8],
+        )
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        node.model_ref = fab
+        node.populate_from_model()
+        assert node.get_property("item_id") == "MyFab"
+        assert node.get_property("model") == "Workbench"
+        assert node.get_property("color_tint") == "0.5, 0.3, 0.8"
+
+    def test_declares_fields_from_scratch(self, graph):
+        """FabricatorNode does not inherit from ModifiedRecipeNode."""
+        from craftgraph.qt_nodes import FabricatorNode, ModifiedRecipeNode
+        assert not issubclass(FabricatorNode, ModifiedRecipeNode)
 
 
 class TestCraftingTabNode:
@@ -685,10 +734,10 @@ class TestPortConstraints:
             )
 
     def test_fab_to_recipe_hierarchy_connection(self, graph):
-        """Fabricator -> Recipe hierarchy connection should succeed."""
+        """Fabricator typed output -> Recipe hierarchy connection should succeed."""
         fab = graph.create_node("com.craftgraph.FabricatorNode", name="Fab")
         recipe = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
-        fab.get_output("children").connect_to(recipe.get_input("hierarchy"))
+        fab.get_output("added_out").connect_to(recipe.get_input("hierarchy"))
         assert len(recipe.get_input("hierarchy").connected_ports()) == 1
 
     def test_tab_to_recipe_hierarchy_connection(self, graph):
@@ -699,10 +748,10 @@ class TestPortConstraints:
         assert len(recipe.get_input("hierarchy").connected_ports()) == 1
 
     def test_fab_to_tab_hierarchy_connection(self, graph):
-        """Fabricator -> Tab parent connection should succeed."""
+        """Fabricator tabs_out -> Tab parent connection should succeed."""
         fab = graph.create_node("com.craftgraph.FabricatorNode", name="Fab")
         tab = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
-        fab.get_output("children").connect_to(tab.get_input("parent"))
+        fab.get_output("tabs_out").connect_to(tab.get_input("parent"))
         assert len(tab.get_input("parent").connected_ports()) == 1
 
 
