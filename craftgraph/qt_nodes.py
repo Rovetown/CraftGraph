@@ -809,126 +809,82 @@ class FabricatorNode(CraftGraphBaseNode):
 
 
 class CraftingTabNode(CraftGraphBaseNode):
-    """Visual node for a CraftingTab.
-
-    Ports:
-      - input ``parent``: parent fabricator or parent tab
-      - output ``children``: child tabs or recipes connect here
-
-    Widgets:
-      - ``tab_id`` (text): tab identifier
-      - ``display_name`` (text): in-game display name
-    """
+    """Visual node for a CraftingTab."""
 
     NODE_NAME = "Crafting Tab"
+    NODE_COLOR = NODE_COLOR_CRAFTING_TAB
+
+    FIELD_REGISTRY = [
+        FieldPin("tab_id", PinType.STRING, label="TabID", required=True),
+        FieldPin("display_name", PinType.STRING, label="Display Name"),
+        FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True),
+        FieldPin("parent_tab_path", PinType.STRING, label="Parent Path"),
+    ]
+
+    OUTPUT_PINS = [
+        OutputPin("children", label="Children", pin_color=PORT_COLOR_CHILDREN),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.set_color(*NODE_COLOR_CRAFTING_TAB)
-
         self.add_input("parent", multi_input=False, color=PORT_COLOR_HIERARCHY)
-        self.add_output("children", multi_output=True, color=PORT_COLOR_CHILDREN)
-
         _add_hierarchy_accept_constraints(self, "parent")
-
-        self.add_text_input("tab_id", label="TabID", text="")
-        self.add_text_input("display_name", label="Display Name", text="")
 
 
 class CustomSizeNode(CraftGraphBaseNode):
-    """Visual node for a CustomSize entry.
-
-    Widgets:
-      - ``item_id`` (text): the TechType ID
-      - ``size_width`` (int edit): inventory slot width (named to avoid NodeGraphQt reserved ``width``)
-      - ``size_height`` (int edit): inventory slot height (named to avoid NodeGraphQt reserved ``height``)
-    """
+    """Visual node for a CustomSize entry."""
 
     NODE_NAME = "Custom Size"
+    NODE_COLOR = NODE_COLOR_CUSTOM_SIZE
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_CUSTOM_SIZE)
-
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_int_edit("size_width", label="Width", value=1, min_value=1, max_value=6)
-        self.add_int_edit("size_height", label="Height", value=1, min_value=1, max_value=6)
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("size_width", PinType.INT, label="Width", default=1,
+                 min_val=1, max_val=6, model_field="width"),
+        FieldPin("size_height", PinType.INT, label="Height", default=1,
+                 min_val=1, max_val=6, model_field="height"),
+    ]
 
 
 class MovedRecipeNode(CraftGraphBaseNode):
-    """Visual node for a MovedRecipe directive.
-
-    MovedRecipes relocate, copy, or hide existing recipe nodes in the
-    crafting tree. They have no ingredient/output ports since they are
-    purely organizational directives, not crafting recipes.
-
-    Widgets:
-      - ``item_id`` (text): the TechType being moved
-      - ``old_path`` (text): original crafting tree path
-      - ``new_path`` (text): destination crafting tree path
-      - ``copied`` (checkbox): keep original or move
-      - ``hidden`` (checkbox): hide from crafting menu
-    """
+    """Visual node for a MovedRecipe directive."""
 
     NODE_NAME = "Moved Recipe"
+    NODE_COLOR = NODE_COLOR_MOVED_RECIPE
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_MOVED_RECIPE)
-
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_text_input("old_path", label="Old Path", text="")
-        self.add_text_input("new_path", label="New Path", text="")
-        self.add_checkbox("copied", label="Copied", state=False)
-        self.add_checkbox("hidden", label="Hidden", state=False)
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("old_path", PinType.STRING, label="Old Path", nullable=True),
+        FieldPin("new_path", PinType.STRING, label="New Path", nullable=True),
+        FieldPin("copied", PinType.BOOL, label="Copied", default=False),
+        FieldPin("hidden", PinType.BOOL, label="Hidden", default=False),
+    ]
 
 
 class CustomBioFuelNode(CraftGraphBaseNode):
-    """Visual node for a CustomBioFuel entry.
-
-    Defines how much energy an item produces in a BioReactor.
-    Standalone node with no ports.
-
-    Widgets:
-      - ``item_id`` (text): the TechType ID
-      - ``energy`` (float edit): BioReactor energy value
-    """
+    """Visual node for a CustomBioFuel entry."""
 
     NODE_NAME = "Custom BioFuel"
+    NODE_COLOR = NODE_COLOR_CUSTOM_BIO_FUEL
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_CUSTOM_BIO_FUEL)
-
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_float_edit(
-            "energy", label="Energy", value=0.0,
-            min_value=0.0, max_value=99999.0, step=10.0,
-        )
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("energy", PinType.FLOAT, label="Energy", default=0.0,
+                 min_val=0.0, max_val=99999.0, step=10.0),
+    ]
 
 
 class CustomFragmentCountNode(CraftGraphBaseNode):
-    """Visual node for a CustomFragmentCount entry.
-
-    Defines how many fragments the player must scan to unlock a blueprint.
-    Standalone node with no ports.
-
-    Widgets:
-      - ``item_id`` (text): the TechType ID
-      - ``fragments_to_scan`` (int edit): number of fragments required
-    """
+    """Visual node for a CustomFragmentCount entry."""
 
     NODE_NAME = "Custom Fragment Count"
+    NODE_COLOR = NODE_COLOR_CUSTOM_FRAGMENT_COUNT
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_CUSTOM_FRAGMENT_COUNT)
-
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_int_edit(
-            "fragments_to_scan", label="Fragments", value=1,
-            min_value=1, max_value=30,
-        )
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("fragments_to_scan", PinType.INT, label="Fragments", default=1,
+                 min_val=1, max_val=30),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -937,44 +893,33 @@ class CustomFragmentCountNode(CraftGraphBaseNode):
 
 
 class OrphanIngredientNode(CraftGraphBaseNode):
-    """A visual-only ingredient node not backed by the data model.
-
-    Used for staging ingredients before wiring them to a recipe.  Has a
-    muted grey appearance to distinguish from model-backed nodes.  Provides
-    a single output port that connects to recipe ingredient input ports.
-
-    Widgets:
-      - ``item_id`` (text): the TechType ID of the ingredient
-    """
+    """Visual-only ingredient node not backed by the data model."""
 
     NODE_NAME = "Orphan Ingredient"
+    NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_ORPHAN_INGREDIENT)
-        self.add_output("output", multi_output=True, color=PORT_COLOR_OUTPUT)
-        self.add_text_input("item_id", label="ItemID", text="")
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID"),
+    ]
+
+    OUTPUT_PINS = [
+        OutputPin("output", multi=True, pin_color=PORT_COLOR_OUTPUT),
+    ]
 
 
 class SpriteNode(CraftGraphBaseNode):
-    """A node that holds a sprite image reference.
-
-    Connecting this node's ``sprite_out`` port to another node's
-    ``sprite_in`` port overrides or assigns the sprite for that target
-    node.  The default sprite selection (automatic ItemID lookup) remains
-    as a fallback when no SpriteNode is connected.
-
-    Widgets:
-      - ``file_path`` (text): path to the PNG sprite file
-    """
+    """A node that holds a sprite image reference."""
 
     NODE_NAME = "Sprite"
+    NODE_COLOR = NODE_COLOR_SPRITE
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.set_color(*NODE_COLOR_SPRITE)
-        self.add_output("sprite_out", multi_output=True, color=PORT_COLOR_SPRITE)
-        self.add_text_input("file_path", label="File", text="")
+    FIELD_REGISTRY = [
+        FieldPin("file_path", PinType.STRING, label="File"),
+    ]
+
+    OUTPUT_PINS = [
+        OutputPin("sprite_out", multi=True, pin_color=PORT_COLOR_SPRITE),
+    ]
 
 
 # ---------------------------------------------------------------------------

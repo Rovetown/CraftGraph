@@ -849,3 +849,79 @@ class TestSpriteSupport:
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
         node.set_sprite(Path("/nonexistent/sprite.png"))
         assert node.sprite_path is None
+
+
+# ---------------------------------------------------------------------------
+# Task 7: CraftingTab + utility node FIELD_REGISTRY tests
+# ---------------------------------------------------------------------------
+
+
+class TestCraftingTabRegistry:
+
+    def test_all_fields_have_widgets(self, graph):
+        from craftgraph.pin_registry import PinType
+        node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
+        for fp in node.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            assert node.get_widget(fp.name) is not None, f"Missing: {fp.name}"
+
+    def test_parent_port_still_exists(self, graph):
+        node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
+        assert node.get_input("parent") is not None
+
+    def test_children_output_exists(self, graph):
+        node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
+        assert node.get_output("children") is not None
+
+    def test_sprite_item_id_nullable(self, graph):
+        from craftgraph.models import CraftingTab
+        tab = CraftingTab(tab_id="Weapons", sprite_item_id=None)
+        node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
+        node.model_ref = tab
+        node.populate_from_model()
+        assert node.get_property("sprite_item_id") == ""
+
+
+class TestCustomSizeRegistry:
+
+    def test_model_field_remapping(self, graph):
+        from craftgraph.models import CustomSize
+        size = CustomSize(item_id="Titanium", width=3, height=2)
+        node = graph.create_node("com.craftgraph.CustomSizeNode", name="S1")
+        node.model_ref = size
+        node.populate_from_model()
+        assert int(node.get_property("size_width")) == 3
+        assert int(node.get_property("size_height")) == 2
+
+
+class TestMovedRecipeRegistry:
+
+    def test_nullable_paths(self, graph):
+        from craftgraph.models import MovedRecipe
+        moved = MovedRecipe(item_id="Knife", old_path=None, new_path="Fab/Tools")
+        node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
+        node.model_ref = moved
+        node.populate_from_model()
+        assert node.get_property("old_path") == ""
+        assert node.get_property("new_path") == "Fab/Tools"
+
+
+class TestUtilityNodeRegistries:
+    """Spot-check that CustomBioFuel and CustomFragmentCount have registries."""
+
+    def test_biofuel_populate(self, graph):
+        from craftgraph.models import CustomBioFuel
+        fuel = CustomBioFuel(item_id="CreepvinePiece", energy=420.0)
+        node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
+        node.model_ref = fuel
+        node.populate_from_model()
+        assert float(node.get_property("energy")) == 420.0
+
+    def test_fragment_populate(self, graph):
+        from craftgraph.models import CustomFragmentCount
+        frag = CustomFragmentCount(item_id="SeamothFragment", fragments_to_scan=5)
+        node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
+        node.model_ref = frag
+        node.populate_from_model()
+        assert int(node.get_property("fragments_to_scan")) == 5
