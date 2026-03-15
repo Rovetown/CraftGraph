@@ -502,7 +502,11 @@ def compute_hierarchy_layout(
 
             tab_depths = _compute_tab_depths(fab.tabs)
             y = _layout_fab_children_dfs(
-                fab, tab_depths, model_to_node, positions, group_start,
+                fab,
+                tab_depths,
+                model_to_node,
+                positions,
+                group_start,
             )
             y += _LAYOUT_Y_GROUP_GAP
 
@@ -525,7 +529,12 @@ def compute_hierarchy_layout(
         if pf.custom_sizes or pf.moved_recipes or pf.custom_bio_fuels or pf.custom_fragment_counts:
             y += _LAYOUT_Y_GROUP_GAP
 
-        for entries_attr in ("custom_sizes", "moved_recipes", "custom_bio_fuels", "custom_fragment_counts"):
+        for entries_attr in (
+            "custom_sizes",
+            "moved_recipes",
+            "custom_bio_fuels",
+            "custom_fragment_counts",
+        ):
             for entry in getattr(pf, entries_attr):
                 if id(entry) not in model_to_node:
                     continue
@@ -703,7 +712,8 @@ def highlight_cycle_edges(
 
 
 def _get_fab_output_for_child(
-    fab_node: CraftGraphBaseNode, child_node: CraftGraphBaseNode,
+    fab_node: CraftGraphBaseNode,
+    child_node: CraftGraphBaseNode,
 ) -> str:
     """Return the correct output port name on a fabricator for a given child."""
     if not fab_node.SPLIT_OUTPUTS:
@@ -767,8 +777,10 @@ def connect_hierarchy(
                     continue
 
                 parent_out = _resolve_parent_output(
-                    tab.parent_tab_path, fab.item_id,
-                    fab_node, tab_node,
+                    tab.parent_tab_path,
+                    fab.item_id,
+                    fab_node,
+                    tab_node,
                     tab_id_to_node,
                 )
                 parent_out.connect_to(tab_in)
@@ -786,8 +798,10 @@ def connect_hierarchy(
 
                     path = getattr(recipe, "path", "") or ""
                     parent_out = _resolve_parent_output(
-                        path, fab.item_id,
-                        fab_node, recipe_node,
+                        path,
+                        fab.item_id,
+                        fab_node,
+                        recipe_node,
                         tab_id_to_node,
                     )
                     parent_out.connect_to(hier_in)
@@ -870,7 +884,8 @@ def connect_ingredients(
             # Find the first unconnected ingredient port.
             # on_input_connected() auto-spawns new slots as we fill them.
             ing_ports = [
-                p for p in node.input_ports()
+                p
+                for p in node.input_ports()
                 if p.name().startswith("ingredient_") and not p.connected_ports()
             ]
             if not ing_ports:
@@ -885,7 +900,6 @@ def connect_ingredients(
 # ---------------------------------------------------------------------------
 # UI-to-Model: event handler
 # ---------------------------------------------------------------------------
-
 
 
 class UIToModelHandler:
@@ -949,7 +963,10 @@ class UIToModelHandler:
     # -- Signal handlers ------------------------------------------------------
 
     def _on_property_changed(
-        self, node: BaseNode, prop_name: str, prop_value: object,
+        self,
+        node: BaseNode,
+        prop_name: str,
+        prop_value: object,
     ) -> None:
         if self._guard.active:
             return
@@ -1079,7 +1096,9 @@ class UIToModelHandler:
     # -- Ingredient connections -----------------------------------------------
 
     def _handle_ingredient_connected(
-        self, in_port: object, out_port: object,
+        self,
+        in_port: object,
+        out_port: object,
     ) -> None:
         consumer_model = in_port.node().model_ref  # type: ignore[attr-defined]
         source_model = out_port.node().model_ref  # type: ignore[attr-defined]
@@ -1110,7 +1129,9 @@ class UIToModelHandler:
             self._history.execute(cmd)
 
     def _handle_ingredient_disconnected(
-        self, in_port: object, out_port: object,
+        self,
+        in_port: object,
+        out_port: object,
     ) -> None:
         consumer_model = in_port.node().model_ref  # type: ignore[attr-defined]
         source_model = out_port.node().model_ref  # type: ignore[attr-defined]
@@ -1122,7 +1143,7 @@ class UIToModelHandler:
         port_name = in_port.name()  # type: ignore[attr-defined]
         try:
             port_idx = int(port_name.split("_")[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return
 
         if port_idx >= len(consumer_model.ingredients):
@@ -1138,7 +1159,9 @@ class UIToModelHandler:
     # -- Hierarchy connections ------------------------------------------------
 
     def _handle_hierarchy_connected(
-        self, in_port: object, out_port: object,
+        self,
+        in_port: object,
+        out_port: object,
     ) -> None:
         child_model = in_port.node().model_ref  # type: ignore[attr-defined]
         parent_model = out_port.node().model_ref  # type: ignore[attr-defined]
@@ -1159,12 +1182,16 @@ class UIToModelHandler:
 
         if isinstance(child_model, CraftingTab):
             cmd = NestTabInFabricatorCommand(
-                parsed_file=pf, fabricator=parent_model, tab=child_model,
+                parsed_file=pf,
+                fabricator=parent_model,
+                tab=child_model,
             )
         elif isinstance(child_model, AddedRecipe):
             cmd = NestRecipeInFabricatorCommand(
-                parsed_file=pf, fabricator=parent_model,
-                recipe=child_model, path=parent_model.item_id,
+                parsed_file=pf,
+                fabricator=parent_model,
+                recipe=child_model,
+                path=parent_model.item_id,
             )
         else:
             return
@@ -1173,7 +1200,9 @@ class UIToModelHandler:
             self._history.execute(cmd)
 
     def _handle_hierarchy_disconnected(
-        self, in_port: object, out_port: object,
+        self,
+        in_port: object,
+        out_port: object,
     ) -> None:
         child_model = in_port.node().model_ref  # type: ignore[attr-defined]
         parent_model = out_port.node().model_ref  # type: ignore[attr-defined]
@@ -1198,11 +1227,15 @@ class UIToModelHandler:
 
         if isinstance(child_model, CraftingTab) and child_model in parent_model.tabs:
             cmd = UnnestTabFromFabricatorCommand(
-                parsed_file=pf, fabricator=parent_model, tab=child_model,
+                parsed_file=pf,
+                fabricator=parent_model,
+                tab=child_model,
             )
         elif isinstance(child_model, AddedRecipe):
             cmd = UnnestRecipeFromFabricatorCommand(
-                parsed_file=pf, fabricator=parent_model, recipe=child_model,
+                parsed_file=pf,
+                fabricator=parent_model,
+                recipe=child_model,
             )
         else:
             return
@@ -1214,7 +1247,8 @@ class UIToModelHandler:
 
     @staticmethod
     def _handle_sprite_connected(
-        in_port: object, out_port: object,
+        in_port: object,
+        out_port: object,
     ) -> None:
         """Apply the SpriteNode's file_path as a sprite on the target node."""
         from pathlib import Path

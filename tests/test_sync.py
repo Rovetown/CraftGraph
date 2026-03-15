@@ -24,7 +24,6 @@ from craftgraph.sync import SyncGuard
 
 
 class TestSyncGuard:
-
     def test_initially_inactive(self):
         guard = SyncGuard()
         assert not guard.active
@@ -166,7 +165,6 @@ def _make_parsed_file(**kwargs) -> ParsedFile:
 
 
 class TestPopulateGraph:
-
     def test_empty_files_produce_no_nodes(self, graph):
         pf = _make_parsed_file()
         result = populate_graph(graph, [pf])
@@ -272,7 +270,6 @@ class TestPopulateGraph:
 
 
 class TestPopulateGraphWithEditHistory:
-
     def test_edit_history_injected_into_nodes(self, graph, qapp):
         recipe = ModifiedRecipe(item_id="Titanium", amount_crafted=1)
         pf = _make_parsed_file(modified_recipes=[recipe])
@@ -283,7 +280,8 @@ class TestPopulateGraphWithEditHistory:
 
     def test_populate_sets_widget_values(self, graph, qapp):
         recipe = ModifiedRecipe(
-            item_id="Gold", amount_crafted=5,
+            item_id="Gold",
+            amount_crafted=5,
             linked_item_ids=["Silver", "Lead"],
         )
         pf = _make_parsed_file(modified_recipes=[recipe])
@@ -300,7 +298,6 @@ class TestPopulateGraphWithEditHistory:
 
 
 class TestConnectHierarchy:
-
     def test_fab_to_tab_connection(self, graph):
         tab = CraftingTab(tab_id="Potions")
         fab = CustomFabricator(item_id="Fab", tabs=[tab])
@@ -350,13 +347,16 @@ class TestConnectHierarchy:
         """A child tab with parent_tab_path should connect to its parent tab,
         not directly to the fabricator."""
         parent_tab = CraftingTab(
-            tab_id="ComplexCompounds", parent_tab_path="Fab",
+            tab_id="ComplexCompounds",
+            parent_tab_path="Fab",
         )
         child_tab = CraftingTab(
-            tab_id="Enzymes", parent_tab_path="Fab/ComplexCompounds",
+            tab_id="Enzymes",
+            parent_tab_path="Fab/ComplexCompounds",
         )
         fab = CustomFabricator(
-            item_id="Fab", tabs=[parent_tab, child_tab],
+            item_id="Fab",
+            tabs=[parent_tab, child_tab],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
 
@@ -383,7 +383,9 @@ class TestConnectHierarchy:
         tab = CraftingTab(tab_id="Potions", parent_tab_path="Fab")
         recipe = AddedRecipe(item_id="HealthPotion", path="Fab/Potions")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
 
@@ -414,7 +416,6 @@ class TestConnectHierarchy:
 
 
 class TestConnectIngredients:
-
     def test_ingredient_connection(self, graph):
         """Recipe A uses ingredient B; B has its own recipe node."""
         recipe_b = ModifiedRecipe(item_id="Titanium")
@@ -429,10 +430,7 @@ class TestConnectIngredients:
 
         assert count == 1
         alloy_node = m2n[id(recipe_a)]
-        ing_ports = [
-            p for p in alloy_node.input_ports()
-            if p.name().startswith("ingredient_")
-        ]
+        ing_ports = [p for p in alloy_node.input_ports() if p.name().startswith("ingredient_")]
         connected = [p for p in ing_ports if p.connected_ports()]
         assert len(connected) == 1
 
@@ -470,7 +468,6 @@ class TestConnectIngredients:
 
 
 class TestComputeHierarchyLayout:
-
     def test_empty_file_returns_empty(self, graph):
         pf = _make_parsed_file()
         m2n = populate_graph(graph, [pf])
@@ -492,7 +489,9 @@ class TestComputeHierarchyLayout:
         tab = CraftingTab(tab_id="Potions")
         recipe = AddedRecipe(item_id="Potion", path="Fab/Potions")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
         m2n = populate_graph(graph, [pf])
@@ -507,7 +506,9 @@ class TestComputeHierarchyLayout:
         tab = CraftingTab(tab_id="Tab1")
         recipe = AddedRecipe(item_id="R1", path="Fab/Tab1")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
         m2n = populate_graph(graph, [pf])
@@ -539,7 +540,9 @@ class TestComputeHierarchyLayout:
         r1 = AddedRecipe(item_id="R1")
         r2 = AliasRecipe(item_id="R2")
         fab = CustomFabricator(
-            item_id="Fab", added_recipes=[r1], alias_recipes=[r2],
+            item_id="Fab",
+            added_recipes=[r1],
+            alias_recipes=[r2],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
         m2n = populate_graph(graph, [pf])
@@ -611,7 +614,9 @@ class TestComputeHierarchyLayout:
         tab = CraftingTab(tab_id="Tab1")
         recipe = AddedRecipe(item_id="R1")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         top_recipe = ModifiedRecipe(item_id="Solo")
         moved = MovedRecipe(item_id="Moved", old_path="A", new_path="B")
@@ -677,7 +682,6 @@ class TestComputeHierarchyLayout:
 
 
 class TestApplyLayout:
-
     def test_sets_node_positions(self, graph):
         """apply_layout calls set_pos on each node."""
         recipe = ModifiedRecipe(item_id="Test")
@@ -706,7 +710,9 @@ class TestApplyLayout:
         tab = CraftingTab(tab_id="Potions")
         recipe = AddedRecipe(item_id="Potion")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
         m2n = populate_graph(graph, [pf])
@@ -739,7 +745,10 @@ def handler_env(graph):
         m2n = populate_graph(graph, [pf], edit_history=history)
 
     handler = UIToModelHandler(
-        graph=graph, history=history, guard=guard, parsed_files=[pf],
+        graph=graph,
+        history=history,
+        guard=guard,
+        parsed_files=[pf],
     )
     node = m2n[id(recipe)]
     return {
@@ -755,7 +764,6 @@ def handler_env(graph):
 
 
 class TestUIToModelPropertyChanged:
-
     def test_string_property_updates_model(self, handler_env):
         """Changing item_id widget updates the model's item_id."""
         node = handler_env["node"]
@@ -819,7 +827,7 @@ class TestUIToModelPropertyChanged:
         history = handler_env["history"]
         node = handler_env["node"]
 
-        # "name" is a NodeGraphQt internal property, not in _MODEL_PROPERTIES
+        # "name" is a NodeGraphQt internal property, not in FIELD_REGISTRY
         node.set_property("name", "NewName")
 
         assert not history.can_undo
@@ -849,7 +857,6 @@ class TestUIToModelPropertyChanged:
 
 
 class TestUIToModelNonRecipeProperty:
-
     def test_tab_property_updates_model(self, graph):
         """Property changes on CraftingTabNode update the tab model."""
         tab = CraftingTab(tab_id="Potions", display_name="Potions")
@@ -861,7 +868,10 @@ class TestUIToModelNonRecipeProperty:
             m2n = populate_graph(graph, [pf], edit_history=history)
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
         tab_node = m2n[id(tab)]
 
@@ -882,7 +892,10 @@ class TestUIToModelNonRecipeProperty:
             m2n = populate_graph(graph, [pf], edit_history=history)
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
         fab_node = m2n[id(fab)]
 
@@ -893,7 +906,6 @@ class TestUIToModelNonRecipeProperty:
 
 
 class TestUIToModelIngredientPorts:
-
     def test_connect_adds_ingredient(self, graph):
         """Connecting output -> ingredient port adds to model ingredients."""
         source = ModifiedRecipe(item_id="Titanium")
@@ -906,7 +918,10 @@ class TestUIToModelIngredientPorts:
             m2n = populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         source_node = m2n[id(source)]
@@ -941,7 +956,10 @@ class TestUIToModelIngredientPorts:
             source_out.connect_to(ing_in)
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         # Now disconnect (handler is active)
@@ -955,7 +973,6 @@ class TestUIToModelIngredientPorts:
 
 
 class TestUIToModelHierarchyPorts:
-
     def test_connect_nests_tab_in_fab(self, graph):
         """Connecting fab children -> tab parent nests the tab."""
         tab = CraftingTab(tab_id="Potions")
@@ -971,7 +988,10 @@ class TestUIToModelHierarchyPorts:
             m2n = populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         fab_out = m2n[id(fab)].get_output("tabs_out")
@@ -998,7 +1018,10 @@ class TestUIToModelHierarchyPorts:
             m2n = populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         fab_out = m2n[id(fab)].get_output("added_out")
@@ -1037,7 +1060,10 @@ class TestCycleDetection:
             m2n = populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         # B -> A would create A -> B -> A cycle
@@ -1068,7 +1094,10 @@ class TestCycleDetection:
             m2n = populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
         )
 
         # C -> A would create A -> B -> C -> A cycle
@@ -1101,14 +1130,18 @@ class TestCycleDetection:
             rejected.append((consumer, ingredient))
 
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
             on_cycle_rejected=on_rejected,
         )
 
         # Try to connect Beta -> Alpha (would create Alpha -> Beta -> Alpha)
         beta_out = m2n[id(recipe_b)].get_output("output")
         alpha_ing = [
-            p for p in m2n[id(recipe_b)].input_ports()
+            p
+            for p in m2n[id(recipe_b)].input_ports()
             if p.name().startswith("ingredient_") and not p.connected_ports()
         ]
         if alpha_ing:
@@ -1117,7 +1150,8 @@ class TestCycleDetection:
             # So connect Alpha's output to Beta's ingredient port.
             alpha_out = m2n[id(recipe_a)].get_output("output")
             beta_free_ing = [
-                p for p in m2n[id(recipe_b)].input_ports()
+                p
+                for p in m2n[id(recipe_b)].input_ports()
                 if p.name().startswith("ingredient_") and not p.connected_ports()
             ]
             if beta_free_ing:
@@ -1154,7 +1188,10 @@ class TestCycleDetection:
 
         rejected: list[tuple[str, str]] = []
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
             on_cycle_rejected=lambda c, i: rejected.append((c, i)),
         )
 
@@ -1165,7 +1202,8 @@ class TestCycleDetection:
         # Try Y -> X (would create X -> Y -> X cycle)
         x_out = m2n[id(recipe_a)].get_output("output")
         y_free = [
-            p for p in m2n[id(recipe_b)].input_ports()
+            p
+            for p in m2n[id(recipe_b)].input_ports()
             if p.name().startswith("ingredient_") and not p.connected_ports()
         ]
         if y_free:
@@ -1194,14 +1232,18 @@ class TestCycleDetection:
 
         rejected: list[tuple[str, str]] = []
         handler = UIToModelHandler(
-            graph=graph, history=history, guard=guard, parsed_files=[pf],
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
             on_cycle_rejected=lambda c, i: rejected.append((c, i)),
         )
 
         # Connect Bar's output to Foo's ingredient port (no cycle)
         bar_out = m2n[id(recipe_b)].get_output("output")
         foo_ing = [
-            p for p in m2n[id(recipe_a)].input_ports()
+            p
+            for p in m2n[id(recipe_a)].input_ports()
             if p.name().startswith("ingredient_") and not p.connected_ports()
         ]
         bar_out.connect_to(foo_ing[0])
@@ -1285,15 +1327,11 @@ class TestCycleEdgeHighlighting:
 
         viewer = graph.viewer()
         ingredient_pipes = [
-            p for p in viewer.all_pipes()
-            if p.input_port.name.startswith("ingredient_")
+            p for p in viewer.all_pipes() if p.input_port.name.startswith("ingredient_")
         ]
         assert len(ingredient_pipes) > 0
         # At least one pipe should have the cycle color
-        red_pipes = [
-            p for p in ingredient_pipes
-            if p.color == _CYCLE_COLOR
-        ]
+        red_pipes = [p for p in ingredient_pipes if p.color == _CYCLE_COLOR]
         assert len(red_pipes) > 0
 
 
@@ -1303,7 +1341,6 @@ class TestCycleEdgeHighlighting:
 
 
 class TestUpdateChildCountLabels:
-
     def test_fabricator_shows_child_count(self, graph):
         """Fabricator 'tabs_out' port label shows connected count."""
         fab = CustomFabricator(item_id="TestFab")
@@ -1353,7 +1390,9 @@ class TestUpdateChildCountLabels:
         fab = CustomFabricator(item_id="TabFab")
         parent_tab = CraftingTab(tab_id="Parent", display_name="Parent")
         child_tab = CraftingTab(
-            tab_id="Child", display_name="Child", parent_tab_path="Parent",
+            tab_id="Child",
+            display_name="Child",
+            parent_tab_path="Parent",
         )
         fab.tabs.extend([parent_tab, child_tab])
 
