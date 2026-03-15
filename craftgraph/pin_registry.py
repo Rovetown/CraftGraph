@@ -75,3 +75,73 @@ class OutputPin:
     label: str = ""
     multi: bool = True
     pin_color: tuple[int, int, int] = (100, 200, 100)
+
+
+def convert_to_model(field: FieldPin, raw_value: Any) -> Any:
+    """Convert a widget display value to a model-appropriate Python type.
+
+    Called by the auto-wiring layer when a user edits a widget.
+    """
+    match field.pin_type:
+        case PinType.INT:
+            return int(raw_value)
+        case PinType.FLOAT:
+            return float(raw_value)
+        case PinType.BOOL:
+            return bool(raw_value)
+        case PinType.CSV:
+            text = str(raw_value).strip()
+            if not text:
+                return []
+            return [s.strip() for s in text.split(",") if s.strip()]
+        case PinType.ENUM:
+            s = str(raw_value)
+            if field.nullable:
+                if s == "auto":
+                    return None
+                if s == "YES":
+                    return True
+                if s == "NO":
+                    return False
+                if s == "":
+                    return None
+            return s
+        case PinType.STRING:
+            s = str(raw_value)
+            if field.nullable and s == "":
+                return None
+            return s
+        case _:
+            return raw_value
+
+
+def convert_to_display(field: FieldPin, value: Any) -> Any:
+    """Convert a model value to a widget-friendly display value.
+
+    Called by populate_from_model() when loading data into widgets.
+    """
+    match field.pin_type:
+        case PinType.CSV:
+            if isinstance(value, list):
+                return ", ".join(str(v) for v in value)
+            return str(value or "")
+        case PinType.ENUM:
+            if field.nullable:
+                if value is None:
+                    items = field.enum_items or []
+                    return "auto" if "auto" in items else ""
+                if isinstance(value, bool):
+                    return "YES" if value else "NO"
+            return str(value) if value is not None else ""
+        case PinType.STRING:
+            if value is None:
+                return ""
+            return str(value)
+        case PinType.BOOL:
+            if value is None:
+                return bool(field.default) if field.default is not None else False
+            return bool(value)
+        case _:
+            if value is None:
+                return field.default if field.default is not None else ""
+            return value
