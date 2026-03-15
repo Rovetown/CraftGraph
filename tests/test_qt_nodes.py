@@ -113,6 +113,65 @@ class TestRegistryBuildInfrastructure:
         assert not history.can_undo, "populate_from_model must not push undo commands"
 
 
+class TestModifiedRecipeRegistry:
+    """Tests for ModifiedRecipeNode FIELD_REGISTRY migration."""
+
+    def test_all_registry_fields_have_widgets(self, graph):
+        """Every non-INGREDIENT_LIST field should have a widget."""
+        from craftgraph.pin_registry import PinType
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        for fp in node.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            assert node.get_widget(fp.name) is not None, f"Missing widget: {fp.name}"
+
+    def test_output_pins_exist(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        for op in node.OUTPUT_PINS:
+            assert node.get_output(op.name) is not None, f"Missing output: {op.name}"
+
+    def test_registry_has_all_model_fields(self, graph):
+        """FIELD_REGISTRY covers all ModifiedRecipe model fields."""
+        expected = {
+            "item_id", "amount_crafted", "ingredients", "linked_item_ids",
+            "unlocks", "unlocked_by", "force_unlock_at_start",
+        }
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        registry_names = {fp.name for fp in node.FIELD_REGISTRY}
+        assert expected == registry_names
+
+    def test_populate_from_model_roundtrip(self, graph):
+        from craftgraph.models import ModifiedRecipe
+        recipe = ModifiedRecipe(
+            item_id="Titanium",
+            amount_crafted=3,
+            linked_item_ids=["Gold", "Silver"],
+            force_unlock_at_start=True,
+        )
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        node.model_ref = recipe
+        node.populate_from_model()
+        assert node.get_property("item_id") == "Titanium"
+        assert int(node.get_property("amount_crafted")) == 3
+        assert node.get_property("linked_item_ids") == "Gold, Silver"
+        assert node.get_property("force_unlock_at_start") == "YES"
+
+    def test_new_fields_present(self, graph):
+        """Fields that were missing before Phase A should now exist."""
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        assert node.get_widget("linked_item_ids") is not None
+        assert node.get_widget("unlocks") is not None
+        assert node.get_widget("unlocked_by") is not None
+        assert node.get_widget("force_unlock_at_start") is not None
+
+    def test_dynamic_ingredient_slots_still_work(self, graph):
+        """Dynamic ingredient port behavior must survive the migration."""
+        recipe = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        src.get_output("output").connect_to(recipe.get_input("ingredient_0"))
+        assert recipe.get_input("ingredient_1") is not None
+
+
 # ---------------------------------------------------------------------------
 # Checkbox 2: Recipe nodes
 # ---------------------------------------------------------------------------

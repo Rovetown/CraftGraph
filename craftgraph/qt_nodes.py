@@ -572,34 +572,33 @@ class CraftGraphBaseNode(BaseNode):
 
 
 class ModifiedRecipeNode(CraftGraphBaseNode):
-    """Visual node for a ModifiedRecipe.
-
-    Ports:
-      - input ``hierarchy``: parent tab or fabricator
-      - input ``ingredient_0..N``: dynamic ingredient slots
-      - output ``output``: what this recipe produces
-
-    Widgets:
-      - ``item_id`` (text): the TechType ID
-      - ``amount_crafted`` (spinbox): crafting yield
-    """
+    """Visual node for a ModifiedRecipe."""
 
     NODE_NAME = "Modified Recipe"
+    NODE_COLOR = NODE_COLOR_MODIFIED_RECIPE
+
+    FIELD_REGISTRY = [
+        FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
+        FieldPin("amount_crafted", PinType.INT, label="Amount", default=1, min_val=0, max_val=99),
+        FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
+        FieldPin("linked_item_ids", PinType.CSV, label="Linked IDs"),
+        FieldPin("unlocks", PinType.CSV, label="Unlocks"),
+        FieldPin("unlocked_by", PinType.CSV, label="Unlocked By"),
+        FieldPin("force_unlock_at_start", PinType.ENUM, label="Force Unlock",
+                 nullable=True, enum_items=["auto", "YES", "NO"]),
+    ]
+
+    OUTPUT_PINS = [
+        OutputPin("output", label="ItemID", multi=True, pin_color=PORT_COLOR_OUTPUT),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
-        self.set_color(*NODE_COLOR_MODIFIED_RECIPE)
 
-        self.add_output("output", multi_output=True, color=PORT_COLOR_OUTPUT)
+        # Structural ports (not registry-driven)
         self.add_input("hierarchy", multi_input=False, color=PORT_COLOR_HIERARCHY)
         self.add_input("ingredient_0", multi_input=False, color=PORT_COLOR_INGREDIENT)
-
         _add_hierarchy_accept_constraints(self, "hierarchy")
-
-        self.add_text_input("item_id", label="ItemID", text="")
-        self.add_int_edit(
-            "amount_crafted", label="Amount", value=1, min_value=0, max_value=99,
-        )
 
     # -- dynamic ingredient slots ------------------------------------------
 
