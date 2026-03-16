@@ -368,6 +368,32 @@ class TestVariableNodeGUIRegistration:
 
 
 # ---------------------------------------------------------------------------
+# Promote to Variable
+# ---------------------------------------------------------------------------
+
+
+class TestPromoteToVariable:
+
+    def test_pintype_to_variable_kind_mapping(self):
+        from craftgraph.qt_variable_nodes import pintype_to_variable_kind, VariableNodeKind
+        from craftgraph.pin_registry import PinType
+
+        assert pintype_to_variable_kind(PinType.STRING) == VariableNodeKind.STRING_VAR
+        assert pintype_to_variable_kind(PinType.INT) == VariableNodeKind.INT_VAR
+        assert pintype_to_variable_kind(PinType.FLOAT) == VariableNodeKind.FLOAT_VAR
+        assert pintype_to_variable_kind(PinType.BOOL) == VariableNodeKind.BOOL_VAR
+        assert pintype_to_variable_kind(PinType.CSV) == VariableNodeKind.CSV_LIST_VAR
+        assert pintype_to_variable_kind(PinType.ENUM) == VariableNodeKind.ENUM_VAR
+
+    def test_pintype_to_variable_kind_with_override(self):
+        from craftgraph.qt_variable_nodes import pintype_to_variable_kind, VariableNodeKind
+        from craftgraph.pin_registry import PinType
+
+        assert pintype_to_variable_kind(PinType.STRING, "PathVar") == VariableNodeKind.PATH_VAR
+        assert pintype_to_variable_kind(PinType.CSV, "ColorVar") == VariableNodeKind.COLOR_VAR
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 

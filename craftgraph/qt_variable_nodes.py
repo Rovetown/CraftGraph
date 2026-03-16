@@ -210,6 +210,33 @@ VARIABLE_NODE_REGISTRY: dict[VariableNodeKind, type[VariableNode]] = {
 }
 
 
+_PINTYPE_TO_VAR_KIND: dict[PinType, VariableNodeKind] = {
+    PinType.STRING: VariableNodeKind.STRING_VAR,
+    PinType.INT: VariableNodeKind.INT_VAR,
+    PinType.FLOAT: VariableNodeKind.FLOAT_VAR,
+    PinType.BOOL: VariableNodeKind.BOOL_VAR,
+    PinType.CSV: VariableNodeKind.CSV_LIST_VAR,
+    PinType.ENUM: VariableNodeKind.ENUM_VAR,
+}
+
+_PREFERRED_KIND_MAP: dict[str, VariableNodeKind] = {
+    "PathVar": VariableNodeKind.PATH_VAR,
+    "ColorVar": VariableNodeKind.COLOR_VAR,
+}
+
+
+def pintype_to_variable_kind(
+    pin_type: PinType,
+    preferred_var_kind: str | None = None,
+) -> VariableNodeKind | None:
+    """Map a PinType (with optional override) to the right VariableNodeKind."""
+    if preferred_var_kind is not None:
+        override = _PREFERRED_KIND_MAP.get(preferred_var_kind)
+        if override is not None:
+            return override
+    return _PINTYPE_TO_VAR_KIND.get(pin_type)
+
+
 def all_variable_node_classes() -> list[type[VariableNode]]:
     """Return every concrete variable node class for graph.register_node()."""
     return list(VARIABLE_NODE_REGISTRY.values())

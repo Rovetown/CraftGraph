@@ -1051,6 +1051,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             node_class=ModifiedRecipeNode,
         )
 
+        # Promote field to variable node
+        nodes_menu.add_command(
+            "Promote to Variable...",
+            func=self._on_promote_to_variable,
+            node_class=CraftGraphBaseNode,
+        )
+
         # Sprite context menu entries removed -- use SpriteNode instead
 
         # Canvas operations
@@ -1136,6 +1143,84 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._attach_node_completers(node)
 
         return callback
+
+    def _on_promote_to_variable(
+        self, graph: NodeGraph, node: CraftGraphBaseNode,
+    ) -> None:
+        """Promote a field on this node to a standalone variable node."""
+        if getattr(node, "IS_VARIABLE", False):
+            return
+
+        from craftgraph.pin_registry import PinType
+        from craftgraph.qt_variable_nodes import (
+            VARIABLE_NODE_REGISTRY,
+            pintype_to_variable_kind,
+        )
+
+        # Build list of promotable fields
+        promotable: list[tuple[str, str, "FieldPin"]] = []
+        for fp in node.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            field_port = node.get_input(f"field_{fp.name}")
+            if field_port is not None and field_port.connected_ports():
+                continue  # Already connected
+            promotable.append((fp.label or fp.name, fp.name, fp))
+
+        if not promotable:
+            self.statusBar().showMessage("No promotable fields available", 3000)
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+
+        labels = [p[0] for p in promotable]
+        chosen, ok = QInputDialog.getItem(
+            self, "Promote to Variable", "Select field:", labels, 0, False,
+        )
+        if not ok:
+            return
+
+        idx = labels.index(chosen)
+        label, field_name, fp = promotable[idx]
+
+        var_kind = pintype_to_variable_kind(fp.pin_type, fp.preferred_var_kind)
+        if var_kind is None:
+            return
+
+        cls = VARIABLE_NODE_REGISTRY.get(var_kind)
+        if cls is None:
+            return
+
+        # Create variable node
+        type_name = f"com.craftgraph.{cls.__name__}"
+        var_node = graph.create_node(type_name, name=f"{label} Var")
+
+        # Copy current value
+        current_value = node.get_property(field_name)
+        var_node.set_property("value", current_value)
+
+        # Position 200px left of consumer
+        nx, ny = node.pos()
+        var_node.set_pos(nx - 200, ny)
+
+        # Set edit history and attach completers
+        tab = self._active_tab
+        if tab is not None:
+            var_node.set_edit_history(tab.history)
+        self._attach_node_completers(var_node)
+
+        # If enum, copy items
+        if fp.pin_type == PinType.ENUM and fp.enum_items:
+            if hasattr(var_node, "set_enum_items"):
+                var_node.set_enum_items(fp.enum_items)
+
+        # Connect
+        var_out = var_node.get_output("value_out")
+        field_in = node.get_input(f"field_{field_name}")
+        if var_out is not None and field_in is not None:
+            var_out.connect_to(field_in)
+
+        self.statusBar().showMessage(f"Promoted '{label}' to variable node", 3000)
 
     def _on_toggle_selection(self, graph: NodeGraph, node: CraftGraphBaseNode) -> None:
         """Toggle the selection state of the right-clicked node."""
