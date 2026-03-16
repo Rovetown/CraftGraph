@@ -840,6 +840,64 @@ needs to stay in sync with the others in real time.
 
 ---
 
+## AFTER ALPHA ROADMAP
+
+> Large architectural features that require their own branch and design cycle.
+> These are not blocking alpha release but represent the long-term vision.
+
+### Unified Project Editor (replaces per-file tab model)
+
+**Priority:** Post-alpha, high impact
+**Depends on:** All Phase A-C steps complete, stable per-file editing
+**Effort:** Large -- own design + plan + implementation cycle
+
+The current editor is **file-centric**: each open file gets its own tab with its own
+NodeGraph. This mirrors CC3's one-block-type-per-file constraint, but it means
+fabricators/tabs and the recipes that reference them live in separate graphs. Users
+must manually type path strings (e.g., `MyFab/ScienceTab`) to assign recipes to
+fabricators, which is error-prone and disconnected from the visual editor.
+
+The unified project editor replaces per-file tabs with a **single project-wide graph**
+that shows all fabricators, tabs, and recipes from all files in one canvas. Recipes
+connect directly to fabricator/tab nodes visually. On export, the app auto-splits
+the unified graph back into per-file format (one block type per file, as CC3 requires).
+
+**What this enables:**
+- Direct visual wiring of recipes to fabricators/tabs (drag a connection instead of
+  typing a path string)
+- Full project overview in one canvas -- see the entire mod's recipe tree at a glance
+- Eliminates the need for "Get Fabricator" / "Get Tab" reference nodes entirely, since
+  fabs and recipes coexist in the same graph
+- Hierarchy changes (moving a tab, renaming a fabricator) auto-propagate to all
+  connected recipes
+
+**What already exists in the codebase:**
+- Parser handles directory loading, returns `list[ParsedFile]` with `source_path`
+- `connect_hierarchy()` already wires fabs/tabs/recipes across the full model
+- Serializer works per-ParsedFile independently
+- CC3's one-block-type-per-file rule makes auto-splitting deterministic
+
+**What needs building:**
+- [ ] **Project view mode**: Single NodeGraph showing nodes from all loaded files,
+  replacing the current per-file FileTab model. May keep per-file tabs as a
+  secondary "file focus" view.
+- [ ] **File-assignment logic**: When creating a new node in the unified view, determine
+  which file it belongs to. Rules: match by block type to existing files, or create
+  new files when needed. User override via context menu ("Move to file...").
+- [ ] **Visual file grouping**: Color-code or label nodes by source file so users can
+  see which file each node comes from. Optional: collapsible file groups, file
+  boundary indicators on the canvas.
+- [ ] **Auto-split export**: On save/export, group models by block type and source file,
+  serialize each ParsedFile independently. Handle new nodes that don't have a source
+  file yet (assign based on block type or prompt the user).
+- [ ] **Cross-file hierarchy wiring**: Direct node connections replace path strings.
+  When a recipe connects to a tab node, the app computes and stores the path string
+  in the model automatically. When the hierarchy changes, all affected paths update.
+- [ ] **Migration path**: Ensure per-file editing still works during transition. The
+  unified view is additive -- users can switch between project view and file view.
+
+---
+
 ## Quick Reference: Remaining Work
 
 ```
