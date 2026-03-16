@@ -70,6 +70,35 @@ _POPUP_STYLE = (
 )
 
 
+def collect_fab_tab_choices(
+    parsed_files: list,
+) -> tuple[list[str], list[str]]:
+    """Scan parsed files for fabricator and tab choices.
+
+    Returns (fab_choices, tab_choices) where:
+      fab_choices = list of fabricator item_id strings
+      tab_choices = list of resolved slash-separated path strings
+    """
+    fab_choices: list[str] = []
+    tab_choices: list[str] = []
+
+    for pf in parsed_files:
+        for fab in pf.custom_fabricators:
+            fab_choices.append(fab.item_id)
+            for tab in fab.tabs:
+                if tab.parent_tab_path:
+                    tab_choices.append(f"{tab.parent_tab_path}/{tab.tab_id}")
+                else:
+                    tab_choices.append(f"{fab.item_id}/{tab.tab_id}")
+
+        # Standalone crafting tabs (from their own files)
+        for tab in pf.crafting_tabs:
+            if tab.parent_tab_path:
+                tab_choices.append(f"{tab.parent_tab_path}/{tab.tab_id}")
+
+    return fab_choices, tab_choices
+
+
 class NodeCompletionPopup(QtWidgets.QFrame):
     """IDE-style autocomplete popup for node text inputs.
 

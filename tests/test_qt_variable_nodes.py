@@ -305,6 +305,102 @@ class TestGetTabNode:
 
 
 # ---------------------------------------------------------------------------
+# collect_fab_tab_choices
+# ---------------------------------------------------------------------------
+
+
+class TestCollectFabTabChoices:
+    def test_fab_choices_from_parsed_file(self):
+        """Fabricator item_ids are collected from parsed files."""
+        from pathlib import Path
+
+        from craftgraph.models import CustomFabricator, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        fab = CustomFabricator(item_id="MyFab")
+        pf = ParsedFile(source_path=Path("fabs.txt"), custom_fabricators=[fab])
+        fab_choices, tab_choices = collect_fab_tab_choices([pf])
+        assert fab_choices == ["MyFab"]
+
+    def test_tab_choices_resolved_path(self):
+        """Tab paths are resolved as fab_id/tab_id."""
+        from pathlib import Path
+
+        from craftgraph.models import CraftingTab, CustomFabricator, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        tab = CraftingTab(tab_id="SciTab")
+        fab = CustomFabricator(item_id="MyFab", tabs=[tab])
+        pf = ParsedFile(source_path=Path("fabs.txt"), custom_fabricators=[fab])
+        fab_choices, tab_choices = collect_fab_tab_choices([pf])
+        assert tab_choices == ["MyFab/SciTab"]
+
+    def test_nested_tab_uses_parent_tab_path(self):
+        """Tabs with parent_tab_path use it for full path resolution."""
+        from pathlib import Path
+
+        from craftgraph.models import CraftingTab, CustomFabricator, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        parent = CraftingTab(tab_id="SciTab")
+        child = CraftingTab(tab_id="AdvTab", parent_tab_path="MyFab/SciTab")
+        fab = CustomFabricator(item_id="MyFab", tabs=[parent, child])
+        pf = ParsedFile(source_path=Path("fabs.txt"), custom_fabricators=[fab])
+        _, tab_choices = collect_fab_tab_choices([pf])
+        assert "MyFab/SciTab" in tab_choices
+        assert "MyFab/SciTab/AdvTab" in tab_choices
+
+    def test_standalone_crafting_tabs_included(self):
+        """Standalone crafting_tabs with parent_tab_path are included."""
+        from pathlib import Path
+
+        from craftgraph.models import CraftingTab, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        tab = CraftingTab(tab_id="ExtraTab", parent_tab_path="SomeFab")
+        pf = ParsedFile(source_path=Path("tabs.txt"), crafting_tabs=[tab])
+        _, tab_choices = collect_fab_tab_choices([pf])
+        assert "SomeFab/ExtraTab" in tab_choices
+
+    def test_standalone_tab_without_parent_excluded(self):
+        """Standalone tabs without parent_tab_path are excluded (no fab context)."""
+        from pathlib import Path
+
+        from craftgraph.models import CraftingTab, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        tab = CraftingTab(tab_id="OrphanTab", parent_tab_path="")
+        pf = ParsedFile(source_path=Path("tabs.txt"), crafting_tabs=[tab])
+        _, tab_choices = collect_fab_tab_choices([pf])
+        assert tab_choices == []
+
+    def test_empty_parsed_files(self):
+        """No fabs/tabs returns empty lists."""
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        fab_choices, tab_choices = collect_fab_tab_choices([])
+        assert fab_choices == []
+        assert tab_choices == []
+
+    def test_multiple_files(self):
+        """Choices aggregated across multiple parsed files."""
+        from pathlib import Path
+
+        from craftgraph.models import CraftingTab, CustomFabricator, ParsedFile
+        from craftgraph.qt_gui import collect_fab_tab_choices
+
+        fab1 = CustomFabricator(item_id="Fab1", tabs=[CraftingTab(tab_id="T1")])
+        fab2 = CustomFabricator(item_id="Fab2", tabs=[CraftingTab(tab_id="T2")])
+        pf1 = ParsedFile(source_path=Path("f1.txt"), custom_fabricators=[fab1])
+        pf2 = ParsedFile(source_path=Path("f2.txt"), custom_fabricators=[fab2])
+        fab_choices, tab_choices = collect_fab_tab_choices([pf1, pf2])
+        assert "Fab1" in fab_choices
+        assert "Fab2" in fab_choices
+        assert "Fab1/T1" in tab_choices
+        assert "Fab2/T2" in tab_choices
+
+
+# ---------------------------------------------------------------------------
 # Sync integration (variable connections)
 # ---------------------------------------------------------------------------
 
