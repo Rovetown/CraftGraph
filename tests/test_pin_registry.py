@@ -11,7 +11,6 @@ import pytest
 
 
 class TestPinType:
-
     def test_all_variants_exist(self):
         from craftgraph.pin_registry import PinType
 
@@ -25,7 +24,6 @@ class TestPinType:
 
 
 class TestFieldPin:
-
     def test_minimal_construction(self):
         from craftgraph.pin_registry import FieldPin, PinType
 
@@ -83,14 +81,35 @@ class TestFieldPin:
         from craftgraph.pin_registry import FieldPin, PinType
 
         fp = FieldPin(
-            "model", PinType.ENUM,
+            "model",
+            PinType.ENUM,
             enum_items=["Fabricator", "Workbench", "MoonPool"],
         )
         assert fp.enum_items == ["Fabricator", "Workbench", "MoonPool"]
 
 
-class TestOutputPin:
+class TestFieldPinWidgetOverride:
+    def test_default_widget_override_is_none(self):
+        from craftgraph.pin_registry import FieldPin, PinType
 
+        fp = FieldPin("test", PinType.STRING)
+        assert fp.widget_override is None
+
+    def test_widget_override_combo(self):
+        from craftgraph.pin_registry import FieldPin, PinType
+
+        fp = FieldPin("test", PinType.STRING, widget_override="combo")
+        assert fp.widget_override == "combo"
+
+    def test_widget_override_preserved_in_frozen_dataclass(self):
+        from craftgraph.pin_registry import FieldPin, PinType
+
+        fp = FieldPin("test", PinType.STRING, widget_override="combo")
+        with pytest.raises(AttributeError):
+            fp.widget_override = "text"  # type: ignore[misc]
+
+
+class TestOutputPin:
     def test_minimal_construction(self):
         from craftgraph.pin_registry import OutputPin
 
@@ -151,36 +170,41 @@ class TestConvertToModel:
     def test_enum_tristate_auto_to_none(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_model
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_model(fp, "auto") is None
 
     def test_enum_tristate_yes_to_true(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_model
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_model(fp, "YES") is True
 
     def test_enum_tristate_no_to_false(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_model
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_model(fp, "NO") is False
 
     def test_enum_nullable_empty_to_none(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_model
 
-        fp = FieldPin("pda_group", PinType.ENUM, nullable=True,
-                       enum_items=["", "Resources", "Survival"])
+        fp = FieldPin(
+            "pda_group", PinType.ENUM, nullable=True, enum_items=["", "Resources", "Survival"]
+        )
         assert convert_to_model(fp, "") is None
 
     def test_enum_nullable_value_passthrough(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_model
 
-        fp = FieldPin("pda_group", PinType.ENUM, nullable=True,
-                       enum_items=["", "Resources", "Survival"])
+        fp = FieldPin(
+            "pda_group", PinType.ENUM, nullable=True, enum_items=["", "Resources", "Survival"]
+        )
         assert convert_to_model(fp, "Resources") == "Resources"
 
     def test_string_nullable_empty_to_none(self):
@@ -226,29 +250,31 @@ class TestConvertToDisplay:
     def test_nullable_bool_none_to_auto(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_display
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_display(fp, None) == "auto"
 
     def test_nullable_bool_true_to_yes(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_display
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_display(fp, True) == "YES"
 
     def test_nullable_bool_false_to_no(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_display
 
-        fp = FieldPin("force_unlock", PinType.ENUM, nullable=True,
-                       enum_items=["auto", "YES", "NO"])
+        fp = FieldPin(
+            "force_unlock", PinType.ENUM, nullable=True, enum_items=["auto", "YES", "NO"]
+        )
         assert convert_to_display(fp, False) == "NO"
 
     def test_nullable_enum_none_to_empty(self):
         from craftgraph.pin_registry import FieldPin, PinType, convert_to_display
 
-        fp = FieldPin("pda_group", PinType.ENUM, nullable=True,
-                       enum_items=["", "Resources"])
+        fp = FieldPin("pda_group", PinType.ENUM, nullable=True, enum_items=["", "Resources"])
         assert convert_to_display(fp, None) == ""
 
     def test_nullable_string_none_to_empty(self):
