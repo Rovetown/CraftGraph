@@ -435,7 +435,8 @@ class CraftGraphBaseNode(BaseNode):
             self.clear_sprite()
             return
         pixmap = pixmap.scaled(
-            SPRITE_SIZE, SPRITE_SIZE,
+            SPRITE_SIZE,
+            SPRITE_SIZE,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -471,17 +472,22 @@ class CraftGraphBaseNode(BaseNode):
         """Create the appropriate widget for a single field pin."""
         match fp.pin_type:
             case PinType.STRING | PinType.CSV:
-                self.add_text_input(fp.name, label=fp.label, text=str(fp.default or ""))
+                if fp.widget_override == "combo":
+                    self.add_combo_menu(fp.name, label=fp.label, items=fp.enum_items or [])
+                else:
+                    self.add_text_input(fp.name, label=fp.label, text=str(fp.default or ""))
             case PinType.INT:
                 self.add_int_edit(
-                    fp.name, label=fp.label,
+                    fp.name,
+                    label=fp.label,
                     value=fp.default if fp.default is not None else 0,
                     min_value=int(fp.min_val) if fp.min_val is not None else 0,
                     max_value=int(fp.max_val) if fp.max_val is not None else 99,
                 )
             case PinType.FLOAT:
                 self.add_float_edit(
-                    fp.name, label=fp.label,
+                    fp.name,
+                    label=fp.label,
                     value=fp.default if fp.default is not None else 0.0,
                     min_value=float(fp.min_val) if fp.min_val is not None else 0.0,
                     max_value=float(fp.max_val) if fp.max_val is not None else 99999.0,
@@ -603,9 +609,14 @@ class CraftGraphBaseNode(BaseNode):
         their constructors. Without this, the QGraphicsProxyWidget is
         a rootless orphan in the scene graph and never renders.
         """
-        widget = NodeIntEdit(parent=self.view, name=name, label=label,
-                             value=value, min_value=min_value,
-                             max_value=max_value)
+        widget = NodeIntEdit(
+            parent=self.view,
+            name=name,
+            label=label,
+            value=value,
+            min_value=min_value,
+            max_value=max_value,
+        )
         self.add_custom_widget(widget)
 
     def add_float_edit(
@@ -621,9 +632,15 @@ class CraftGraphBaseNode(BaseNode):
 
         Same parent-passing requirement as ``add_int_edit`` -- see its docstring.
         """
-        widget = NodeFloatEdit(parent=self.view, name=name, label=label,
-                               value=value, min_value=min_value,
-                               max_value=max_value, step=step)
+        widget = NodeFloatEdit(
+            parent=self.view,
+            name=name,
+            label=label,
+            value=value,
+            min_value=min_value,
+            max_value=max_value,
+            step=step,
+        )
         self.add_custom_widget(widget)
 
 
@@ -645,8 +662,13 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         FieldPin("linked_item_ids", PinType.CSV, label="Linked IDs"),
         FieldPin("unlocks", PinType.CSV, label="Unlocks"),
         FieldPin("unlocked_by", PinType.CSV, label="Unlocked By"),
-        FieldPin("force_unlock_at_start", PinType.ENUM, label="Force Unlock",
-                 nullable=True, enum_items=["auto", "YES", "NO"]),
+        FieldPin(
+            "force_unlock_at_start",
+            PinType.ENUM,
+            label="Force Unlock",
+            nullable=True,
+            enum_items=["auto", "YES", "NO"],
+        ),
     ]
 
     OUTPUT_PINS = [
@@ -665,16 +687,16 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
 
     def _ingredient_port_count(self) -> int:
         """Count current ingredient input ports."""
-        return len(
-            [p for p in self.input_ports() if p.name().startswith("ingredient_")]
-        )
+        return len([p for p in self.input_ports() if p.name().startswith("ingredient_")])
 
     def on_input_connected(self, in_port, out_port) -> None:  # type: ignore[override]
         """Spawn a new empty ingredient slot when one is filled."""
         if in_port.name().startswith("ingredient_"):
             idx = self._ingredient_port_count()
             self.add_input(
-                f"ingredient_{idx}", multi_input=False, color=PORT_COLOR_INGREDIENT,
+                f"ingredient_{idx}",
+                multi_input=False,
+                color=PORT_COLOR_INGREDIENT,
             )
 
     def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
@@ -682,9 +704,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         if not in_port.name().startswith("ingredient_"):
             return
         # Collect ingredient ports, remove empty ones from the tail
-        ing_ports = [
-            p for p in self.input_ports() if p.name().startswith("ingredient_")
-        ]
+        ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
         while len(ing_ports) > 1 and not ing_ports[-1].connected_ports():
             self.delete_input(ing_ports.pop())
 
@@ -696,21 +716,64 @@ class AddedRecipeNode(ModifiedRecipeNode):
     NODE_COLOR = NODE_COLOR_ADDED_RECIPE
 
     FIELD_REGISTRY = ModifiedRecipeNode.FIELD_REGISTRY + [
-        FieldPin("path", PinType.STRING, label="Path", required=True, preferred_var_kind="PathVar"),
-        FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
-                 enum_items=["", "Uncategorized", "Resources", "Survival", "Personal",
-                             "Machines", "InteriorModules", "InteriorPieces",
-                             "ExteriorModules", "BasePieces", "Cyclops",
-                             "Constructor", "Miscellaneous", "VehicleUpgrades",
-                             "MapRoomUpgrades"]),
-        FieldPin("pda_category", PinType.ENUM, label="PDA Category", nullable=True,
-                 enum_items=["", "Misc", "BasicMaterials", "AdvancedMaterials",
-                             "Electronics", "Water", "CookedFood", "CuredFood",
-                             "FoodAndDrinks", "Equipment", "Tools", "Machines",
-                             "InteriorModule", "InteriorPiece", "ExteriorModule",
-                             "BasePiece", "BaseRoom", "BaseWall", "CyclopsUpgrades",
-                             "Constructor", "VehicleUpgrades", "MapRoomUpgrades",
-                             "Rocket", "Workbench"]),
+        FieldPin(
+            "path", PinType.STRING, label="Path", required=True, preferred_var_kind="PathVar"
+        ),
+        FieldPin(
+            "pda_group",
+            PinType.ENUM,
+            label="PDA Group",
+            nullable=True,
+            enum_items=[
+                "",
+                "Uncategorized",
+                "Resources",
+                "Survival",
+                "Personal",
+                "Machines",
+                "InteriorModules",
+                "InteriorPieces",
+                "ExteriorModules",
+                "BasePieces",
+                "Cyclops",
+                "Constructor",
+                "Miscellaneous",
+                "VehicleUpgrades",
+                "MapRoomUpgrades",
+            ],
+        ),
+        FieldPin(
+            "pda_category",
+            PinType.ENUM,
+            label="PDA Category",
+            nullable=True,
+            enum_items=[
+                "",
+                "Misc",
+                "BasicMaterials",
+                "AdvancedMaterials",
+                "Electronics",
+                "Water",
+                "CookedFood",
+                "CuredFood",
+                "FoodAndDrinks",
+                "Equipment",
+                "Tools",
+                "Machines",
+                "InteriorModule",
+                "InteriorPiece",
+                "ExteriorModule",
+                "BasePiece",
+                "BaseRoom",
+                "BaseWall",
+                "CyclopsUpgrades",
+                "Constructor",
+                "VehicleUpgrades",
+                "MapRoomUpgrades",
+                "Rocket",
+                "Workbench",
+            ],
+        ),
     ]
 
 
@@ -737,27 +800,78 @@ class CustomFoodNode(AliasRecipeNode):
     FIELD_REGISTRY = AliasRecipeNode.FIELD_REGISTRY + [
         FieldPin("food_value", PinType.INT, label="Food", default=0, min_val=-200, max_val=200),
         FieldPin("water_value", PinType.INT, label="Water", default=0, min_val=-200, max_val=200),
-        FieldPin("oxygen_value", PinType.INT, label="Oxygen", default=0, min_val=-200, max_val=200),
-        FieldPin("health_value", PinType.INT, label="Health", default=0, min_val=-200, max_val=200),
-        FieldPin("decay_rate_mod", PinType.FLOAT, label="Decay Rate", default=0.0,
-                 min_val=0.0, max_val=100.0, step=0.1),
-        FieldPin("food_type", PinType.ENUM, label="Food Type", nullable=True,
-                 enum_items=["", "None", "BigFilteredWater", "DisinfectedWater",
-                             "FilteredWater", "WaterFiltrationSuitWater",
-                             "BulboTreePiece", "PurpleVegetable", "CreepvinePiece",
-                             "JellyPlant", "KooshChunk", "HangingFruit", "Melon",
-                             "NutrientBlock", "CookedPeeper", "CookedHoleFish",
-                             "CookedGarryFish", "CookedReginald", "CookedBladderfish",
-                             "CookedHoverfish", "CookedSpadefish", "CookedBoomerang",
-                             "CookedEyeye", "CookedOculus", "CookedHoopfish",
-                             "CookedSpinefish", "CookedLavaEyeye", "CookedLavaBoomerang",
-                             "CuredPeeper", "CuredHoleFish", "CuredGarryFish",
-                             "CuredReginald", "CuredBladderfish", "CuredHoverfish",
-                             "CuredSpadefish", "CuredBoomerang", "CuredEyeye",
-                             "CuredOculus", "CuredHoopfish", "CuredSpinefish",
-                             "CuredLavaEyeye", "CuredLavaBoomerang"]),
-        FieldPin("use_drink_sound", PinType.ENUM, label="Drink Sound", nullable=True,
-                 enum_items=["auto", "YES", "NO"]),
+        FieldPin(
+            "oxygen_value", PinType.INT, label="Oxygen", default=0, min_val=-200, max_val=200
+        ),
+        FieldPin(
+            "health_value", PinType.INT, label="Health", default=0, min_val=-200, max_val=200
+        ),
+        FieldPin(
+            "decay_rate_mod",
+            PinType.FLOAT,
+            label="Decay Rate",
+            default=0.0,
+            min_val=0.0,
+            max_val=100.0,
+            step=0.1,
+        ),
+        FieldPin(
+            "food_type",
+            PinType.ENUM,
+            label="Food Type",
+            nullable=True,
+            enum_items=[
+                "",
+                "None",
+                "BigFilteredWater",
+                "DisinfectedWater",
+                "FilteredWater",
+                "WaterFiltrationSuitWater",
+                "BulboTreePiece",
+                "PurpleVegetable",
+                "CreepvinePiece",
+                "JellyPlant",
+                "KooshChunk",
+                "HangingFruit",
+                "Melon",
+                "NutrientBlock",
+                "CookedPeeper",
+                "CookedHoleFish",
+                "CookedGarryFish",
+                "CookedReginald",
+                "CookedBladderfish",
+                "CookedHoverfish",
+                "CookedSpadefish",
+                "CookedBoomerang",
+                "CookedEyeye",
+                "CookedOculus",
+                "CookedHoopfish",
+                "CookedSpinefish",
+                "CookedLavaEyeye",
+                "CookedLavaBoomerang",
+                "CuredPeeper",
+                "CuredHoleFish",
+                "CuredGarryFish",
+                "CuredReginald",
+                "CuredBladderfish",
+                "CuredHoverfish",
+                "CuredSpadefish",
+                "CuredBoomerang",
+                "CuredEyeye",
+                "CuredOculus",
+                "CuredHoopfish",
+                "CuredSpinefish",
+                "CuredLavaEyeye",
+                "CuredLavaBoomerang",
+            ],
+        ),
+        FieldPin(
+            "use_drink_sound",
+            PinType.ENUM,
+            label="Drink Sound",
+            nullable=True,
+            enum_items=["auto", "YES", "NO"],
+        ),
     ]
 
 
@@ -777,27 +891,77 @@ class FabricatorNode(CraftGraphBaseNode):
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
         FieldPin("display_name", PinType.STRING, label="Display Name"),
         FieldPin("tooltip", PinType.STRING, label="Tooltip"),
-        FieldPin("model", PinType.ENUM, label="Model",
-                 enum_items=["Fabricator", "Workbench", "MoonPool"]),
+        FieldPin(
+            "model",
+            PinType.ENUM,
+            label="Model",
+            enum_items=["Fabricator", "Workbench", "MoonPool"],
+        ),
         FieldPin("color_tint", PinType.CSV, label="Color Tint", preferred_var_kind="ColorVar"),
         FieldPin("allowed_in_base", PinType.BOOL, label="In Base", default=True),
         FieldPin("allowed_in_cyclops", PinType.BOOL, label="In Cyclops", default=True),
-        FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
-                 enum_items=["", "Uncategorized", "Resources", "Survival", "Personal",
-                             "Machines", "InteriorModules", "InteriorPieces",
-                             "ExteriorModules", "BasePieces", "Cyclops",
-                             "Constructor", "Miscellaneous", "VehicleUpgrades",
-                             "MapRoomUpgrades"]),
-        FieldPin("pda_category", PinType.ENUM, label="PDA Category", nullable=True,
-                 enum_items=["", "Misc", "BasicMaterials", "AdvancedMaterials",
-                             "Electronics", "Water", "CookedFood", "CuredFood",
-                             "FoodAndDrinks", "Equipment", "Tools", "Machines",
-                             "InteriorModule", "InteriorPiece", "ExteriorModule",
-                             "BasePiece", "BaseRoom", "BaseWall", "CyclopsUpgrades",
-                             "Constructor", "VehicleUpgrades", "MapRoomUpgrades",
-                             "Rocket", "Workbench"]),
-        FieldPin("force_unlock_at_start", PinType.ENUM, label="Force Unlock",
-                 nullable=True, enum_items=["auto", "YES", "NO"]),
+        FieldPin(
+            "pda_group",
+            PinType.ENUM,
+            label="PDA Group",
+            nullable=True,
+            enum_items=[
+                "",
+                "Uncategorized",
+                "Resources",
+                "Survival",
+                "Personal",
+                "Machines",
+                "InteriorModules",
+                "InteriorPieces",
+                "ExteriorModules",
+                "BasePieces",
+                "Cyclops",
+                "Constructor",
+                "Miscellaneous",
+                "VehicleUpgrades",
+                "MapRoomUpgrades",
+            ],
+        ),
+        FieldPin(
+            "pda_category",
+            PinType.ENUM,
+            label="PDA Category",
+            nullable=True,
+            enum_items=[
+                "",
+                "Misc",
+                "BasicMaterials",
+                "AdvancedMaterials",
+                "Electronics",
+                "Water",
+                "CookedFood",
+                "CuredFood",
+                "FoodAndDrinks",
+                "Equipment",
+                "Tools",
+                "Machines",
+                "InteriorModule",
+                "InteriorPiece",
+                "ExteriorModule",
+                "BasePiece",
+                "BaseRoom",
+                "BaseWall",
+                "CyclopsUpgrades",
+                "Constructor",
+                "VehicleUpgrades",
+                "MapRoomUpgrades",
+                "Rocket",
+                "Workbench",
+            ],
+        ),
+        FieldPin(
+            "force_unlock_at_start",
+            PinType.ENUM,
+            label="Force Unlock",
+            nullable=True,
+            enum_items=["auto", "YES", "NO"],
+        ),
         FieldPin("unlocked_by", PinType.CSV, label="Unlocked By"),
         FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
     ]
@@ -823,27 +987,32 @@ class FabricatorNode(CraftGraphBaseNode):
 
             if tabs_port:
                 tabs_port.add_accept_port_type(
-                    port_name="parent", port_type="in",
+                    port_name="parent",
+                    port_type="in",
                     node_type="com.craftgraph.CraftingTabNode",
                 )
             if added_port:
                 added_port.add_accept_port_type(
-                    port_name="hierarchy", port_type="in",
+                    port_name="hierarchy",
+                    port_type="in",
                     node_type="com.craftgraph.AddedRecipeNode",
                 )
             if alias_port:
                 alias_port.add_accept_port_type(
-                    port_name="hierarchy", port_type="in",
+                    port_name="hierarchy",
+                    port_type="in",
                     node_type="com.craftgraph.AliasRecipeNode",
                 )
             if foods_port:
                 foods_port.add_accept_port_type(
-                    port_name="hierarchy", port_type="in",
+                    port_name="hierarchy",
+                    port_type="in",
                     node_type="com.craftgraph.CustomFoodNode",
                 )
             if moved_port:
                 moved_port.add_accept_port_type(
-                    port_name="hierarchy", port_type="in",
+                    port_name="hierarchy",
+                    port_type="in",
                     node_type="com.craftgraph.MovedRecipeNode",
                 )
 
@@ -858,7 +1027,9 @@ class CraftingTabNode(CraftGraphBaseNode):
         FieldPin("tab_id", PinType.STRING, label="TabID", required=True),
         FieldPin("display_name", PinType.STRING, label="Display Name"),
         FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True),
-        FieldPin("parent_tab_path", PinType.STRING, label="Parent Path", preferred_var_kind="PathVar"),
+        FieldPin(
+            "parent_tab_path", PinType.STRING, label="Parent Path", preferred_var_kind="PathVar"
+        ),
     ]
 
     OUTPUT_PINS = [
@@ -879,10 +1050,24 @@ class CustomSizeNode(CraftGraphBaseNode):
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
-        FieldPin("size_width", PinType.INT, label="Width", default=1,
-                 min_val=1, max_val=6, model_field="width"),
-        FieldPin("size_height", PinType.INT, label="Height", default=1,
-                 min_val=1, max_val=6, model_field="height"),
+        FieldPin(
+            "size_width",
+            PinType.INT,
+            label="Width",
+            default=1,
+            min_val=1,
+            max_val=6,
+            model_field="width",
+        ),
+        FieldPin(
+            "size_height",
+            PinType.INT,
+            label="Height",
+            default=1,
+            min_val=1,
+            max_val=6,
+            model_field="height",
+        ),
     ]
 
 
@@ -894,8 +1079,20 @@ class MovedRecipeNode(CraftGraphBaseNode):
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
-        FieldPin("old_path", PinType.STRING, label="Old Path", nullable=True, preferred_var_kind="PathVar"),
-        FieldPin("new_path", PinType.STRING, label="New Path", nullable=True, preferred_var_kind="PathVar"),
+        FieldPin(
+            "old_path",
+            PinType.STRING,
+            label="Old Path",
+            nullable=True,
+            preferred_var_kind="PathVar",
+        ),
+        FieldPin(
+            "new_path",
+            PinType.STRING,
+            label="New Path",
+            nullable=True,
+            preferred_var_kind="PathVar",
+        ),
         FieldPin("copied", PinType.BOOL, label="Copied", default=False),
         FieldPin("hidden", PinType.BOOL, label="Hidden", default=False),
     ]
@@ -909,8 +1106,15 @@ class CustomBioFuelNode(CraftGraphBaseNode):
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
-        FieldPin("energy", PinType.FLOAT, label="Energy", default=0.0,
-                 min_val=0.0, max_val=99999.0, step=10.0),
+        FieldPin(
+            "energy",
+            PinType.FLOAT,
+            label="Energy",
+            default=0.0,
+            min_val=0.0,
+            max_val=99999.0,
+            step=10.0,
+        ),
     ]
 
 
@@ -922,8 +1126,9 @@ class CustomFragmentCountNode(CraftGraphBaseNode):
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
-        FieldPin("fragments_to_scan", PinType.INT, label="Fragments", default=1,
-                 min_val=1, max_val=30),
+        FieldPin(
+            "fragments_to_scan", PinType.INT, label="Fragments", default=1, min_val=1, max_val=30
+        ),
     ]
 
 

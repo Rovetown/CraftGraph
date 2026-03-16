@@ -25,6 +25,7 @@ from NodeGraphQt import NodeGraph  # noqa: E402
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def qapp():
     """Session-scoped QApplication (one per test run)."""
@@ -52,10 +53,11 @@ def graph(qapp):
 # Checkbox 1: Base node class
 # ---------------------------------------------------------------------------
 
-class TestCraftGraphBaseNode:
 
+class TestCraftGraphBaseNode:
     def test_identifier(self, graph):
         from craftgraph.qt_nodes import IDENTIFIER, ModifiedRecipeNode
+
         assert ModifiedRecipeNode.__identifier__ == IDENTIFIER
 
     def test_model_ref_default_none(self, graph):
@@ -75,10 +77,12 @@ class TestCraftGraphBaseNode:
 
     def test_has_sprite_port_flag_default_true(self, graph):
         from craftgraph.qt_nodes import CraftGraphBaseNode
+
         assert CraftGraphBaseNode.HAS_SPRITE_PORT is True
 
     def test_is_variable_flag_default_false(self, graph):
         from craftgraph.qt_nodes import CraftGraphBaseNode
+
         assert CraftGraphBaseNode.IS_VARIABLE is False
 
     def test_sprite_in_port_exists_on_recipe_node(self, graph):
@@ -97,6 +101,7 @@ class TestFieldInputPorts:
 
     def test_field_port_color_matches_variable_color(self, graph):
         from craftgraph.qt_nodes import PORT_COLOR_VARIABLE
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
         port = node.get_input("field_item_id")
         assert port.color == PORT_COLOR_VARIABLE
@@ -152,11 +157,13 @@ class TestPreferredVarKind:
 
     def test_field_pin_has_preferred_var_kind(self, graph):
         from craftgraph.pin_registry import FieldPin, PinType
+
         fp = FieldPin("test", PinType.STRING, preferred_var_kind="PathVar")
         assert fp.preferred_var_kind == "PathVar"
 
     def test_field_pin_preferred_var_kind_default_none(self, graph):
         from craftgraph.pin_registry import FieldPin, PinType
+
         fp = FieldPin("test", PinType.STRING)
         assert fp.preferred_var_kind is None
 
@@ -167,6 +174,7 @@ class TestRegistryBuildInfrastructure:
     def test_base_class_has_empty_registry(self, graph):
         """CraftGraphBaseNode.FIELD_REGISTRY defaults to empty list."""
         from craftgraph.qt_nodes import CraftGraphBaseNode
+
         assert CraftGraphBaseNode.FIELD_REGISTRY == []
         assert CraftGraphBaseNode.OUTPUT_PINS == []
 
@@ -179,6 +187,7 @@ class TestRegistryBuildInfrastructure:
     def test_set_edit_history(self, graph):
         """set_edit_history() stores the history reference."""
         from craftgraph.commands import EditHistory
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         history = EditHistory()
         node.set_edit_history(history)
@@ -206,6 +215,7 @@ class TestModifiedRecipeRegistry:
     def test_all_registry_fields_have_widgets(self, graph):
         """Every non-INGREDIENT_LIST field should have a widget."""
         from craftgraph.pin_registry import PinType
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
@@ -220,8 +230,13 @@ class TestModifiedRecipeRegistry:
     def test_registry_has_all_model_fields(self, graph):
         """FIELD_REGISTRY covers all ModifiedRecipe model fields."""
         expected = {
-            "item_id", "amount_crafted", "ingredients", "linked_item_ids",
-            "unlocks", "unlocked_by", "force_unlock_at_start",
+            "item_id",
+            "amount_crafted",
+            "ingredients",
+            "linked_item_ids",
+            "unlocks",
+            "unlocked_by",
+            "force_unlock_at_start",
         }
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         registry_names = {fp.name for fp in node.FIELD_REGISTRY}
@@ -229,6 +244,7 @@ class TestModifiedRecipeRegistry:
 
     def test_populate_from_model_roundtrip(self, graph):
         from craftgraph.models import ModifiedRecipe
+
         recipe = ModifiedRecipe(
             item_id="Titanium",
             amount_crafted=3,
@@ -260,9 +276,9 @@ class TestModifiedRecipeRegistry:
 
 
 class TestAddedRecipeRegistry:
-
     def test_inherits_parent_fields(self, graph):
         from craftgraph.qt_nodes import ModifiedRecipeNode
+
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         parent_names = {fp.name for fp in ModifiedRecipeNode.FIELD_REGISTRY}
         node_names = {fp.name for fp in node.FIELD_REGISTRY}
@@ -276,6 +292,7 @@ class TestAddedRecipeRegistry:
 
     def test_populate_path(self, graph):
         from craftgraph.models import AddedRecipe
+
         recipe = AddedRecipe(item_id="Knife", path="Fabricator/Tools")
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         node.model_ref = recipe
@@ -284,6 +301,7 @@ class TestAddedRecipeRegistry:
 
     def test_pda_group_nullable(self, graph):
         from craftgraph.models import AddedRecipe
+
         recipe = AddedRecipe(item_id="Knife", pda_group=None)
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         node.model_ref = recipe
@@ -292,7 +310,6 @@ class TestAddedRecipeRegistry:
 
 
 class TestAliasRecipeRegistry:
-
     def test_inherits_added_fields(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         assert node.get_widget("path") is not None
@@ -307,6 +324,7 @@ class TestAliasRecipeRegistry:
 
     def test_nullable_string_roundtrip(self, graph):
         from craftgraph.models import AliasRecipe
+
         recipe = AliasRecipe(item_id="SuperKnife", functional_id=None, sprite_item_id="Knife")
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         node.model_ref = recipe
@@ -316,7 +334,6 @@ class TestAliasRecipeRegistry:
 
 
 class TestCustomFoodRegistry:
-
     def test_inherits_alias_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         assert node.get_widget("display_name") is not None
@@ -324,8 +341,13 @@ class TestCustomFoodRegistry:
 
     def test_all_food_stat_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
-        for field_name in ("food_value", "water_value", "oxygen_value",
-                           "health_value", "decay_rate_mod"):
+        for field_name in (
+            "food_value",
+            "water_value",
+            "oxygen_value",
+            "health_value",
+            "decay_rate_mod",
+        ):
             assert node.get_widget(field_name) is not None, f"Missing: {field_name}"
 
     def test_food_type_and_drink_sound(self, graph):
@@ -335,9 +357,14 @@ class TestCustomFoodRegistry:
 
     def test_populate_food_stats(self, graph):
         from craftgraph.models import CustomFood
+
         food = CustomFood(
-            item_id="SpicyTuna", food_value=30, water_value=-5,
-            oxygen_value=10, health_value=5, decay_rate_mod=1.5,
+            item_id="SpicyTuna",
+            food_value=30,
+            water_value=-5,
+            oxygen_value=10,
+            health_value=5,
+            decay_rate_mod=1.5,
         )
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node.model_ref = food
@@ -358,8 +385,8 @@ class TestCustomFoodRegistry:
 # Checkbox 2: Recipe nodes
 # ---------------------------------------------------------------------------
 
-class TestModifiedRecipeNode:
 
+class TestModifiedRecipeNode:
     def test_ports_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         assert node.get_output("output") is not None
@@ -405,12 +432,12 @@ class TestModifiedRecipeNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_MODIFIED_RECIPE
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         assert node.color() == NODE_COLOR_MODIFIED_RECIPE
 
 
 class TestAddedRecipeNode:
-
     def test_inherits_recipe_ports(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         assert node.get_output("output") is not None
@@ -423,6 +450,7 @@ class TestAddedRecipeNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_ADDED_RECIPE
+
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         assert node.color() == NODE_COLOR_ADDED_RECIPE
 
@@ -434,7 +462,6 @@ class TestAddedRecipeNode:
 
 
 class TestAliasRecipeNode:
-
     def test_display_name_and_tooltip_widgets(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         assert node.get_widget("display_name") is not None
@@ -446,12 +473,12 @@ class TestAliasRecipeNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_ALIAS_RECIPE
+
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         assert node.color() == NODE_COLOR_ALIAS_RECIPE
 
 
 class TestCustomFoodNode:
-
     def test_food_stat_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         assert node.get_widget("food_value") is not None
@@ -465,6 +492,7 @@ class TestCustomFoodNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_CUSTOM_FOOD
+
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         assert node.color() == NODE_COLOR_CUSTOM_FOOD
 
@@ -473,8 +501,8 @@ class TestCustomFoodNode:
 # Checkbox 3: Container nodes
 # ---------------------------------------------------------------------------
 
-class TestFabricatorNode:
 
+class TestFabricatorNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
         # SPLIT_OUTPUTS: typed output ports instead of single "children"
@@ -492,14 +520,15 @@ class TestFabricatorNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_FABRICATOR
+
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
         assert node.color() == NODE_COLOR_FABRICATOR
 
 
 class TestFabricatorRegistry:
-
     def test_all_registry_fields_have_widgets(self, graph):
         from craftgraph.pin_registry import PinType
+
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
@@ -518,16 +547,26 @@ class TestFabricatorRegistry:
 
     def test_new_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
-        for name in ("tooltip", "color_tint", "allowed_in_base",
-                      "allowed_in_cyclops", "pda_group", "pda_category",
-                      "force_unlock_at_start", "unlocked_by"):
+        for name in (
+            "tooltip",
+            "color_tint",
+            "allowed_in_base",
+            "allowed_in_cyclops",
+            "pda_group",
+            "pda_category",
+            "force_unlock_at_start",
+            "unlocked_by",
+        ):
             assert node.get_widget(name) is not None, f"Missing widget: {name}"
 
     def test_populate_from_model(self, graph):
         from craftgraph.models import CustomFabricator
+
         fab = CustomFabricator(
-            item_id="MyFab", display_name="My Fabricator",
-            model="Workbench", allowed_in_base=False,
+            item_id="MyFab",
+            display_name="My Fabricator",
+            model="Workbench",
+            allowed_in_base=False,
             color_tint=[0.5, 0.3, 0.8],
         )
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
@@ -540,11 +579,11 @@ class TestFabricatorRegistry:
     def test_declares_fields_from_scratch(self, graph):
         """FabricatorNode does not inherit from ModifiedRecipeNode."""
         from craftgraph.qt_nodes import FabricatorNode, ModifiedRecipeNode
+
         assert not issubclass(FabricatorNode, ModifiedRecipeNode)
 
 
 class TestCraftingTabNode:
-
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="Tab1")
         assert node.get_input("parent") is not None
@@ -557,12 +596,12 @@ class TestCraftingTabNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_CRAFTING_TAB
+
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="Tab1")
         assert node.color() == NODE_COLOR_CRAFTING_TAB
 
 
 class TestMovedRecipeNode:
-
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
         # sprite_in + 5 field_* ports
@@ -580,12 +619,12 @@ class TestMovedRecipeNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_MOVED_RECIPE
+
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
         assert node.color() == NODE_COLOR_MOVED_RECIPE
 
 
 class TestCustomBioFuelNode:
-
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
         assert node.get_input("sprite_in") is not None
@@ -604,12 +643,12 @@ class TestCustomBioFuelNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_CUSTOM_BIO_FUEL
+
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
         assert node.color() == NODE_COLOR_CUSTOM_BIO_FUEL
 
 
 class TestCustomFragmentCountNode:
-
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
         assert node.get_input("sprite_in") is not None
@@ -628,6 +667,7 @@ class TestCustomFragmentCountNode:
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_CUSTOM_FRAGMENT_COUNT
+
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
         assert node.color() == NODE_COLOR_CUSTOM_FRAGMENT_COUNT
 
@@ -636,25 +676,29 @@ class TestCustomFragmentCountNode:
 # Checkbox 4: Node registry
 # ---------------------------------------------------------------------------
 
-class TestNodeRegistry:
 
+class TestNodeRegistry:
     def test_registry_has_all_kinds(self):
         from craftgraph.qt_nodes import NODE_REGISTRY, NodeKind
+
         for kind in NodeKind:
             assert kind in NODE_REGISTRY, f"{kind} missing from NODE_REGISTRY"
 
     def test_all_node_classes_count(self):
         from craftgraph.qt_nodes import NODE_REGISTRY, all_node_classes
+
         classes = all_node_classes()
         assert len(classes) == len(NODE_REGISTRY)
 
     def test_all_node_classes_are_unique(self):
         from craftgraph.qt_nodes import all_node_classes
+
         classes = all_node_classes()
         assert len(set(classes)) == len(classes)
 
     def test_registry_values_are_base_subclasses(self):
         from craftgraph.qt_nodes import NODE_REGISTRY, CraftGraphBaseNode
+
         for kind, cls in NODE_REGISTRY.items():
             assert issubclass(cls, CraftGraphBaseNode), (
                 f"{kind}: {cls} not a CraftGraphBaseNode subclass"
@@ -662,11 +706,20 @@ class TestNodeRegistry:
 
     def test_node_kind_values(self):
         from craftgraph.qt_nodes import NodeKind
+
         expected = {
-            "ModifiedRecipe", "AddedRecipe", "AliasRecipe",
-            "CustomFood", "Fabricator", "CraftingTab", "CustomSize",
-            "MovedRecipe", "CustomBioFuel", "CustomFragmentCount",
-            "OrphanIngredient", "Sprite",
+            "ModifiedRecipe",
+            "AddedRecipe",
+            "AliasRecipe",
+            "CustomFood",
+            "Fabricator",
+            "CraftingTab",
+            "CustomSize",
+            "MovedRecipe",
+            "CustomBioFuel",
+            "CustomFragmentCount",
+            "OrphanIngredient",
+            "Sprite",
         }
         assert {k.value for k in NodeKind} == expected
 
@@ -675,12 +728,13 @@ class TestNodeRegistry:
 # Orphan ingredient node (Step M7.8)
 # ---------------------------------------------------------------------------
 
-class TestOrphanIngredientNode:
 
+class TestOrphanIngredientNode:
     def test_create_orphan_ingredient(self, graph):
         """OrphanIngredientNode can be created and has expected ports."""
         node = graph.create_node(
-            "com.craftgraph.OrphanIngredientNode", name="OrphanTest",
+            "com.craftgraph.OrphanIngredientNode",
+            name="OrphanTest",
         )
         assert node is not None
         assert node.get_output("output") is not None
@@ -688,7 +742,8 @@ class TestOrphanIngredientNode:
     def test_orphan_has_grey_color(self, graph):
         """OrphanIngredientNode uses the muted grey color."""
         node = graph.create_node(
-            "com.craftgraph.OrphanIngredientNode", name="Grey",
+            "com.craftgraph.OrphanIngredientNode",
+            name="Grey",
         )
         color = node.color()
         assert color[:3] == (90, 90, 90)
@@ -696,7 +751,8 @@ class TestOrphanIngredientNode:
     def test_orphan_has_item_id_widget(self, graph):
         """OrphanIngredientNode exposes an item_id text input."""
         node = graph.create_node(
-            "com.craftgraph.OrphanIngredientNode", name="Widget",
+            "com.craftgraph.OrphanIngredientNode",
+            name="Widget",
         )
         node.set_property("item_id", "Gold")
         assert node.get_property("item_id") == "Gold"
@@ -704,17 +760,20 @@ class TestOrphanIngredientNode:
     def test_orphan_has_no_model_ref(self, graph):
         """OrphanIngredientNode starts with model_ref = None."""
         node = graph.create_node(
-            "com.craftgraph.OrphanIngredientNode", name="NoModel",
+            "com.craftgraph.OrphanIngredientNode",
+            name="NoModel",
         )
         assert node.model_ref is None
 
     def test_orphan_output_connects_to_recipe_ingredient(self, graph):
         """OrphanIngredientNode output can connect to a recipe ingredient port."""
         orphan = graph.create_node(
-            "com.craftgraph.OrphanIngredientNode", name="Orphan",
+            "com.craftgraph.OrphanIngredientNode",
+            name="Orphan",
         )
         recipe = graph.create_node(
-            "com.craftgraph.ModifiedRecipeNode", name="Recipe",
+            "com.craftgraph.ModifiedRecipeNode",
+            name="Recipe",
         )
         out_port = orphan.get_output("output")
         in_port = recipe.get_input("ingredient_0")
@@ -762,7 +821,8 @@ class TestSpriteNode:
         """SpriteNode sprite_out can connect to a recipe's sprite_in port."""
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="Sprite1")
         recipe = graph.create_node(
-            "com.craftgraph.ModifiedRecipeNode", name="Recipe",
+            "com.craftgraph.ModifiedRecipeNode",
+            name="Recipe",
         )
         out_port = sprite.get_output("sprite_out")
         in_port = recipe.get_input("sprite_in")
@@ -774,8 +834,8 @@ class TestSpriteNode:
 # Checkbox 5: Port type constraints
 # ---------------------------------------------------------------------------
 
-class TestPortConstraints:
 
+class TestPortConstraints:
     def test_recipe_hierarchy_accepts_fabricator(self, graph):
         """Recipe hierarchy port should accept FabricatorNode.children."""
         recipe = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
@@ -809,7 +869,8 @@ class TestPortConstraints:
         subtypes = ("AddedRecipeNode", "AliasRecipeNode", "CustomFoodNode")
         for node_type in subtypes:
             node = graph.create_node(
-                f"com.craftgraph.{node_type}", name=f"T_{node_type}",
+                f"com.craftgraph.{node_type}",
+                name=f"T_{node_type}",
             )
             port = node.get_input("hierarchy")
             accepted = node.accepted_port_types(port)
@@ -846,11 +907,12 @@ class TestPortConstraints:
 # Cross-cutting: serialization roundtrip
 # ---------------------------------------------------------------------------
 
-class TestSerialization:
 
+class TestSerialization:
     def test_serialize_all_node_types(self, graph):
         """Every node type should serialize without error."""
         from craftgraph.qt_nodes import NODE_REGISTRY, NodeKind
+
         for kind in NodeKind:
             cls = NODE_REGISTRY[kind]
             graph.create_node(cls.type_, name=f"test_{kind.value}")
@@ -863,8 +925,8 @@ class TestSerialization:
 # Widget property roundtrip
 # ---------------------------------------------------------------------------
 
-class TestWidgetProperties:
 
+class TestWidgetProperties:
     def test_recipe_item_id_set_get(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node.set_property("item_id", "Titanium")
@@ -902,7 +964,6 @@ _SPRITE_PATH = (
 
 
 class TestSpriteSupport:
-
     def test_set_sprite_stores_path(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
         if not _SPRITE_PATH.exists():
@@ -944,9 +1005,9 @@ class TestSpriteSupport:
 
 
 class TestCraftingTabRegistry:
-
     def test_all_fields_have_widgets(self, graph):
         from craftgraph.pin_registry import PinType
+
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
@@ -963,6 +1024,7 @@ class TestCraftingTabRegistry:
 
     def test_sprite_item_id_nullable(self, graph):
         from craftgraph.models import CraftingTab
+
         tab = CraftingTab(tab_id="Weapons", sprite_item_id=None)
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
         node.model_ref = tab
@@ -971,9 +1033,9 @@ class TestCraftingTabRegistry:
 
 
 class TestCustomSizeRegistry:
-
     def test_model_field_remapping(self, graph):
         from craftgraph.models import CustomSize
+
         size = CustomSize(item_id="Titanium", width=3, height=2)
         node = graph.create_node("com.craftgraph.CustomSizeNode", name="S1")
         node.model_ref = size
@@ -983,9 +1045,9 @@ class TestCustomSizeRegistry:
 
 
 class TestMovedRecipeRegistry:
-
     def test_nullable_paths(self, graph):
         from craftgraph.models import MovedRecipe
+
         moved = MovedRecipe(item_id="Knife", old_path=None, new_path="Fab/Tools")
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
         node.model_ref = moved
@@ -999,6 +1061,7 @@ class TestUtilityNodeRegistries:
 
     def test_biofuel_populate(self, graph):
         from craftgraph.models import CustomBioFuel
+
         fuel = CustomBioFuel(item_id="CreepvinePiece", energy=420.0)
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
         node.model_ref = fuel
@@ -1007,8 +1070,21 @@ class TestUtilityNodeRegistries:
 
     def test_fragment_populate(self, graph):
         from craftgraph.models import CustomFragmentCount
+
         frag = CustomFragmentCount(item_id="SeamothFragment", fragments_to_scan=5)
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
         node.model_ref = frag
         node.populate_from_model()
         assert int(node.get_property("fragments_to_scan")) == 5
+
+
+class TestWidgetOverride:
+    def test_string_without_override_creates_text_input(self, graph):
+        """A STRING FieldPin without widget_override should render as text input."""
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="Test")
+        widget = node.get_widget("path")
+        assert widget is not None
+        inner = widget.get_custom_widget()
+        from PySide6.QtWidgets import QLineEdit
+
+        assert isinstance(inner, QLineEdit)
