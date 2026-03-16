@@ -63,6 +63,7 @@ NODE_COLOR_ORPHAN_INGREDIENT = (90, 90, 90)
 NODE_COLOR_SPRITE = (180, 160, 60)
 
 PORT_COLOR_SPRITE = (180, 160, 60)
+PORT_COLOR_VARIABLE = (100, 70, 130)
 
 
 # Node type strings for port constraints (identifier + "." + ClassName)
@@ -451,11 +452,20 @@ class CraftGraphBaseNode(BaseNode):
     # -- Registry-driven build methods --------------------------------------
 
     def _build_from_registry(self) -> None:
-        """Create widgets for all declared field pins."""
+        """Create widgets and field input ports for all declared field pins."""
         for fp in self.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
             self._create_widget_for_field(fp)
+            # Variable nodes produce values, not consume them --
+            # they don't get field_* input ports.
+            if not self.IS_VARIABLE:
+                self.add_input(
+                    f"field_{fp.name}",
+                    multi_input=False,
+                    color=PORT_COLOR_VARIABLE,
+                    display_name=False,
+                )
 
     def _create_widget_for_field(self, fp: FieldPin) -> None:
         """Create the appropriate widget for a single field pin."""

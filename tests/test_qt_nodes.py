@@ -87,6 +87,41 @@ class TestCraftGraphBaseNode:
         assert port is not None
 
 
+class TestFieldInputPorts:
+    """Tests for the field_* input ports added by Phase B."""
+
+    def test_modified_recipe_has_field_ports(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        port = node.get_input("field_item_id")
+        assert port is not None
+
+    def test_field_port_color_matches_variable_color(self, graph):
+        from craftgraph.qt_nodes import PORT_COLOR_VARIABLE
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        port = node.get_input("field_item_id")
+        assert port.color == PORT_COLOR_VARIABLE
+
+    def test_ingredient_list_field_has_no_field_port(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        port = node.get_input("field_ingredients")
+        assert port is None
+
+    def test_added_recipe_has_path_field_port(self, graph):
+        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="Test")
+        port = node.get_input("field_path")
+        assert port is not None
+
+    def test_custom_food_has_food_value_field_port(self, graph):
+        node = graph.create_node("com.craftgraph.CustomFoodNode", name="Test")
+        port = node.get_input("field_food_value")
+        assert port is not None
+
+    def test_fabricator_has_model_field_port(self, graph):
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Test")
+        port = node.get_input("field_model")
+        assert port is not None
+
+
 class TestRegistryBuildInfrastructure:
     """Tests for the _build_from_registry / populate_from_model infrastructure."""
 
@@ -406,9 +441,9 @@ class TestFabricatorNode:
         # SPLIT_OUTPUTS: typed output ports instead of single "children"
         for name in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
             assert node.get_output(name) is not None, f"Missing output: {name}"
-        # Fabricator has only the sprite_in input (from base class)
+        # Fabricator has sprite_in + 11 field_* ports (12 fields minus ingredients)
         assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1
+        assert len(node.input_ports()) == 1 + 11
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
@@ -491,9 +526,9 @@ class TestMovedRecipeNode:
 
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
-        # Only sprite_in from base class
+        # sprite_in + 5 field_* ports
         assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1
+        assert len(node.input_ports()) == 1 + 5
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
@@ -515,7 +550,7 @@ class TestCustomBioFuelNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
         assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1
+        assert len(node.input_ports()) == 1 + 2  # sprite_in + 2 field ports
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
@@ -539,7 +574,7 @@ class TestCustomFragmentCountNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
         assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1
+        assert len(node.input_ports()) == 1 + 2  # sprite_in + 2 field ports
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
