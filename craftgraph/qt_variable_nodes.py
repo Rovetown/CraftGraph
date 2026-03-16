@@ -78,8 +78,7 @@ class IntVarNode(VariableNode):
     NODE_NAME = "Int Variable"
 
     FIELD_REGISTRY = [
-        FieldPin("value", PinType.INT, label="Value", default=0,
-                 min_val=-9999, max_val=9999),
+        FieldPin("value", PinType.INT, label="Value", default=0, min_val=-9999, max_val=9999),
     ]
     OUTPUT_PINS = [
         OutputPin("value_out", label="Int", pin_color=PORT_COLOR_VAR_OUT),
@@ -92,8 +91,15 @@ class FloatVarNode(VariableNode):
     NODE_NAME = "Float Variable"
 
     FIELD_REGISTRY = [
-        FieldPin("value", PinType.FLOAT, label="Value", default=0.0,
-                 min_val=-99999.0, max_val=99999.0, step=0.1),
+        FieldPin(
+            "value",
+            PinType.FLOAT,
+            label="Value",
+            default=0.0,
+            min_val=-99999.0,
+            max_val=99999.0,
+            step=0.1,
+        ),
     ]
     OUTPUT_PINS = [
         OutputPin("value_out", label="Float", pin_color=PORT_COLOR_VAR_OUT),
@@ -178,6 +184,60 @@ class ColorVarNode(VariableNode):
     ]
 
 
+class GetFabricatorNode(VariableNode):
+    """Dropdown-based Get node for fabricator paths.
+
+    Produces a STRING value (auto-resolved path like "MyFab") that connects
+    to recipe path fields. The combo box is populated at runtime by
+    CraftGraphWindow._refresh_all_ref_nodes().
+    """
+
+    NODE_NAME = "Get Fabricator"
+
+    FIELD_REGISTRY = [
+        FieldPin("value", PinType.STRING, label="Fabricator", default="", widget_override="combo"),
+    ]
+    OUTPUT_PINS = [
+        OutputPin("value_out", label="Path", pin_color=PORT_COLOR_VAR_OUT),
+    ]
+
+    def refresh_fab_tab_choices(self, choices: list[str]) -> None:
+        """Replace combo box items with current fabricator list."""
+        widget = self.get_widget("value")
+        if widget is not None:
+            combo = widget.get_custom_widget()
+            if combo is not None:
+                combo.clear()
+                combo.addItems(choices)
+
+
+class GetTabNode(VariableNode):
+    """Dropdown-based Get node for crafting tab paths.
+
+    Produces a STRING value (auto-resolved path like "MyFab/ScienceTab")
+    that connects to recipe path fields. The combo box is populated at
+    runtime by CraftGraphWindow._refresh_all_ref_nodes().
+    """
+
+    NODE_NAME = "Get Tab"
+
+    FIELD_REGISTRY = [
+        FieldPin("value", PinType.STRING, label="Tab", default="", widget_override="combo"),
+    ]
+    OUTPUT_PINS = [
+        OutputPin("value_out", label="Path", pin_color=PORT_COLOR_VAR_OUT),
+    ]
+
+    def refresh_fab_tab_choices(self, choices: list[str]) -> None:
+        """Replace combo box items with current tab path list."""
+        widget = self.get_widget("value")
+        if widget is not None:
+            combo = widget.get_custom_widget()
+            if combo is not None:
+                combo.clear()
+                combo.addItems(choices)
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -195,6 +255,8 @@ class VariableNodeKind(Enum):
     INGREDIENT_LIST_VAR = "IngredientListVar"  # STUB -- Phase B+
     PATH_VAR = "PathVar"
     COLOR_VAR = "ColorVar"
+    GET_FABRICATOR = "GetFabricator"
+    GET_TAB = "GetTab"
 
 
 VARIABLE_NODE_REGISTRY: dict[VariableNodeKind, type[VariableNode]] = {
@@ -207,6 +269,8 @@ VARIABLE_NODE_REGISTRY: dict[VariableNodeKind, type[VariableNode]] = {
     # IngredientListVarNode omitted -- STUB, Phase B+
     VariableNodeKind.PATH_VAR: PathVarNode,
     VariableNodeKind.COLOR_VAR: ColorVarNode,
+    VariableNodeKind.GET_FABRICATOR: GetFabricatorNode,
+    VariableNodeKind.GET_TAB: GetTabNode,
 }
 
 

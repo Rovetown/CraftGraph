@@ -57,7 +57,6 @@ def graph(qapp):
 
 
 class TestVariableNodeBase:
-
     def test_is_variable_flag(self, graph):
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
         assert node.IS_VARIABLE is True
@@ -88,6 +87,7 @@ class TestVariableNodeBase:
 
     def test_node_color_is_purple(self, graph):
         from craftgraph.qt_variable_nodes import NODE_COLOR_VARIABLE
+
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
         r, g_val, b = node.color()[:3]
         assert (r, g_val, b) == NODE_COLOR_VARIABLE
@@ -105,7 +105,6 @@ class TestVariableNodeBase:
 
 
 class TestStringVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
         assert node is not None
@@ -121,7 +120,6 @@ class TestStringVarNode:
 
 
 class TestIntVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.IntVarNode", name="Test")
         assert node is not None
@@ -133,7 +131,6 @@ class TestIntVarNode:
 
 
 class TestFloatVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.FloatVarNode", name="Test")
         assert node is not None
@@ -145,7 +142,6 @@ class TestFloatVarNode:
 
 
 class TestBoolVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.BoolVarNode", name="Test")
         assert node is not None
@@ -161,7 +157,6 @@ class TestBoolVarNode:
 
 
 class TestCSVListVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.CSVListVarNode", name="Test")
         assert node is not None
@@ -173,7 +168,6 @@ class TestCSVListVarNode:
 
 
 class TestEnumVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.EnumVarNode", name="Test")
         assert node is not None
@@ -185,7 +179,6 @@ class TestEnumVarNode:
 
 
 class TestPathVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.PathVarNode", name="Test")
         assert node is not None
@@ -197,7 +190,6 @@ class TestPathVarNode:
 
 
 class TestColorVarNode:
-
     def test_create(self, graph):
         node = graph.create_node("com.craftgraph.ColorVarNode", name="Test")
         assert node is not None
@@ -210,6 +202,106 @@ class TestColorVarNode:
     def test_default_value(self, graph):
         node = graph.create_node("com.craftgraph.ColorVarNode", name="Test")
         assert node.get_property("value") == "0.0, 0.0, 0.0"
+
+
+class TestGetFabricatorNode:
+    def test_create(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        assert node is not None
+
+    def test_is_variable(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        assert node.IS_VARIABLE is True
+
+    def test_has_value_widget(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        widget = node.get_widget("value")
+        assert widget is not None
+
+    def test_has_value_out_port(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        port = node.get_output("value_out")
+        assert port is not None
+
+    def test_has_no_sprite_port(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        assert node.get_input("sprite_in") is None
+
+    def test_value_is_string_pin_type(self, graph):
+        """PinType must be STRING for type-safe connection to path fields."""
+        from craftgraph.pin_registry import PinType
+
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        assert node.FIELD_REGISTRY[0].pin_type == PinType.STRING
+
+    def test_widget_is_combo_box(self, graph):
+        """Despite STRING PinType, widget should be a combo box via override."""
+        from PySide6.QtWidgets import QComboBox
+
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        widget = node.get_widget("value")
+        inner = widget.get_custom_widget()
+        assert isinstance(inner, QComboBox)
+
+    def test_default_value_none_when_empty(self, graph):
+        """Combo with no items yields None from get_property()."""
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        assert node.get_property("value") is None
+
+    def test_refresh_fab_tab_choices(self, graph):
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
+        node.refresh_fab_tab_choices(["FabA", "FabB"])
+        from PySide6.QtWidgets import QComboBox
+
+        combo = node.get_widget("value").get_custom_widget()
+        assert isinstance(combo, QComboBox)
+        assert combo.count() == 2
+        assert combo.itemText(0) == "FabA"
+        assert combo.itemText(1) == "FabB"
+
+
+class TestGetTabNode:
+    def test_create(self, graph):
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        assert node is not None
+
+    def test_is_variable(self, graph):
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        assert node.IS_VARIABLE is True
+
+    def test_has_value_widget(self, graph):
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        widget = node.get_widget("value")
+        assert widget is not None
+
+    def test_has_value_out_port(self, graph):
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        port = node.get_output("value_out")
+        assert port is not None
+
+    def test_value_is_string_pin_type(self, graph):
+        from craftgraph.pin_registry import PinType
+
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        assert node.FIELD_REGISTRY[0].pin_type == PinType.STRING
+
+    def test_widget_is_combo_box(self, graph):
+        from PySide6.QtWidgets import QComboBox
+
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        widget = node.get_widget("value")
+        inner = widget.get_custom_widget()
+        assert isinstance(inner, QComboBox)
+
+    def test_refresh_fab_tab_choices(self, graph):
+        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
+        node.refresh_fab_tab_choices(["MyFab/SciTab", "MyFab/AdvTab"])
+        from PySide6.QtWidgets import QComboBox
+
+        combo = node.get_widget("value").get_custom_widget()
+        assert isinstance(combo, QComboBox)
+        assert combo.count() == 2
+        assert combo.itemText(0) == "MyFab/SciTab"
 
 
 # ---------------------------------------------------------------------------
@@ -233,19 +325,22 @@ def sync_setup(graph):
     guard = SyncGuard()
 
     recipe_node = graph.create_node(
-        "com.craftgraph.ModifiedRecipeNode", name="Recipe",
+        "com.craftgraph.ModifiedRecipeNode",
+        name="Recipe",
     )
     recipe_node.model_ref = recipe
     recipe_node.set_edit_history(history)
     recipe_node.populate_from_model()
 
     string_var = graph.create_node(
-        "com.craftgraph.StringVarNode", name="Var",
+        "com.craftgraph.StringVarNode",
+        name="Var",
     )
     string_var.set_edit_history(history)
 
     int_var = graph.create_node(
-        "com.craftgraph.IntVarNode", name="IntVar",
+        "com.craftgraph.IntVarNode",
+        name="IntVar",
     )
     int_var.set_edit_history(history)
 
@@ -271,7 +366,6 @@ def sync_setup(graph):
 
 
 class TestVariableConnection:
-
     def test_connect_string_var_to_item_id_updates_model(self, sync_setup):
         s = sync_setup
         s["string_var"].set_property("value", "Gold")
@@ -315,7 +409,8 @@ class TestVariableConnection:
 
         recipe2 = ModifiedRecipe(item_id="Copper", amount_crafted=1)
         recipe_node2 = s["graph"].create_node(
-            "com.craftgraph.ModifiedRecipeNode", name="Recipe2",
+            "com.craftgraph.ModifiedRecipeNode",
+            name="Recipe2",
         )
         recipe_node2.model_ref = recipe2
         recipe_node2.set_edit_history(s["history"])
@@ -341,7 +436,6 @@ class TestVariableConnection:
 
 
 class TestVariableNodePersistence:
-
     def test_var_uuid_provides_position_key(self, graph):
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
         key = f"VarNode:{node._var_uuid}"
@@ -355,12 +449,19 @@ class TestVariableNodePersistence:
 
 
 class TestVariableNodeGUIRegistration:
-
     def test_graph_can_create_all_variable_types(self, graph):
-        """All 8 active variable types should be creatable from the graph."""
+        """All 10 active variable types should be creatable from the graph."""
         type_names = [
-            "StringVarNode", "IntVarNode", "FloatVarNode", "BoolVarNode",
-            "CSVListVarNode", "EnumVarNode", "PathVarNode", "ColorVarNode",
+            "StringVarNode",
+            "IntVarNode",
+            "FloatVarNode",
+            "BoolVarNode",
+            "CSVListVarNode",
+            "EnumVarNode",
+            "PathVarNode",
+            "ColorVarNode",
+            "GetFabricatorNode",
+            "GetTabNode",
         ]
         for name in type_names:
             node = graph.create_node(f"com.craftgraph.{name}", name=name)
@@ -373,7 +474,6 @@ class TestVariableNodeGUIRegistration:
 
 
 class TestPromoteToVariable:
-
     def test_pintype_to_variable_kind_mapping(self):
         from craftgraph.qt_variable_nodes import pintype_to_variable_kind, VariableNodeKind
         from craftgraph.pin_registry import PinType
@@ -399,18 +499,20 @@ class TestPromoteToVariable:
 
 
 class TestVariableNodeRegistry:
-
-    def test_registry_has_8_active_entries(self):
+    def test_registry_has_10_active_entries(self):
         from craftgraph.qt_variable_nodes import VARIABLE_NODE_REGISTRY
-        # IngredientListVar is a stub, so 8 active
-        assert len(VARIABLE_NODE_REGISTRY) >= 8
+
+        # IngredientListVar is a stub, so 10 active
+        assert len(VARIABLE_NODE_REGISTRY) >= 10
 
     def test_all_variable_node_classes_returns_list(self):
         from craftgraph.qt_variable_nodes import all_variable_node_classes
+
         classes = all_variable_node_classes()
         assert isinstance(classes, list)
-        assert len(classes) >= 8
+        assert len(classes) >= 10
 
-    def test_variable_node_kind_enum_has_9_members(self):
+    def test_variable_node_kind_enum_has_11_members(self):
         from craftgraph.qt_variable_nodes import VariableNodeKind
-        assert len(VariableNodeKind) == 9
+
+        assert len(VariableNodeKind) == 11
