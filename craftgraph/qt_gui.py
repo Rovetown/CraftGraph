@@ -1158,6 +1158,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             (VariableNodeKind.ENUM_VAR, "Enum Variable"),
             (VariableNodeKind.PATH_VAR, "Path Variable"),
             (VariableNodeKind.COLOR_VAR, "Color Variable"),
+            (VariableNodeKind.GET_FABRICATOR, "Get Fabricator"),
+            (VariableNodeKind.GET_TAB, "Get Tab"),
         ]:
             variables_menu.add_command(
                 label,
@@ -1176,6 +1178,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if tab is not None:
                 node.set_edit_history(tab.history)
             self._attach_node_completers(node)
+
+            # Refresh dropdown for Get Fab / Get Tab nodes
+            if hasattr(node, "refresh_fab_tab_choices"):
+                from craftgraph.qt_variable_nodes import GetFabricatorNode, GetTabNode
+
+                fab_choices, tab_choices = self._collect_fab_tab_choices()
+                if isinstance(node, GetFabricatorNode):
+                    node.refresh_fab_tab_choices(fab_choices)
+                elif isinstance(node, GetTabNode):
+                    node.refresh_fab_tab_choices(tab_choices)
 
         return callback
 
