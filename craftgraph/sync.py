@@ -986,6 +986,8 @@ class UIToModelHandler:
             self._handle_hierarchy_connected(in_port, out_port)
         elif port_name == "sprite_in":
             self._handle_sprite_connected(in_port, out_port)
+        elif port_name.startswith("field_"):
+            self._handle_variable_connected(in_port, out_port)
 
     def _on_port_disconnected(self, in_port: object, out_port: object) -> None:
         if self._guard.active:
@@ -999,6 +1001,8 @@ class UIToModelHandler:
             self._handle_hierarchy_disconnected(in_port, out_port)
         elif port_name == "sprite_in":
             self._handle_sprite_disconnected(in_port)
+        elif port_name.startswith("field_"):
+            self._handle_variable_disconnected(in_port, out_port)
 
     def _on_nodes_deleted(self, node_ids: list[str]) -> None:
         """Remove model objects for deleted nodes from their ParsedFiles."""
@@ -1264,6 +1268,122 @@ class UIToModelHandler:
         """Clear the sprite when a SpriteNode is disconnected."""
         target = in_port.node()  # type: ignore[attr-defined]
         target.clear_sprite()  # type: ignore[attr-defined]
+
+    # -- Variable node handlers -----------------------------------------------
+
+    def _handle_variable_connected(
+        self,
+        in_port: object,
+        out_port: object,
+    ) -> None:
+        """Handle a variable node connecting to a field_* input port."""
+        source_node = out_port.node()  # type: ignore[attr-defined]
+        consumer_node = in_port.node()  # type: ignore[attr-defined]
+
+        # Only variable nodes may connect to field_* ports
+        if not getattr(source_node, "IS_VARIABLE", False):
+            with self._guard():
+                in_port.disconnect_from(out_port)  # type: ignore[attr-defined]
+            return
+
+        port_name: str = in_port.name()  # type: ignore[attr-defined]
+        field_name = port_name.removeprefix("field_")
+
+        # Type-safety check
+        fp = consumer_node._get_field_pin(field_name)
+        if fp is None:
+            return
+
+        var_fp = source_node._get_field_pin("value")
+        if var_fp is None:
+            return
+
+        if fp.pin_type != var_fp.pin_type:
+            with self._guard():
+                in_port.disconnect_from(out_port)  # type: ignore[attr-defined]
+            return
+
+        # Stash current value and disable widget
+        current_value = consumer_node.get_property(field_name)
+        consumer_node._stashed_values[field_name] = current_value
+        consumer_node.disable_field(field_name)
+
+        # Push variable value to model
+        var_value = source_node.get_property("value")
+
+        from craftgraph.pin_registry import convert_to_model
+
+        converted = convert_to_model(fp, var_value)
+        model = consumer_node.model_ref
+        if model is not None:
+            model_attr = fp.resolved_model_field
+
+            from craftgraph.commands import ChangeNonRecipeFieldCommand, ChangeRecipeFieldCommand
+            from craftgraph.models import ModifiedRecipe
+
+            if isinstance(model, ModifiedRecipe):
+                cmd = ChangeRecipeFieldCommand(model, model_attr, converted)
+            else:
+                cmd = ChangeNonRecipeFieldCommand(model, model_attr, converted)
+            with self._guard():
+                self._history.execute(cmd)
+
+        # Mirror the variable value in the disabled widget
+        from craftgraph.pin_registry import convert_to_display
+
+        consumer_node._populating = True
+        try:
+            consumer_node.set_property(field_name, convert_to_display(fp, converted))
+        finally:
+            consumer_node._populating = False
+
+    def _handle_variable_disconnected(
+        self,
+        in_port: object,
+        out_port: object,
+    ) -> None:
+        """Handle a variable node disconnecting from a field_* input port."""
+        consumer_node = in_port.node()  # type: ignore[attr-defined]
+
+        port_name: str = in_port.name()  # type: ignore[attr-defined]
+        field_name = port_name.removeprefix("field_")
+
+        # Re-enable widget
+        consumer_node.enable_field(field_name)
+
+        # Restore stashed value
+        stashed = consumer_node._stashed_values.pop(field_name, None)
+        if stashed is None:
+            return
+
+        fp = consumer_node._get_field_pin(field_name)
+        if fp is None:
+            return
+
+        # Push stashed value back to model
+        from craftgraph.pin_registry import convert_to_model
+
+        converted = convert_to_model(fp, stashed)
+        model = consumer_node.model_ref
+        if model is not None:
+            model_attr = fp.resolved_model_field
+
+            from craftgraph.commands import ChangeNonRecipeFieldCommand, ChangeRecipeFieldCommand
+            from craftgraph.models import ModifiedRecipe
+
+            if isinstance(model, ModifiedRecipe):
+                cmd = ChangeRecipeFieldCommand(model, model_attr, converted)
+            else:
+                cmd = ChangeNonRecipeFieldCommand(model, model_attr, converted)
+            with self._guard():
+                self._history.execute(cmd)
+
+        # Update widget display
+        consumer_node._populating = True
+        try:
+            consumer_node.set_property(field_name, stashed)
+        finally:
+            consumer_node._populating = False
 
     # -- Helpers --------------------------------------------------------------
 

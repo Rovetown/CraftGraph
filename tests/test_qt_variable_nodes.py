@@ -213,6 +213,92 @@ class TestColorVarNode:
 
 
 # ---------------------------------------------------------------------------
+# Sync integration (variable connections)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sync_setup(graph):
+    """Set up a graph with UIToModelHandler wired."""
+    from pathlib import Path
+
+    from craftgraph.commands import EditHistory
+    from craftgraph.models import ModifiedRecipe, ParsedFile
+    from craftgraph.sync import SyncGuard, UIToModelHandler
+
+    recipe = ModifiedRecipe(item_id="Titanium", amount_crafted=1)
+    pf = ParsedFile(source_path=Path("test.txt"), modified_recipes=[recipe])
+
+    history = EditHistory()
+    guard = SyncGuard()
+
+    recipe_node = graph.create_node(
+        "com.craftgraph.ModifiedRecipeNode", name="Recipe",
+    )
+    recipe_node.model_ref = recipe
+    recipe_node.set_edit_history(history)
+    recipe_node.populate_from_model()
+
+    string_var = graph.create_node(
+        "com.craftgraph.StringVarNode", name="Var",
+    )
+    string_var.set_edit_history(history)
+
+    int_var = graph.create_node(
+        "com.craftgraph.IntVarNode", name="IntVar",
+    )
+    int_var.set_edit_history(history)
+
+    handler = UIToModelHandler(
+        graph=graph,
+        history=history,
+        guard=guard,
+        parsed_files=[pf],
+        model_to_node={id(recipe): recipe_node},
+    )
+
+    return {
+        "graph": graph,
+        "recipe": recipe,
+        "recipe_node": recipe_node,
+        "string_var": string_var,
+        "int_var": int_var,
+        "handler": handler,
+        "history": history,
+        "guard": guard,
+        "pf": pf,
+    }
+
+
+class TestVariableConnection:
+
+    def test_connect_string_var_to_item_id_updates_model(self, sync_setup):
+        s = sync_setup
+        s["string_var"].set_property("value", "Gold")
+        var_out = s["string_var"].get_output("value_out")
+        field_in = s["recipe_node"].get_input("field_item_id")
+        var_out.connect_to(field_in)
+        assert s["recipe"].item_id == "Gold"
+
+    def test_disconnect_restores_stashed_value(self, sync_setup):
+        s = sync_setup
+        s["string_var"].set_property("value", "Gold")
+        var_out = s["string_var"].get_output("value_out")
+        field_in = s["recipe_node"].get_input("field_item_id")
+        var_out.connect_to(field_in)
+        assert s["recipe"].item_id == "Gold"
+        var_out.disconnect_from(field_in)
+        assert s["recipe"].item_id == "Titanium"
+
+    def test_type_mismatch_rejects_connection(self, sync_setup):
+        s = sync_setup
+        int_out = s["int_var"].get_output("value_out")
+        field_in = s["recipe_node"].get_input("field_item_id")
+        int_out.connect_to(field_in)
+        assert not field_in.connected_ports()
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
