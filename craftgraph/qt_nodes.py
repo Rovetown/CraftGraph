@@ -696,7 +696,7 @@ class AddedRecipeNode(ModifiedRecipeNode):
     NODE_COLOR = NODE_COLOR_ADDED_RECIPE
 
     FIELD_REGISTRY = ModifiedRecipeNode.FIELD_REGISTRY + [
-        FieldPin("path", PinType.STRING, label="Path", required=True),
+        FieldPin("path", PinType.STRING, label="Path", required=True, preferred_var_kind="PathVar"),
         FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
                  enum_items=["", "Uncategorized", "Resources", "Survival", "Personal",
                              "Machines", "InteriorModules", "InteriorPieces",
@@ -779,7 +779,7 @@ class FabricatorNode(CraftGraphBaseNode):
         FieldPin("tooltip", PinType.STRING, label="Tooltip"),
         FieldPin("model", PinType.ENUM, label="Model",
                  enum_items=["Fabricator", "Workbench", "MoonPool"]),
-        FieldPin("color_tint", PinType.CSV, label="Color Tint"),
+        FieldPin("color_tint", PinType.CSV, label="Color Tint", preferred_var_kind="ColorVar"),
         FieldPin("allowed_in_base", PinType.BOOL, label="In Base", default=True),
         FieldPin("allowed_in_cyclops", PinType.BOOL, label="In Cyclops", default=True),
         FieldPin("pda_group", PinType.ENUM, label="PDA Group", nullable=True,
@@ -858,7 +858,7 @@ class CraftingTabNode(CraftGraphBaseNode):
         FieldPin("tab_id", PinType.STRING, label="TabID", required=True),
         FieldPin("display_name", PinType.STRING, label="Display Name"),
         FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True),
-        FieldPin("parent_tab_path", PinType.STRING, label="Parent Path"),
+        FieldPin("parent_tab_path", PinType.STRING, label="Parent Path", preferred_var_kind="PathVar"),
     ]
 
     OUTPUT_PINS = [
@@ -894,8 +894,8 @@ class MovedRecipeNode(CraftGraphBaseNode):
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID", required=True),
-        FieldPin("old_path", PinType.STRING, label="Old Path", nullable=True),
-        FieldPin("new_path", PinType.STRING, label="New Path", nullable=True),
+        FieldPin("old_path", PinType.STRING, label="Old Path", nullable=True, preferred_var_kind="PathVar"),
+        FieldPin("new_path", PinType.STRING, label="New Path", nullable=True, preferred_var_kind="PathVar"),
         FieldPin("copied", PinType.BOOL, label="Copied", default=False),
         FieldPin("hidden", PinType.BOOL, label="Hidden", default=False),
     ]

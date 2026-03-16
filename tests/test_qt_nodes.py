@@ -147,6 +147,20 @@ class TestFieldDisableEnable:
         assert node._stashed_values == {}
 
 
+class TestPreferredVarKind:
+    """Tests for preferred_var_kind on FieldPin."""
+
+    def test_field_pin_has_preferred_var_kind(self, graph):
+        from craftgraph.pin_registry import FieldPin, PinType
+        fp = FieldPin("test", PinType.STRING, preferred_var_kind="PathVar")
+        assert fp.preferred_var_kind == "PathVar"
+
+    def test_field_pin_preferred_var_kind_default_none(self, graph):
+        from craftgraph.pin_registry import FieldPin, PinType
+        fp = FieldPin("test", PinType.STRING)
+        assert fp.preferred_var_kind is None
+
+
 class TestRegistryBuildInfrastructure:
     """Tests for the _build_from_registry / populate_from_model infrastructure."""
 

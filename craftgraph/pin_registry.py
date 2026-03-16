@@ -60,6 +60,7 @@ class FieldPin:
     step: float = 1.0
     enum_items: list[str] | None = field(default=None, repr=False)
     pin_color: tuple[int, int, int] = (180, 180, 180)
+    preferred_var_kind: str | None = None
 
     @property
     def resolved_model_field(self) -> str:
