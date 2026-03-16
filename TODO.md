@@ -138,11 +138,11 @@ fabricators, and developers working on CraftGraph.
 
 #### Phase B -- Variable Nodes
 
-- [ ] Create variable node base class with output pin
-- [ ] Implement all 9 variable node types (StringVar, IntVar, FloatVar, BoolVar,
+- [x] Create variable node base class with output pin
+- [x] Implement all 9 variable node types (StringVar, IntVar, FloatVar, BoolVar,
   CSVListVar, EnumVar, IngredientListVar, PathVar, ColorVar)
-- [ ] Implement connected-overrides-inline behavior
-- [ ] "Promote to Variable" context menu action on pins
+- [x] Implement connected-overrides-inline behavior
+- [x] "Promote to Variable" context menu action on pins
 - [ ] **Fabricator/Tab reference nodes (Get/Set pattern)** -- Specialized reference
   nodes ("Get Fabricator", "Get Tab") that, when connected to a recipe's Path field
   pin, auto-resolve and set the full fabricator path (e.g., `MyFab/ScienceTab`).
@@ -152,6 +152,7 @@ fabricators, and developers working on CraftGraph.
 #### Phase C -- Context Menu and File/Project Creation
 
 - [ ] Restructure context menu into categorized submenus (Recipe/Container/Utility/Variables)
+- [ ] If keeping "Add Ingredient" context menu, use the same categorized dropdown as node creation (split by TechType category or similar grouping instead of a flat list)
 - [ ] Implement New File dialog with block type templates and starter nodes
 - [ ] Implement New Project dialog (name, location, 10 starter files + Assets/ + .craftgraph/)
 - [ ] Starter node spawning per block type

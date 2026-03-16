@@ -19,6 +19,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -50,6 +51,10 @@ from craftgraph.sync import (
     populate_graph,
     update_child_count_labels,
 )
+
+if TYPE_CHECKING:
+    from craftgraph.pin_registry import FieldPin
+    from craftgraph.qt_variable_nodes import VariableNodeKind
 
 _POPUP_MAX_VISIBLE = 12
 _POPUP_STYLE = (
@@ -417,6 +422,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for cls in all_node_classes():
             graph.register_node(cls)
         from craftgraph.qt_variable_nodes import all_variable_node_classes
+
         for cls in all_variable_node_classes():
             graph.register_node(cls)
 
@@ -1114,7 +1120,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         from craftgraph.qt_variable_nodes import VariableNodeKind
 
         variables_menu = add_menu.add_menu("Variables")
-        for kind, label in [
+        for var_kind, label in [
             (VariableNodeKind.STRING_VAR, "String Variable"),
             (VariableNodeKind.INT_VAR, "Int Variable"),
             (VariableNodeKind.FLOAT_VAR, "Float Variable"),
@@ -1126,10 +1132,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         ]:
             variables_menu.add_command(
                 label,
-                func=self._make_var_create_cb(kind),
+                func=self._make_var_create_cb(var_kind),
             )
 
-    def _make_var_create_cb(self, kind: "VariableNodeKind"):  # type: ignore[no-untyped-def]
+    def _make_var_create_cb(self, kind: VariableNodeKind):  # type: ignore[no-untyped-def]
         """Return a callback that creates a variable node of the given kind."""
         from craftgraph.qt_variable_nodes import VARIABLE_NODE_REGISTRY
 
@@ -1145,7 +1151,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         return callback
 
     def _on_promote_to_variable(
-        self, graph: NodeGraph, node: CraftGraphBaseNode,
+        self,
+        graph: NodeGraph,
+        node: CraftGraphBaseNode,
     ) -> None:
         """Promote a field on this node to a standalone variable node."""
         if getattr(node, "IS_VARIABLE", False):
@@ -1158,7 +1166,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
 
         # Build list of promotable fields
-        promotable: list[tuple[str, str, "FieldPin"]] = []
+        promotable: list[tuple[str, str, FieldPin]] = []
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -1175,7 +1183,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         labels = [p[0] for p in promotable]
         chosen, ok = QInputDialog.getItem(
-            self, "Promote to Variable", "Select field:", labels, 0, False,
+            self,
+            "Promote to Variable",
+            "Select field:",
+            labels,
+            0,
+            False,
         )
         if not ok:
             return
@@ -1210,9 +1223,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._attach_node_completers(var_node)
 
         # If enum, copy items
-        if fp.pin_type == PinType.ENUM and fp.enum_items:
-            if hasattr(var_node, "set_enum_items"):
-                var_node.set_enum_items(fp.enum_items)
+        if fp.pin_type == PinType.ENUM and fp.enum_items and hasattr(var_node, "set_enum_items"):
+            var_node.set_enum_items(fp.enum_items)
 
         # Connect
         var_out = var_node.get_output("value_out")
@@ -1784,6 +1796,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for cls in all_node_classes():
             graph.register_node(cls)
         from craftgraph.qt_variable_nodes import all_variable_node_classes
+
         for cls in all_variable_node_classes():
             graph.register_node(cls)
         self._setup_context_menus_for(graph)
