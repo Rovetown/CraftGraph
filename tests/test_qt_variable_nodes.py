@@ -527,6 +527,94 @@ class TestVariableConnection:
 
 
 # ---------------------------------------------------------------------------
+# Get Fab / Get Tab connection integration
+# ---------------------------------------------------------------------------
+
+
+class TestGetFabConnection:
+    def test_connect_get_fab_to_path_updates_model(self, sync_setup):
+        """Connecting Get Fab to a recipe's path field updates the model."""
+        s = sync_setup
+        from craftgraph.models import AddedRecipe
+
+        recipe = AddedRecipe(item_id="TestItem", path="")
+        added_node = s["graph"].create_node(
+            "com.craftgraph.AddedRecipeNode", name="Added"
+        )
+        added_node.model_ref = recipe
+        added_node.set_edit_history(s["history"])
+        added_node.populate_from_model()
+
+        get_fab = s["graph"].create_node(
+            "com.craftgraph.GetFabricatorNode", name="GetFab"
+        )
+        get_fab.set_edit_history(s["history"])
+        get_fab.refresh_fab_tab_choices(["MyFab", "OtherFab"])
+        get_fab.set_property("value", "MyFab")
+
+        var_out = get_fab.get_output("value_out")
+        field_in = added_node.get_input("field_path")
+        var_out.connect_to(field_in)
+
+        assert recipe.path == "MyFab"
+
+    def test_disconnect_get_fab_restores_stashed_value(self, sync_setup):
+        s = sync_setup
+        from craftgraph.models import AddedRecipe
+
+        recipe = AddedRecipe(item_id="TestItem", path="OriginalPath")
+        added_node = s["graph"].create_node(
+            "com.craftgraph.AddedRecipeNode", name="Added"
+        )
+        added_node.model_ref = recipe
+        added_node.set_edit_history(s["history"])
+        added_node.populate_from_model()
+
+        get_fab = s["graph"].create_node(
+            "com.craftgraph.GetFabricatorNode", name="GetFab"
+        )
+        get_fab.set_edit_history(s["history"])
+        get_fab.set_property("value", "MyFab")
+
+        var_out = get_fab.get_output("value_out")
+        field_in = added_node.get_input("field_path")
+        var_out.connect_to(field_in)
+        assert recipe.path == "MyFab"
+
+        var_out.disconnect_from(field_in)
+        assert recipe.path == "OriginalPath"
+
+    def test_get_tab_value_change_propagates(self, sync_setup):
+        """Changing Get Tab dropdown propagates new path to connected recipe."""
+        s = sync_setup
+        from craftgraph.models import AddedRecipe
+
+        recipe = AddedRecipe(item_id="TestItem", path="")
+        added_node = s["graph"].create_node(
+            "com.craftgraph.AddedRecipeNode", name="Added"
+        )
+        added_node.model_ref = recipe
+        added_node.set_edit_history(s["history"])
+        added_node.populate_from_model()
+
+        get_tab = s["graph"].create_node(
+            "com.craftgraph.GetTabNode", name="GetTab"
+        )
+        get_tab.set_edit_history(s["history"])
+        get_tab.refresh_fab_tab_choices(["MyFab/SciTab", "MyFab/AdvTab"])
+        get_tab.set_property("value", "MyFab/SciTab")
+
+        var_out = get_tab.get_output("value_out")
+        field_in = added_node.get_input("field_path")
+        var_out.connect_to(field_in)
+        assert recipe.path == "MyFab/SciTab"
+
+        # Change dropdown selection
+        get_tab.set_property("value", "MyFab/AdvTab")
+        assert recipe.path == "MyFab/AdvTab"
+
+
+# ---------------------------------------------------------------------------
 # Persistence
 # ---------------------------------------------------------------------------
 
