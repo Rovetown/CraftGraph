@@ -970,6 +970,12 @@ class UIToModelHandler:
     ) -> None:
         if self._guard.active:
             return
+
+        # Variable node value change: propagate to all connected consumers
+        if getattr(node, "IS_VARIABLE", False) and prop_name == "value":
+            self._handle_variable_value_changed(node, prop_value)
+            return
+
         # Delegate to the node's auto-wired handler (Phase A).
         if hasattr(node, "_on_field_changed"):
             node._on_field_changed(prop_name, prop_value)
@@ -1384,6 +1390,54 @@ class UIToModelHandler:
             consumer_node.set_property(field_name, stashed)
         finally:
             consumer_node._populating = False
+
+    def _handle_variable_value_changed(
+        self,
+        var_node: BaseNode,
+        new_value: object,
+    ) -> None:
+        """Propagate a variable node's value to all connected consumer fields."""
+        value_out = var_node.get_output("value_out")  # type: ignore[attr-defined]
+        if value_out is None:
+            return
+
+        from craftgraph.pin_registry import convert_to_display, convert_to_model
+
+        for connected_port in value_out.connected_ports():
+            consumer_node = connected_port.node()
+            port_name: str = connected_port.name()
+            if not port_name.startswith("field_"):
+                continue
+
+            field_name = port_name.removeprefix("field_")
+            fp = consumer_node._get_field_pin(field_name)
+            if fp is None:
+                continue
+
+            converted = convert_to_model(fp, new_value)
+            model = consumer_node.model_ref
+            if model is None:
+                continue
+
+            model_attr = fp.resolved_model_field
+
+            from craftgraph.commands import ChangeNonRecipeFieldCommand, ChangeRecipeFieldCommand
+            from craftgraph.models import ModifiedRecipe
+
+            if isinstance(model, ModifiedRecipe):
+                cmd = ChangeRecipeFieldCommand(model, model_attr, converted)
+            else:
+                cmd = ChangeNonRecipeFieldCommand(model, model_attr, converted)
+
+            with self._guard():
+                self._history.execute(cmd)
+
+            # Mirror the value in the disabled widget
+            consumer_node._populating = True
+            try:
+                consumer_node.set_property(field_name, convert_to_display(fp, converted))
+            finally:
+                consumer_node._populating = False
 
     # -- Helpers --------------------------------------------------------------
 

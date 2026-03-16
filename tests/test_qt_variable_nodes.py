@@ -297,6 +297,43 @@ class TestVariableConnection:
         int_out.connect_to(field_in)
         assert not field_in.connected_ports()
 
+    def test_variable_value_change_propagates_to_consumer(self, sync_setup):
+        s = sync_setup
+        s["string_var"].set_property("value", "Gold")
+        var_out = s["string_var"].get_output("value_out")
+        field_in = s["recipe_node"].get_input("field_item_id")
+        var_out.connect_to(field_in)
+        assert s["recipe"].item_id == "Gold"
+        # Now change the variable value
+        s["string_var"].set_property("value", "Silver")
+        # Model should update
+        assert s["recipe"].item_id == "Silver"
+
+    def test_variable_propagates_to_multiple_consumers(self, sync_setup):
+        s = sync_setup
+        from craftgraph.models import ModifiedRecipe
+
+        recipe2 = ModifiedRecipe(item_id="Copper", amount_crafted=1)
+        recipe_node2 = s["graph"].create_node(
+            "com.craftgraph.ModifiedRecipeNode", name="Recipe2",
+        )
+        recipe_node2.model_ref = recipe2
+        recipe_node2.set_edit_history(s["history"])
+        recipe_node2.populate_from_model()
+
+        s["string_var"].set_property("value", "Gold")
+        var_out = s["string_var"].get_output("value_out")
+
+        field_in1 = s["recipe_node"].get_input("field_item_id")
+        field_in2 = recipe_node2.get_input("field_item_id")
+        var_out.connect_to(field_in1)
+        var_out.connect_to(field_in2)
+
+        # Change variable value
+        s["string_var"].set_property("value", "Diamond")
+        assert s["recipe"].item_id == "Diamond"
+        assert recipe2.item_id == "Diamond"
+
 
 # ---------------------------------------------------------------------------
 # Registry
