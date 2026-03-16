@@ -73,6 +73,19 @@ class TestCraftGraphBaseNode:
         # port_deletion_allowed is set in __init__
         assert node.port_deletion_allowed()
 
+    def test_has_sprite_port_flag_default_true(self, graph):
+        from craftgraph.qt_nodes import CraftGraphBaseNode
+        assert CraftGraphBaseNode.HAS_SPRITE_PORT is True
+
+    def test_is_variable_flag_default_false(self, graph):
+        from craftgraph.qt_nodes import CraftGraphBaseNode
+        assert CraftGraphBaseNode.IS_VARIABLE is False
+
+    def test_sprite_in_port_exists_on_recipe_node(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        port = node.get_input("sprite_in")
+        assert port is not None
+
 
 class TestRegistryBuildInfrastructure:
     """Tests for the _build_from_registry / populate_from_model infrastructure."""

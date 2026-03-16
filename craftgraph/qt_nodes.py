@@ -386,6 +386,8 @@ class CraftGraphBaseNode(BaseNode):
     FIELD_REGISTRY: list[FieldPin] = []
     OUTPUT_PINS: list[OutputPin] = []
     SPLIT_OUTPUTS: bool = False
+    HAS_SPRITE_PORT: bool = True
+    IS_VARIABLE: bool = False
 
     def __init__(self) -> None:
         super().__init__()
@@ -394,9 +396,11 @@ class CraftGraphBaseNode(BaseNode):
         self._sprite_path: Path | None = None
         self._edit_history: EditHistory | None = None
         self._populating: bool = False
+        self._stashed_values: dict[str, Any] = {}
 
         self.set_color(*self.NODE_COLOR)
-        self.add_input("sprite_in", multi_input=False, color=PORT_COLOR_SPRITE)
+        if self.HAS_SPRITE_PORT:
+            self.add_input("sprite_in", multi_input=False, color=PORT_COLOR_SPRITE)
         self._build_from_registry()
         self._build_outputs()
 
