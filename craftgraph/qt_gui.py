@@ -416,6 +416,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         graph.set_acyclic(False)
         for cls in all_node_classes():
             graph.register_node(cls)
+        from craftgraph.qt_variable_nodes import all_variable_node_classes
+        for cls in all_variable_node_classes():
+            graph.register_node(cls)
 
         editor = CodeEditor()
         editor.setPlaceholderText("Open a recipe file to view its source...")
@@ -1101,6 +1104,39 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 func=self._make_create_callback(kind),
             )
 
+        from craftgraph.qt_variable_nodes import VariableNodeKind
+
+        variables_menu = add_menu.add_menu("Variables")
+        for kind, label in [
+            (VariableNodeKind.STRING_VAR, "String Variable"),
+            (VariableNodeKind.INT_VAR, "Int Variable"),
+            (VariableNodeKind.FLOAT_VAR, "Float Variable"),
+            (VariableNodeKind.BOOL_VAR, "Bool Variable"),
+            (VariableNodeKind.CSV_LIST_VAR, "CSV List Variable"),
+            (VariableNodeKind.ENUM_VAR, "Enum Variable"),
+            (VariableNodeKind.PATH_VAR, "Path Variable"),
+            (VariableNodeKind.COLOR_VAR, "Color Variable"),
+        ]:
+            variables_menu.add_command(
+                label,
+                func=self._make_var_create_cb(kind),
+            )
+
+    def _make_var_create_cb(self, kind: "VariableNodeKind"):  # type: ignore[no-untyped-def]
+        """Return a callback that creates a variable node of the given kind."""
+        from craftgraph.qt_variable_nodes import VARIABLE_NODE_REGISTRY
+
+        def callback(graph: NodeGraph) -> None:
+            cls = VARIABLE_NODE_REGISTRY[kind]
+            type_name = f"com.craftgraph.{cls.__name__}"
+            node = graph.create_node(type_name, name=cls.NODE_NAME)
+            tab = self._active_tab
+            if tab is not None:
+                node.set_edit_history(tab.history)
+            self._attach_node_completers(node)
+
+        return callback
+
     def _on_toggle_selection(self, graph: NodeGraph, node: CraftGraphBaseNode) -> None:
         """Toggle the selection state of the right-clicked node."""
         node.set_selected(not node.selected())
@@ -1661,6 +1697,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         graph = NodeGraph()
         graph.set_acyclic(False)
         for cls in all_node_classes():
+            graph.register_node(cls)
+        from craftgraph.qt_variable_nodes import all_variable_node_classes
+        for cls in all_variable_node_classes():
             graph.register_node(cls)
         self._setup_context_menus_for(graph)
 
