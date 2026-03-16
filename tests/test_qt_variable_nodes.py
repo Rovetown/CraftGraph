@@ -336,6 +336,38 @@ class TestVariableConnection:
 
 
 # ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+
+class TestVariableNodePersistence:
+
+    def test_var_uuid_provides_position_key(self, graph):
+        node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
+        key = f"VarNode:{node._var_uuid}"
+        assert key.startswith("VarNode:")
+        assert len(key) == len("VarNode:") + 8
+
+
+# ---------------------------------------------------------------------------
+# GUI registration
+# ---------------------------------------------------------------------------
+
+
+class TestVariableNodeGUIRegistration:
+
+    def test_graph_can_create_all_variable_types(self, graph):
+        """All 8 active variable types should be creatable from the graph."""
+        type_names = [
+            "StringVarNode", "IntVarNode", "FloatVarNode", "BoolVarNode",
+            "CSVListVarNode", "EnumVarNode", "PathVarNode", "ColorVarNode",
+        ]
+        for name in type_names:
+            node = graph.create_node(f"com.craftgraph.{name}", name=name)
+            assert node is not None, f"Failed to create {name}"
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 

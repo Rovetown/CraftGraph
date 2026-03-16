@@ -1733,9 +1733,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         def on_nodes_moved(moved: dict, _tab: FileTab = tab) -> None:
             for node_item in moved:
                 node = _tab.graph.get_node_by_id(node_item.id)
-                if node is None or not hasattr(node, "model_ref") or node.model_ref is None:
+                if node is None:
                     continue
-                key = model_position_key(node.model_ref)
+                # Variable nodes use UUID-based keys
+                if hasattr(node, "_var_uuid"):
+                    key = f"VarNode:{node._var_uuid}"
+                elif hasattr(node, "model_ref") and node.model_ref is not None:
+                    key = model_position_key(node.model_ref)
+                else:
+                    continue
                 x, y = node.pos()
                 _tab.user_positions[key] = (x, y)
 
