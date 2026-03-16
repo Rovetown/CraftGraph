@@ -556,6 +556,32 @@ class CraftGraphBaseNode(BaseNode):
 
         self._edit_history.execute(cmd)
 
+    # -- Variable override helpers -------------------------------------------
+
+    def disable_field(self, field_name: str) -> None:
+        """Gray out a field widget (variable node connected).
+
+        No-op if the field name does not match any widget.
+        """
+        widget_item = self.get_widget(field_name)
+        if widget_item is None:
+            return
+        qt_widget = widget_item.get_custom_widget()
+        if qt_widget is not None:
+            qt_widget.setEnabled(False)
+
+    def enable_field(self, field_name: str) -> None:
+        """Re-enable a field widget (variable node disconnected).
+
+        No-op if the field name does not match any widget.
+        """
+        widget_item = self.get_widget(field_name)
+        if widget_item is None:
+            return
+        qt_widget = widget_item.get_custom_widget()
+        if qt_widget is not None:
+            qt_widget.setEnabled(True)
+
     # -- Custom widget helpers ----------------------------------------------
 
     def add_int_edit(

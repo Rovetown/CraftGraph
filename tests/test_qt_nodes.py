@@ -122,6 +122,31 @@ class TestFieldInputPorts:
         assert port is not None
 
 
+class TestFieldDisableEnable:
+    """Tests for disable_field / enable_field stash behavior."""
+
+    def test_disable_field_disables_widget(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node.disable_field("item_id")
+        widget = node.get_widget("item_id")
+        assert not widget.get_custom_widget().isEnabled()
+
+    def test_enable_field_re_enables_widget(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node.disable_field("item_id")
+        node.enable_field("item_id")
+        widget = node.get_widget("item_id")
+        assert widget.get_custom_widget().isEnabled()
+
+    def test_disable_nonexistent_field_is_noop(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node.disable_field("nonexistent_field")
+
+    def test_stashed_values_initially_empty(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        assert node._stashed_values == {}
+
+
 class TestRegistryBuildInfrastructure:
     """Tests for the _build_from_registry / populate_from_model infrastructure."""
 
