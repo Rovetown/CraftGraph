@@ -1777,11 +1777,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _collect_fab_tab_choices(self) -> tuple[list[str], list[str]]:
         """Collect fabricator and tab choices from all open file tabs."""
-        parsed_files = [
-            tab.parsed_file
-            for tab in self._file_tabs
-            if tab.parsed_file is not None
-        ]
+        parsed_files = [tab.parsed_file for tab in self._file_tabs if tab.parsed_file is not None]
         return collect_fab_tab_choices(parsed_files)
 
     def _refresh_all_ref_nodes(self) -> None:

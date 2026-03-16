@@ -143,7 +143,7 @@ fabricators, and developers working on CraftGraph.
   CSVListVar, EnumVar, IngredientListVar, PathVar, ColorVar)
 - [x] Implement connected-overrides-inline behavior
 - [x] "Promote to Variable" context menu action on pins
-- [ ] **Fabricator/Tab reference nodes (Get/Set pattern)** -- Specialized reference
+- [x] **Fabricator/Tab reference nodes (Get/Set pattern)** -- Specialized reference
   nodes ("Get Fabricator", "Get Tab") that, when connected to a recipe's Path field
   pin, auto-resolve and set the full fabricator path (e.g., `MyFab/ScienceTab`).
   The app computes the path from the tab's actual hierarchy position. Eliminates

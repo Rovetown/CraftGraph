@@ -538,16 +538,12 @@ class TestGetFabConnection:
         from craftgraph.models import AddedRecipe
 
         recipe = AddedRecipe(item_id="TestItem", path="")
-        added_node = s["graph"].create_node(
-            "com.craftgraph.AddedRecipeNode", name="Added"
-        )
+        added_node = s["graph"].create_node("com.craftgraph.AddedRecipeNode", name="Added")
         added_node.model_ref = recipe
         added_node.set_edit_history(s["history"])
         added_node.populate_from_model()
 
-        get_fab = s["graph"].create_node(
-            "com.craftgraph.GetFabricatorNode", name="GetFab"
-        )
+        get_fab = s["graph"].create_node("com.craftgraph.GetFabricatorNode", name="GetFab")
         get_fab.set_edit_history(s["history"])
         get_fab.refresh_fab_tab_choices(["MyFab", "OtherFab"])
         get_fab.set_property("value", "MyFab")
@@ -563,16 +559,12 @@ class TestGetFabConnection:
         from craftgraph.models import AddedRecipe
 
         recipe = AddedRecipe(item_id="TestItem", path="OriginalPath")
-        added_node = s["graph"].create_node(
-            "com.craftgraph.AddedRecipeNode", name="Added"
-        )
+        added_node = s["graph"].create_node("com.craftgraph.AddedRecipeNode", name="Added")
         added_node.model_ref = recipe
         added_node.set_edit_history(s["history"])
         added_node.populate_from_model()
 
-        get_fab = s["graph"].create_node(
-            "com.craftgraph.GetFabricatorNode", name="GetFab"
-        )
+        get_fab = s["graph"].create_node("com.craftgraph.GetFabricatorNode", name="GetFab")
         get_fab.set_edit_history(s["history"])
         get_fab.set_property("value", "MyFab")
 
@@ -590,16 +582,12 @@ class TestGetFabConnection:
         from craftgraph.models import AddedRecipe
 
         recipe = AddedRecipe(item_id="TestItem", path="")
-        added_node = s["graph"].create_node(
-            "com.craftgraph.AddedRecipeNode", name="Added"
-        )
+        added_node = s["graph"].create_node("com.craftgraph.AddedRecipeNode", name="Added")
         added_node.model_ref = recipe
         added_node.set_edit_history(s["history"])
         added_node.populate_from_model()
 
-        get_tab = s["graph"].create_node(
-            "com.craftgraph.GetTabNode", name="GetTab"
-        )
+        get_tab = s["graph"].create_node("com.craftgraph.GetTabNode", name="GetTab")
         get_tab.set_edit_history(s["history"])
         get_tab.refresh_fab_tab_choices(["MyFab/SciTab", "MyFab/AdvTab"])
         get_tab.set_property("value", "MyFab/SciTab")
