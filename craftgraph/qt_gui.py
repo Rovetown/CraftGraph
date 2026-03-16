@@ -1761,6 +1761,29 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     line_edit: QtWidgets.QLineEdit = widget.get_custom_widget()
                     self._node_popup.update_words(line_edit, sorted_paths)
 
+    # -- Fab/Tab reference node refresh ---------------------------------------
+
+    def _collect_fab_tab_choices(self) -> tuple[list[str], list[str]]:
+        """Collect fabricator and tab choices from all open file tabs."""
+        parsed_files = [
+            tab.parsed_file
+            for tab in self._file_tabs
+            if tab.parsed_file is not None
+        ]
+        return collect_fab_tab_choices(parsed_files)
+
+    def _refresh_all_ref_nodes(self) -> None:
+        """Refresh dropdown choices on all Get Fab / Get Tab nodes across all tabs."""
+        from craftgraph.qt_variable_nodes import GetFabricatorNode, GetTabNode
+
+        fab_choices, tab_choices = self._collect_fab_tab_choices()
+        for file_tab in self._file_tabs:
+            for node in file_tab.graph.all_nodes():
+                if isinstance(node, GetFabricatorNode):
+                    node.refresh_fab_tab_choices(fab_choices)
+                elif isinstance(node, GetTabNode):
+                    node.refresh_fab_tab_choices(tab_choices)
+
     # -- Sprite auto-assign ---------------------------------------------------
 
     def _apply_sprites_for(self, tab: FileTab) -> None:
@@ -1970,6 +1993,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._apply_sprites_for(tab)
 
         self._update_path_completions()
+        self._refresh_all_ref_nodes()
 
         # Activate first tab
         self._tab_bar.setCurrentIndex(0)
