@@ -2309,3 +2309,72 @@ class TestSmartPlacement:
         positions = [tuple(node.pos()) for node in window.graph.all_nodes()]
         # All positions must be unique (no perfect overlap)
         assert len(set(positions)) == len(positions)
+
+
+class TestRequiredFieldHighlighting:
+    """Phase E: required fields get a red border when empty."""
+
+    def test_empty_item_id_has_red_border(self, window, qapp):
+        """A freshly created node with empty ItemID shows red border."""
+        from craftgraph.qt_nodes import NodeKind, _REQUIRED_EMPTY_STYLE
+
+        window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="")
+
+        node = window.graph.all_nodes()[0]
+        widget_item = node.get_widget("item_id")
+        qt_widget = widget_item.get_custom_widget()
+        assert _REQUIRED_EMPTY_STYLE in qt_widget.styleSheet()
+
+    def test_filled_item_id_no_red_border(self, window, tmp_path, qapp):
+        """A node loaded with a valid ItemID has no red border."""
+        from craftgraph.qt_nodes import _REQUIRED_EMPTY_STYLE
+
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = window.graph.all_nodes()[0]
+        widget_item = node.get_widget("item_id")
+        qt_widget = widget_item.get_custom_widget()
+        assert _REQUIRED_EMPTY_STYLE not in qt_widget.styleSheet()
+
+    def test_clearing_required_field_adds_red_border(self, window, tmp_path, qapp):
+        """Clearing a required field triggers red border."""
+        from craftgraph.qt_nodes import _REQUIRED_EMPTY_STYLE
+
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = window.graph.all_nodes()[0]
+        # Simulate user clearing the field
+        node.set_property("item_id", "")
+        node.validate_required_fields()
+
+        widget_item = node.get_widget("item_id")
+        qt_widget = widget_item.get_custom_widget()
+        assert _REQUIRED_EMPTY_STYLE in qt_widget.styleSheet()
+
+    def test_non_required_field_no_red_border_when_empty(self, window, tmp_path, qapp):
+        """Non-required fields stay unstyled even when empty."""
+        from craftgraph.qt_nodes import _REQUIRED_EMPTY_STYLE
+
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = window.graph.all_nodes()[0]
+        # amount_crafted is not required
+        widget_item = node.get_widget("amount_crafted")
+        if widget_item is not None:
+            qt_widget = widget_item.get_custom_widget()
+            assert qt_widget is None or _REQUIRED_EMPTY_STYLE not in (qt_widget.styleSheet() or "")

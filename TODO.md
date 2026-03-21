@@ -177,14 +177,14 @@ fabricators, and developers working on CraftGraph.
 - [x] Variable/Get nodes spawn at fixed position instead of cursor position
 - [x] Red error highlight missing on rejection messages (e.g. "cannot add X recipe type here")
 - [x] Category dropdown: scrollwheel does not work when hovering
-- [x] Category dropdown: z-order/layer issues (text from label below bleeds through open dropdown)
+- [x] Category dropdown: z-order/layer issues (deferred to Phase F)
 - [x] Get Tab/Fab node spawns with oversized transparent dropdown (very wide until switching selection)
 - [x] Node selection bugs after adding/deleting nodes (tab-specific, reappears after reset layout)
 - [x] Smart placement edge cases (defer to later bug-fix pass)
 
 #### Phase E -- Validation and Error Prevention
 
-- [ ] Required-field highlighting (red border on empty required pins)
+- [x] Required-field highlighting (red border on empty required pins)
 - [ ] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
 - [ ] Path reference validation (does the referenced tab exist?)
 - [ ] Export-time validation summary dialog
@@ -200,6 +200,7 @@ fabricators, and developers working on CraftGraph.
 - [x] Floating tooltips for context menu entries (show description on hover instead of inlining it in the label text)
 - [ ] Floating tooltips for node headers (show node type description on hover over a node in the graph)
 - [ ] Floating tooltips for node field widgets (show field-level help text on hover, e.g. "TechType ID", "Valid range 1-25")
+- [ ] Category dropdown: z-order/layer issues (proxy widgets below bleed through open dropdown -- needs z-value or native popup approach)
 
 ---
 

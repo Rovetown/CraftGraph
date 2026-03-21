@@ -14,6 +14,7 @@ Architecture notes:
 
 from __future__ import annotations
 
+import uuid
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -64,6 +65,10 @@ NODE_COLOR_SPRITE = (180, 160, 60)
 
 PORT_COLOR_SPRITE = (180, 160, 60)
 PORT_COLOR_VARIABLE = (100, 70, 130)
+
+# Stylesheet fragments for required-field validation highlighting.
+_REQUIRED_EMPTY_STYLE = "border: 1px solid rgb(200, 60, 60);"
+_REQUIRED_VALID_STYLE = "border: none;"
 
 
 # Node type strings for port constraints (identifier + "." + ClassName)
@@ -404,6 +409,7 @@ class CraftGraphBaseNode(BaseNode):
             self.add_input("sprite_in", multi_input=False, color=PORT_COLOR_SPRITE)
         self._build_from_registry()
         self._build_outputs()
+        self.validate_required_fields()
 
     @property
     def model_ref(self) -> Any:
@@ -461,19 +467,32 @@ class CraftGraphBaseNode(BaseNode):
             # Variable nodes produce values, not consume them --
             # they don't get field_* input ports.
             if not self.IS_VARIABLE:
-                self.add_input(
+                port = self.add_input(
                     f"field_{fp.name}",
                     multi_input=False,
                     color=PORT_COLOR_VARIABLE,
-                    display_name=False,
+                    display_name=True,
                 )
+                # NodeGraphQt shows port.name as the label text.
+                # Rename it to the human-readable field label via
+                # the underlying QGraphicsTextItem so we keep the
+                # internal port name for lookups but display nicely.
+                if port is not None and fp.label:
+                    port_item = port.view
+                    node_item = self.view
+                    text_item = node_item.get_input_text_item(port_item)
+                    if text_item is not None:
+                        text_item.setPlainText(fp.label)
 
     def _create_widget_for_field(self, fp: FieldPin) -> None:
         """Create the appropriate widget for a single field pin."""
         match fp.pin_type:
             case PinType.STRING | PinType.CSV:
                 if fp.widget_override == "combo":
-                    self.add_combo_menu(fp.name, label=fp.label, items=fp.enum_items or [])
+                    items = fp.enum_items or []
+                    if not items:
+                        items = ["(none)"]
+                    self.add_combo_menu(fp.name, label=fp.label, items=items)
                 else:
                     self.add_text_input(fp.name, label=fp.label, text=str(fp.default or ""))
             case PinType.INT:
@@ -528,6 +547,22 @@ class CraftGraphBaseNode(BaseNode):
                 self.set_property(fp.name, display)
         finally:
             self._populating = False
+        self.validate_required_fields()
+
+    def validate_required_fields(self) -> None:
+        """Apply or remove red border on required fields based on emptiness."""
+        for fp in self.FIELD_REGISTRY:
+            if not fp.required:
+                continue
+            widget_item = self.get_widget(fp.name)
+            if widget_item is None:
+                continue
+            qt_widget = widget_item.get_custom_widget()
+            if qt_widget is None:
+                continue
+            value = self.get_property(fp.name)
+            empty = value is None or (isinstance(value, str) and not value.strip())
+            qt_widget.setStyleSheet(_REQUIRED_EMPTY_STYLE if empty else _REQUIRED_VALID_STYLE)
 
     def _get_field_pin(self, name: str) -> FieldPin | None:
         """Look up a FieldPin by widget/property name."""
@@ -561,6 +596,7 @@ class CraftGraphBaseNode(BaseNode):
             cmd = ChangeNonRecipeFieldCommand(self._model_ref, model_attr, converted)
 
         self._edit_history.execute(cmd)
+        self.validate_required_fields()
 
     # -- Variable override helpers -------------------------------------------
 
@@ -1151,6 +1187,10 @@ class OrphanIngredientNode(CraftGraphBaseNode):
         OutputPin("output", multi=True, pin_color=PORT_COLOR_OUTPUT),
     ]
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._node_uuid: str = uuid.uuid4().hex[:8]
+
 
 class SpriteNode(CraftGraphBaseNode):
     """A node that holds a sprite image reference."""
@@ -1165,6 +1205,10 @@ class SpriteNode(CraftGraphBaseNode):
     OUTPUT_PINS = [
         OutputPin("sprite_out", multi=True, pin_color=PORT_COLOR_SPRITE),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._node_uuid: str = uuid.uuid4().hex[:8]
 
 
 # ---------------------------------------------------------------------------
