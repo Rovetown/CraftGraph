@@ -229,6 +229,9 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
     _RE_COMMENT = re.compile(r"#.*$")
     _RE_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
     _RE_KEY_VALUE = re.compile(r"^(\s*)(\w+)(\s*:\s*)(.*?)(\s*)$")
+    _RE_FIELD_COMMA_END = re.compile(r"^\s*(\w+)\s*:.*,\s*$")
+    _RE_CLOSE_SEMI = re.compile(r"\)\s*;")
+    _RE_FIELD_COLON_END = re.compile(r"^\s*(\w+)\s*:.*\S:\s*$")
 
     def __init__(self, parent: QTextDocument) -> None:
         super().__init__(parent)
@@ -271,6 +274,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         self._check_e1_missing_semicolon(text, stripped, protected)
+        self._check_e2_comma_terminator(text, stripped, protected)
 
     def _strip_inline_comment(self, text: str) -> str:
         """Remove inline comment from a line, respecting quoted strings."""
@@ -347,3 +351,31 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         self.setFormat(value_start, value_len, self._error_fmt)
+
+    def _check_e2_comma_terminator(
+        self,
+        text: str,
+        stripped: str,
+        protected: list[tuple[int, int]],
+    ) -> None:
+        """E2: Flag field-value lines ending with comma instead of semicolon."""
+        effective = self._strip_inline_comment(text).rstrip()
+        if not effective or not effective.endswith(","):
+            return
+
+        m = self._RE_FIELD_COMMA_END.match(effective + "\n")
+        if not m:
+            return
+
+        key = m.group(1)
+        if key.lower() not in {k.lower() for k in FIELD_KEYS}:
+            return
+
+        comma_idx = effective.rfind(",")
+        if comma_idx < 0:
+            return
+
+        if self._in_protected_range(comma_idx, comma_idx + 1, protected):
+            return
+
+        self.setFormat(comma_idx, 1, self._error_fmt)

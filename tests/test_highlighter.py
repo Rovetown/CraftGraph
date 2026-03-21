@@ -551,3 +551,44 @@ class TestMissingSemicolon:
         _highlight(doc, hl, "    CustomCraftingTabs:\n    (")
         errors = _error_ranges(doc, block_index=0)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: E2 -- comma as value terminator
+# ---------------------------------------------------------------------------
+
+
+class TestCommaAsTerminator:
+    """E2: Field value ending with comma instead of semicolon."""
+
+    def test_comma_at_end_of_field_value(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium,")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_underline_covers_trailing_comma(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium,")
+        errors = _error_ranges(doc)
+        start, length = errors[0]
+        assert length == 1
+        assert "    ItemID: Titanium,"[start] == ","
+
+    def test_valid_semicolon_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_csv_field_ending_with_semicolon_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Unlocks: Alch_Magnesium, Magnesium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_required_with_comma(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Required: 3,")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
