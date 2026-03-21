@@ -463,3 +463,91 @@ class TestErrorSuppression:
         _highlight(doc, hl, "ItemID: Titanium; # a comment")
         errors = _error_ranges(doc)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: E1 -- missing semicolon detection
+# ---------------------------------------------------------------------------
+
+
+class TestMissingSemicolon:
+    """E1: Key: Value lines without trailing semicolon get wavy underline."""
+
+    def test_simple_missing_semicolon(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_underline_covers_value_portion(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+        start, length = errors[0]
+        assert start == len("    ItemID: ")
+        assert length == len("Titanium")
+
+    def test_valid_line_with_semicolon_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_line_ending_with_paren_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Ingredients:")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_structural_key_with_next_line_paren_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "Ingredients:\n(")
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
+
+    def test_block_type_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "ModifiedRecipes:\n(")
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
+
+    def test_open_paren_line_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "(")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_close_paren_line_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, ")")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_empty_line_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_comma_ending_no_e1_error(self, doc_and_hl):
+        """Lines ending with comma are E2, not E1 -- E1 should not fire.
+
+        E2 may later flag the trailing comma, but E1 should never underline
+        the value portion on a comma-ending line.
+        """
+        doc, hl = doc_and_hl
+        text = "    ItemID: Titanium,"
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc)
+        value_start = len("    ItemID: ")
+        value_len = len("Titanium")
+        e1_errors = [(s, l) for s, l in errors if s == value_start and l == value_len]
+        assert e1_errors == []
+
+    def test_structural_key_standalone_no_error(self, doc_and_hl):
+        """Structural key alone on a line (no value) should not error."""
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    CustomCraftingTabs:\n    (")
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []

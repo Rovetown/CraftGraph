@@ -228,6 +228,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
 
     _RE_COMMENT = re.compile(r"#.*$")
     _RE_STRING = re.compile(r'"(?:[^"\\]|\\.)*"')
+    _RE_KEY_VALUE = re.compile(r"^(\s*)(\w+)(\s*:\s*)(.*?)(\s*)$")
 
     def __init__(self, parent: QTextDocument) -> None:
         super().__init__(parent)
@@ -271,6 +272,34 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
 
         self._check_e1_missing_semicolon(text, stripped, protected)
 
+    def _strip_inline_comment(self, text: str) -> str:
+        """Remove inline comment from a line, respecting quoted strings."""
+        in_string = False
+        escaped = False
+        for i, ch in enumerate(text):
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if ch == "#" and not in_string:
+                return text[:i].rstrip()
+        return text
+
+    def _next_non_empty_text(self) -> str | None:
+        """Return the stripped text of the next non-empty block, or None."""
+        block = self.currentBlock().next()
+        while block.isValid():
+            txt = block.text().strip()
+            if txt:
+                return txt
+            block = block.next()
+        return None
+
     def _check_e1_missing_semicolon(
         self,
         text: str,
@@ -278,4 +307,43 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
         protected: list[tuple[int, int]],
     ) -> None:
         """E1: Flag Key: Value lines missing a trailing semicolon."""
-        pass  # Placeholder -- implemented in next task
+        m = self._RE_KEY_VALUE.match(text)
+        if not m:
+            return
+
+        key = m.group(2)
+        value = m.group(4).rstrip()
+
+        # Strip inline comments from value before checking terminators
+        value_clean = self._strip_inline_comment(value).rstrip()
+        if not value_clean:
+            # Key with no value -- structural keys are always fine
+            if key.lower() in {k.lower() for k in _STRUCTURAL_KEYS}:
+                return
+            # Non-structural key with no value: not clearly an error
+            last_char = stripped[-1] if stripped else ""
+            if last_char in ";)(:,":
+                return
+            return
+
+        # Lines ending with a valid terminator are fine.
+        # Colon included so E1 defers to E4 for colon-ending lines.
+        last_char = value_clean[-1]
+        if last_char in ";)(,:":
+            return
+
+        # Structural key exemption: if the next non-empty line opens a block,
+        # this key is a section header, not a value-bearing field.
+        key_lower = key.lower()
+        if key_lower in {k.lower() for k in _STRUCTURAL_KEYS}:
+            next_text = self._next_non_empty_text()
+            if next_text is not None and next_text.startswith("("):
+                return
+
+        # Calculate underline range (value portion only)
+        value_start = m.start(4)
+        value_len = len(value_clean)
+        if self._in_protected_range(value_start, value_start + value_len, protected):
+            return
+
+        self.setFormat(value_start, value_len, self._error_fmt)
