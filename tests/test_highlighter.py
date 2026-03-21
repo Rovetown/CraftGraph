@@ -592,3 +592,59 @@ class TestCommaAsTerminator:
         _highlight(doc, hl, "    Required: 3,")
         errors = _error_ranges(doc)
         assert len(errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: E3 -- semicolon between list entries
+# ---------------------------------------------------------------------------
+
+
+class TestSemicolonBetweenEntries:
+    """E3: ); followed by ( on next line should be ), instead."""
+
+    def test_semicolon_between_entries_flagged(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = "    );\n("
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        assert len(errors) == 1
+
+    def test_underline_covers_semicolon(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = "    );\n("
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        start, length = errors[0]
+        assert length == 1
+        assert "    );"[start] == ";"
+
+    def test_last_entry_semicolon_no_error(self, doc_and_hl):
+        """Last entry ends with ); followed by ) -- no error."""
+        doc, hl = doc_and_hl
+        text = "    );\n)"
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
+
+    def test_comma_between_entries_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = "    ),\n("
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
+
+    def test_semicolon_with_blank_line_before_paren(self, doc_and_hl):
+        """Blank lines between ); and ( should still be flagged."""
+        doc, hl = doc_and_hl
+        text = "    );\n\n("
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        assert len(errors) == 1
+
+    def test_field_semicolon_not_flagged(self, doc_and_hl):
+        """Regular field ending with ; should not trigger E3."""
+        doc, hl = doc_and_hl
+        text = "    ItemID: Titanium;\n("
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
