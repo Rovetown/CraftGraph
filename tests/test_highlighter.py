@@ -683,3 +683,51 @@ class TestColonAsTerminator:
         _highlight(doc, hl, "    ItemID: Titanium;")
         errors = _error_ranges(doc)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: E5a -- unquoted DisplayName/Tooltip
+# ---------------------------------------------------------------------------
+
+
+class TestUnquotedDisplayNameTooltip:
+    """E5a: DisplayName/Tooltip with spaces must be quoted."""
+
+    def test_unquoted_display_name_with_spaces(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    DisplayName: My Custom Item;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_underline_covers_unquoted_value(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = "    DisplayName: My Custom Item;"
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc)
+        start, length = errors[0]
+        assert text[start:start + length] == "My Custom Item"
+
+    def test_quoted_display_name_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, '    DisplayName: "My Custom Item";')
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_single_word_display_name_no_error(self, doc_and_hl):
+        """Single word without spaces does not need quoting."""
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    DisplayName: Titanium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_unquoted_tooltip_with_spaces(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Tooltip: A nice tooltip;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_case_insensitive_field_name(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    displayname: My Item;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1

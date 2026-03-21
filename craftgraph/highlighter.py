@@ -232,6 +232,10 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
     _RE_FIELD_COMMA_END = re.compile(r"^\s*(\w+)\s*:.*,\s*$")
     _RE_CLOSE_SEMI = re.compile(r"\)\s*;")
     _RE_FIELD_COLON_END = re.compile(r"^\s*(\w+)\s*:.*\S:\s*$")
+    _RE_QUOTING_FIELD = re.compile(
+        r"^\s*(DisplayName|Tooltip)\s*:\s*(.*?)\s*[;]?\s*$",
+        re.IGNORECASE,
+    )
 
     def __init__(self, parent: QTextDocument) -> None:
         super().__init__(parent)
@@ -277,6 +281,8 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
         self._check_e2_comma_terminator(text, stripped, protected)
         self._check_e3_semicolon_between_entries(text, stripped, protected)
         self._check_e4_colon_terminator(text, stripped, protected)
+        self._check_e5a_unquoted_string_field(text, stripped, protected)
+        self._check_e5b_space_in_id_path(text, stripped, protected)
 
     def _strip_inline_comment(self, text: str) -> str:
         """Remove inline comment from a line, respecting quoted strings."""
@@ -428,3 +434,76 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         self.setFormat(colon_idx, 1, self._error_fmt)
+
+    def _check_e5a_unquoted_string_field(
+        self,
+        text: str,
+        stripped: str,
+        protected: list[tuple[int, int]],
+    ) -> None:
+        """E5a: Flag DisplayName/Tooltip values with spaces that aren't quoted."""
+        m = self._RE_QUOTING_FIELD.match(text)
+        if not m:
+            return
+
+        value = m.group(2).strip().rstrip(";").strip()
+        if not value or " " not in value:
+            return
+
+        # Already quoted
+        if value.startswith('"') and value.endswith('"'):
+            return
+
+        # Find value position in original text
+        key_end = text.lower().find(m.group(1).lower()) + len(m.group(1))
+        colon_pos = text.find(":", key_end)
+        value_start = colon_pos + 1
+        # Skip whitespace after colon
+        while value_start < len(text) and text[value_start] == " ":
+            value_start += 1
+
+        # Value extends until ; or end of line
+        value_end = text.find(";", value_start)
+        if value_end < 0:
+            value_end = len(text.rstrip())
+
+        value_text = text[value_start:value_end].rstrip()
+        if not value_text or " " not in value_text:
+            return
+
+        if self._in_protected_range(value_start, value_start + len(value_text), protected):
+            return
+
+        self.setFormat(value_start, len(value_text), self._error_fmt)
+
+    def _check_e5b_space_in_id_path(
+        self,
+        text: str,
+        stripped: str,
+        protected: list[tuple[int, int]],
+    ) -> None:
+        """E5b: Flag spaces in ID and Path field values."""
+        m = self._RE_KEY_VALUE.match(text)
+        if not m:
+            return
+
+        key = m.group(2)
+        if key.lower() not in {k.lower() for k in _SPACE_CHECK_FIELDS}:
+            return
+
+        key_end = m.start(4)
+        # Strip inline comments before analysing the value.
+        effective_text = self._strip_inline_comment(text)
+        effective_m = self._RE_KEY_VALUE.match(effective_text)
+        if not effective_m:
+            return
+
+        value_raw = effective_m.group(4).rstrip()
+        value_clean = value_raw.rstrip(";").rstrip()
+        if not value_clean or " " not in value_clean:
+            return
+
+        if self._in_protected_range(key_end, key_end + len(value_clean), protected):
+            return
+
+        self.setFormat(key_end, len(value_clean), self._error_fmt)
