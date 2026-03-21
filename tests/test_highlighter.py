@@ -731,3 +731,63 @@ class TestUnquotedDisplayNameTooltip:
         _highlight(doc, hl, "    displayname: My Item;")
         errors = _error_ranges(doc)
         assert len(errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: E5b -- unexpected space in ID/Path fields
+# ---------------------------------------------------------------------------
+
+
+class TestUnexpectedSpaceInIdPath:
+    """E5b: ID and Path fields should not contain spaces."""
+
+    def test_space_in_item_id(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: My Item;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_underline_covers_value_with_space(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = "    ItemID: My Item;"
+        _highlight(doc, hl, text)
+        errors = _error_ranges(doc)
+        start, length = errors[0]
+        assert text[start:start + length] == "My Item"
+
+    def test_valid_item_id_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_space_in_path(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Path: Fabricator/My Folder/Water;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_valid_path_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Path: Fabricator/Survival/Water;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_space_in_tab_id(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    TabID: My Tab;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
+
+    def test_csv_fields_excluded(self, doc_and_hl):
+        """Unlocks, UnlockedBy, LinkedItemIDs are excluded from E5b."""
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Unlocks: Alch_Magnesium, Magnesium;")
+        errors = _error_ranges(doc)
+        assert errors == []
+
+    def test_case_insensitive_field(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    itemid: My Item;")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1
