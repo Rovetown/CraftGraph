@@ -276,6 +276,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
         self._check_e1_missing_semicolon(text, stripped, protected)
         self._check_e2_comma_terminator(text, stripped, protected)
         self._check_e3_semicolon_between_entries(text, stripped, protected)
+        self._check_e4_colon_terminator(text, stripped, protected)
 
     def _strip_inline_comment(self, text: str) -> str:
         """Remove inline comment from a line, respecting quoted strings."""
@@ -401,3 +402,29 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         self.setFormat(semi_idx, 1, self._error_fmt)
+
+    def _check_e4_colon_terminator(
+        self,
+        text: str,
+        stripped: str,
+        protected: list[tuple[int, int]],
+    ) -> None:
+        """E4: Flag field-value lines ending with colon instead of semicolon."""
+        m = self._RE_FIELD_COLON_END.match(text)
+        if not m:
+            return
+
+        key = m.group(1)
+        key_colon_end = text.find(":", text.find(key)) + 1
+        value_after_key = text[key_colon_end:].strip()
+        if not value_after_key or value_after_key == ":":
+            return
+
+        colon_idx = text.rstrip().rfind(":")
+        if colon_idx < 0 or colon_idx <= text.find(":"):
+            return
+
+        if self._in_protected_range(colon_idx, colon_idx + 1, protected):
+            return
+
+        self.setFormat(colon_idx, 1, self._error_fmt)

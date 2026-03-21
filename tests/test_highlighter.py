@@ -648,3 +648,38 @@ class TestSemicolonBetweenEntries:
         _highlight(doc, hl, text)
         errors = _error_ranges(doc, block_index=0)
         assert errors == []
+
+
+# ---------------------------------------------------------------------------
+# Tests: E4 -- colon as value terminator
+# ---------------------------------------------------------------------------
+
+
+class TestColonAsTerminator:
+    """E4: Key: Value: (colon terminating value instead of semicolon)."""
+
+    def test_colon_at_end_of_value(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium:")
+        errors = _error_ranges(doc)
+        assert len(errors) == 1  # E4 only, E1 defers colon-ending to E4
+
+    def test_underline_covers_trailing_colon(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Required: 3:")
+        errors = _error_ranges(doc)
+        colon_errors = [(s, l) for s, l in errors if "    Required: 3:"[s:s + l] == ":"]
+        assert len(colon_errors) >= 1
+
+    def test_valid_key_colon_no_error(self, doc_and_hl):
+        """A standalone key like 'Ingredients:' is not E4."""
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    Ingredients:\n    (")
+        errors = _error_ranges(doc, block_index=0)
+        assert errors == []
+
+    def test_proper_semicolon_no_error(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        _highlight(doc, hl, "    ItemID: Titanium;")
+        errors = _error_ranges(doc)
+        assert errors == []
