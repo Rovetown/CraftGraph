@@ -2255,3 +2255,35 @@ class TestFabricatorNesting:
         initial_count = len(window.graph.all_nodes())
         window._create_node_from_menu(NodeKind.CUSTOM_SIZE)
         assert len(window.graph.all_nodes()) == initial_count
+
+
+# ---------------------------------------------------------------------------
+# Smart placement
+# ---------------------------------------------------------------------------
+
+
+class TestSmartPlacement:
+    """Tests for _find_free_position overlap avoidance."""
+
+    def test_find_free_position_nudges_on_overlap(self, window, tmp_path):
+        """When a node already occupies the target position, the helper nudges."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        alpha = window.graph.all_nodes()[0]
+        ax, ay = alpha.pos()
+
+        # Ask for a free position at Alpha's exact location
+        fx, fy = window._find_free_position(window.graph, ax, ay)
+
+        # Must have been nudged away from the original spot
+        assert (fx, fy) != (ax, ay)
+
+    def test_find_free_position_returns_same_when_empty(self, window):
+        """When no nodes exist, the position is returned unchanged."""
+        fx, fy = window._find_free_position(window.graph, 100.0, 200.0)
+        assert (fx, fy) == (100.0, 200.0)

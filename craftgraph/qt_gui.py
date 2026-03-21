@@ -1252,6 +1252,56 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Reset the status bar to its default style."""
         self.statusBar().setStyleSheet("")
 
+    # -- Smart placement -------------------------------------------------------
+
+    # Nudge offset per collision iteration.
+    _NUDGE_X = 30.0
+    _NUDGE_Y = 30.0
+    _NUDGE_MAX_ITER = 20
+
+    @staticmethod
+    def _find_free_position(
+        graph: NodeGraph,
+        x: float,
+        y: float,
+        w_est: float = 200.0,
+        h_est: float = 120.0,
+    ) -> tuple[float, float]:
+        """Return (x, y) nudged away from existing nodes if overlapping.
+
+        Coordinates are top-left origin (matching NodeGraphQt's node.pos()).
+        Checks whether a rectangle of *w_est* x *h_est* at (x, y) collides
+        with any existing node's bounding rect.  On each collision the
+        candidate is shifted by (_NUDGE_X, _NUDGE_Y) and retested, up to
+        _NUDGE_MAX_ITER times.
+        """
+        for _ in range(CraftGraphWindow._NUDGE_MAX_ITER):
+            collision = False
+            for node in graph.all_nodes():
+                nx, ny = node.pos()
+                view = getattr(node, "view", None)
+                if view is not None:
+                    rect = view.boundingRect()
+                    nw, nh = rect.width(), rect.height()
+                else:
+                    nw, nh = w_est, h_est
+                # Top-left AABB overlap: two rects overlap when
+                # each left edge is left of the other's right edge
+                # and each top edge is above the other's bottom edge.
+                if (
+                    x < nx + nw
+                    and x + w_est > nx
+                    and y < ny + nh
+                    and y + h_est > ny
+                ):
+                    collision = True
+                    break
+            if not collision:
+                return x, y
+            x += CraftGraphWindow._NUDGE_X
+            y += CraftGraphWindow._NUDGE_Y
+        return x, y
+
     # -- Node operations (delete, copy, paste, duplicate) --------------------
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:  # type: ignore[override]
