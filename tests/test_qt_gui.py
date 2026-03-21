@@ -2378,3 +2378,97 @@ class TestRequiredFieldHighlighting:
         if widget_item is not None:
             qt_widget = widget_item.get_custom_widget()
             assert qt_widget is None or _REQUIRED_EMPTY_STYLE not in (qt_widget.styleSheet() or "")
+
+
+class TestMutualExclusion:
+    """Phase E: Copied/Hidden mutual exclusion on MovedRecipe nodes."""
+
+    def test_checking_copied_unchecks_hidden(self, window, tmp_path, qapp):
+        """Setting Copied=True forces Hidden=False."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "MovedRecipes:\n(\n    ItemID: Alpha;\n    Hidden: YES;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+        assert node.get_property("hidden") is True
+
+        # Simulate user checking Copied
+        node._on_field_changed("copied", True)
+        assert node.get_property("hidden") is False
+
+    def test_checking_hidden_unchecks_copied(self, window, tmp_path, qapp):
+        """Setting Hidden=True forces Copied=False."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "MovedRecipes:\n(\n    ItemID: Alpha;\n    Copied: YES;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+        assert node.get_property("copied") is True
+
+        node._on_field_changed("hidden", True)
+        assert node.get_property("copied") is False
+
+
+class TestPairedFields:
+    """Phase E: PdaGroup/PdaCategory paired-field warning."""
+
+    def test_one_set_other_empty_shows_warning(self, window, tmp_path, qapp):
+        """Setting PdaGroup without PdaCategory shows a yellow border on PdaCategory."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n"
+            "    PdaGroup: Resources;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+
+        # PdaGroup is set, PdaCategory is not -- the empty one should have a warning
+        cat_widget = node.get_widget("pda_category")
+        assert cat_widget is not None
+        qt_cat = cat_widget.get_custom_widget()
+        assert "200, 160, 40" in qt_cat.styleSheet()
+
+    def test_both_set_no_warning(self, window, tmp_path, qapp):
+        """Both PdaGroup and PdaCategory set -- no warning borders."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n"
+            "    PdaGroup: Resources;\n    PdaCategory: BasicMaterials;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+
+        grp_widget = node.get_widget("pda_group")
+        cat_widget = node.get_widget("pda_category")
+        assert "200, 160, 40" not in (grp_widget.get_custom_widget().styleSheet() or "")
+        assert "200, 160, 40" not in (cat_widget.get_custom_widget().styleSheet() or "")

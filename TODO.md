@@ -185,7 +185,7 @@ fabricators, and developers working on CraftGraph.
 #### Phase E -- Validation and Error Prevention
 
 - [x] Required-field highlighting (red border on empty required pins)
-- [ ] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
+- [x] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
 - [ ] Path reference validation (does the referenced tab exist?)
 - [ ] Export-time validation summary dialog
 - [ ] Syntax highlighter rules for common text-level mistakes (missing `;`, wrong separator, unquoted spaces)

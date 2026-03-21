@@ -394,6 +394,10 @@ class CraftGraphBaseNode(BaseNode):
     SPLIT_OUTPUTS: bool = False
     HAS_SPRITE_PORT: bool = True
     IS_VARIABLE: bool = False
+    # Pairs of boolean fields where at most one can be True.
+    MUTUAL_EXCLUSIONS: list[tuple[str, str]] = []
+    # Pairs of optional fields that should both be set or both be empty.
+    PAIRED_FIELDS: list[tuple[str, str]] = []
 
     def __init__(self) -> None:
         super().__init__()
@@ -548,6 +552,7 @@ class CraftGraphBaseNode(BaseNode):
         finally:
             self._populating = False
         self.validate_required_fields()
+        self.validate_paired_fields()
 
     def validate_required_fields(self) -> None:
         """Apply or remove red border on required fields based on emptiness."""
@@ -596,7 +601,56 @@ class CraftGraphBaseNode(BaseNode):
             cmd = ChangeNonRecipeFieldCommand(self._model_ref, model_attr, converted)
 
         self._edit_history.execute(cmd)
+        self._enforce_mutual_exclusion(field_name, converted)
         self.validate_required_fields()
+        self.validate_paired_fields()
+
+    def _enforce_mutual_exclusion(self, field_name: str, value: Any) -> None:
+        """If a boolean field in a mutual-exclusion pair becomes True, uncheck its partner."""
+        if not value:
+            return
+        for a, b in self.MUTUAL_EXCLUSIONS:
+            partner = None
+            if field_name == a:
+                partner = b
+            elif field_name == b:
+                partner = a
+            if partner is not None:
+                self._populating = True
+                try:
+                    self.set_property(partner, False)
+                finally:
+                    self._populating = False
+                if self._model_ref is not None:
+                    setattr(self._model_ref, partner, False)
+                break
+
+    def validate_paired_fields(self) -> None:
+        """Warn when only one field in a paired set has a value."""
+        for a, b in self.PAIRED_FIELDS:
+            wa = self.get_widget(a)
+            wb = self.get_widget(b)
+            if wa is None or wb is None:
+                continue
+            qa = wa.get_custom_widget()
+            qb = wb.get_custom_widget()
+            if qa is None or qb is None:
+                continue
+            val_a = self.get_property(a)
+            val_b = self.get_property(b)
+            empty_a = val_a is None or (isinstance(val_a, str) and not val_a.strip())
+            empty_b = val_b is None or (isinstance(val_b, str) and not val_b.strip())
+            if empty_a != empty_b:
+                # One set, the other not -- warn on the empty one
+                style = "border: 1px solid rgb(200, 160, 40);"
+                if empty_a:
+                    qa.setStyleSheet(style)
+                else:
+                    qb.setStyleSheet(style)
+            else:
+                # Both set or both empty -- clear any warning
+                qa.setStyleSheet("")
+                qb.setStyleSheet("")
 
     # -- Variable override helpers -------------------------------------------
 
@@ -811,6 +865,7 @@ class AddedRecipeNode(ModifiedRecipeNode):
             ],
         ),
     ]
+    PAIRED_FIELDS = [("pda_group", "pda_category")]
 
 
 class AliasRecipeNode(AddedRecipeNode):
@@ -1001,6 +1056,7 @@ class FabricatorNode(CraftGraphBaseNode):
         FieldPin("unlocked_by", PinType.CSV, label="Unlocked By"),
         FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
     ]
+    PAIRED_FIELDS = [("pda_group", "pda_category")]
 
     OUTPUT_PINS = [
         OutputPin("tabs_out", label="Tabs", pin_color=PORT_COLOR_CHILDREN),
@@ -1132,6 +1188,7 @@ class MovedRecipeNode(CraftGraphBaseNode):
         FieldPin("copied", PinType.BOOL, label="Copied", default=False),
         FieldPin("hidden", PinType.BOOL, label="Hidden", default=False),
     ]
+    MUTUAL_EXCLUSIONS = [("copied", "hidden")]
 
 
 class CustomBioFuelNode(CraftGraphBaseNode):
