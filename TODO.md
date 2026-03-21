@@ -188,7 +188,7 @@ fabricators, and developers working on CraftGraph.
 - [x] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
 - [x] Path reference validation (does the referenced tab exist?)
 - [x] Export-time validation summary dialog
-- [ ] Syntax highlighter rules for common text-level mistakes (missing `;`, wrong separator, unquoted spaces)
+- [x] Syntax highlighter rules for common text-level mistakes (missing `;`, wrong separator, unquoted spaces)
 
 #### Phase F -- Reference Panel and Polish
 

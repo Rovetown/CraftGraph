@@ -791,3 +791,58 @@ class TestUnexpectedSpaceInIdPath:
         _highlight(doc, hl, "    itemid: My Item;")
         errors = _error_ranges(doc)
         assert len(errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: integration -- realistic multi-line recipe content
+# ---------------------------------------------------------------------------
+
+
+class TestErrorIntegration:
+    """Integration tests with realistic multi-line recipe content."""
+
+    def test_valid_recipe_no_errors(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = (
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: bigfilteredwater;\n"
+            "    AmountCrafted: 1;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: bleach;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            "    Path: Fabricator/Survival/Water;\n"
+            '    DisplayName: "Big Filtered Water";\n'
+            "    ForceUnlockAtStart: NO;\n"
+            ");"
+        )
+        _highlight(doc, hl, text)
+        for i in range(text.count("\n") + 1):
+            errors = _error_ranges(doc, block_index=i)
+            assert errors == [], f"Unexpected error on line {i}: {errors}"
+
+    def test_recipe_with_multiple_errors(self, doc_and_hl):
+        doc, hl = doc_and_hl
+        text = (
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: My Item\n"
+            "    DisplayName: Hello World;\n"
+            "    Required: 3,\n"
+            ");"
+        )
+        _highlight(doc, hl, text)
+
+        # Line 2: ItemID: My Item -- should have errors (space in ID, missing semicolon)
+        errors_line2 = _error_ranges(doc, block_index=2)
+        assert len(errors_line2) >= 1
+
+        # Line 3: DisplayName: Hello World; -- E5a (unquoted value with spaces)
+        errors_line3 = _error_ranges(doc, block_index=3)
+        assert len(errors_line3) >= 1
+
+        # Line 4: Required: 3, -- E2 (comma as terminator)
+        errors_line4 = _error_ranges(doc, block_index=4)
+        assert len(errors_line4) >= 1
