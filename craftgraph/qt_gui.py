@@ -65,10 +65,14 @@ if TYPE_CHECKING:
     from craftgraph.pin_registry import FieldPin
     from craftgraph.qt_variable_nodes import VariableNodeKind
 
-_DIALOG_FLAGS = (
-    QtCore.Qt.WindowType.Dialog
-    | QtCore.Qt.WindowType.WindowTitleHint
-    | QtCore.Qt.WindowType.WindowCloseButtonHint
+_DIALOG_FLAGS = QtCore.Qt.WindowType.Popup
+
+_DIALOG_STYLE = (
+    "QDialog {"
+    "  background: rgb(40, 40, 40);"
+    "  border: 1px solid rgb(100, 100, 100);"
+    "  border-radius: 4px;"
+    "}"
 )
 
 
@@ -87,11 +91,11 @@ def _pick_from_list(
     OS window on Windows.
     """
     dlg = QtWidgets.QInputDialog(parent, _DIALOG_FLAGS)
-    dlg.setWindowTitle(title)
+    dlg.setStyleSheet(_DIALOG_STYLE)
     dlg.setLabelText(label)
     dlg.setComboBoxItems(items)
     dlg.setComboBoxEditable(editable)
-    dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+    dlg.move(QtGui.QCursor.pos())
     ok = dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
     return dlg.textValue(), ok
 
@@ -193,9 +197,8 @@ class ItemIdPickerDialog(QtWidgets.QDialog):
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent, _DIALOG_FLAGS)
-        self.setWindowTitle("Add Ingredient")
+        self.setStyleSheet(_DIALOG_STYLE)
         self.setMinimumSize(340, 420)
-        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
 
         self._words = words
 
@@ -227,6 +230,7 @@ class ItemIdPickerDialog(QtWidgets.QDialog):
         layout.addWidget(buttons)
 
         self._search.setFocus()
+        self.move(QtGui.QCursor.pos())
 
     @property
     def selected_id(self) -> str:
@@ -316,9 +320,8 @@ class NewFileDialog(QtWidgets.QDialog):
         default_dir: Path | None = None,
     ) -> None:
         super().__init__(parent, _DIALOG_FLAGS)
-        self.setWindowTitle("New File")
+        self.setStyleSheet(_DIALOG_STYLE)
         self.setMinimumWidth(420)
-        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
 
         self._default_dir = default_dir or Path.cwd()
 
@@ -360,6 +363,7 @@ class NewFileDialog(QtWidgets.QDialog):
         form.addRow(dir_label)
         form.addRow(dir_row)
         form.addRow(buttons)
+        self.move(QtGui.QCursor.pos())
 
     @property
     def block_type(self) -> BlockType:
@@ -419,9 +423,8 @@ class NewProjectDialog(QtWidgets.QDialog):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent, _DIALOG_FLAGS)
-        self.setWindowTitle("New Project")
+        self.setStyleSheet(_DIALOG_STYLE)
         self.setMinimumWidth(420)
-        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
 
         # Project name
         self._name_edit = QtWidgets.QLineEdit(self)
@@ -460,6 +463,7 @@ class NewProjectDialog(QtWidgets.QDialog):
         form.addRow("Location:", dir_row)
         form.addRow(types_group)
         form.addRow(buttons)
+        self.move(QtGui.QCursor.pos())
 
     @property
     def project_path(self) -> Path:
@@ -726,6 +730,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._setup_menu_bar()
         self._setup_central_widget()
         self._setup_status_bar()
+
+        # Force combo box dropdowns to be fully opaque so underlying
+        # scene content does not bleed through the popup list.
+        self.setStyleSheet(
+            "QComboBox QAbstractItemView {"
+            "  background: rgb(30, 30, 30);"
+            "  color: rgb(200, 200, 200);"
+            "  selection-background-color: rgb(60, 80, 120);"
+            "  border: 1px solid rgb(80, 80, 80);"
+            "}"
+        )
 
     # -- Properties -----------------------------------------------------------
 
@@ -1209,9 +1224,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _on_settings(self) -> None:
         """Show a placeholder Settings dialog."""
         dialog = QtWidgets.QDialog(self, _DIALOG_FLAGS)
-        dialog.setWindowTitle("Settings")
+        dialog.setStyleSheet(_DIALOG_STYLE)
         dialog.setMinimumSize(300, 150)
-        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
         layout = QtWidgets.QVBoxLayout(dialog)
         label = QtWidgets.QLabel("Settings coming soon.")
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -1219,6 +1233,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        dialog.move(QtGui.QCursor.pos())
         dialog.exec()
 
     def _on_about(self) -> None:
