@@ -1422,6 +1422,51 @@ class TestNodeDeletion:
         # Selection must be empty after context-menu delete
         assert window.graph.selected_nodes() == []
 
+class TestNodeCreation:
+    """Verify that creating new nodes clears prior selection."""
+
+    def test_create_node_clears_prior_selection(self, window, tmp_path):
+        """Creating a new node does not leave the old node selected."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        # Select the existing node
+        alpha = window.graph.all_nodes()[0]
+        alpha.set_selected(True)
+        assert len(window.graph.selected_nodes()) == 1
+
+        # Create a new node via context menu helper
+        from craftgraph.qt_nodes import NodeKind
+
+        window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="Beta")
+
+        # Old selection should be cleared
+        assert not alpha.selected()
+
+    def test_create_variable_node_clears_prior_selection(self, window, tmp_path):
+        """Creating a variable node does not leave old nodes selected."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        alpha = window.graph.all_nodes()[0]
+        alpha.set_selected(True)
+        assert len(window.graph.selected_nodes()) == 1
+
+        from craftgraph.qt_variable_nodes import VariableNodeKind
+
+        cb = window._make_var_create_cb(VariableNodeKind.INT_VAR)
+        cb(window.graph)
+
+        assert not alpha.selected()
+
 
 # ---------------------------------------------------------------------------
 # Copy, paste, duplicate (Step M7.7b)

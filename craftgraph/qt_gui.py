@@ -1759,6 +1759,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             viewer = graph.viewer()
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
+            graph.clear_selection()
             node = graph.create_node(
                 type_name, name=cls.NODE_NAME,
                 pos=[scene_pos.x(), scene_pos.y()],
@@ -2064,6 +2065,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             viewer = tab.graph.viewer()
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
+            tab.graph.clear_selection()
             node = tab.graph.create_node(
                 type_,
                 name=item_id or node_cls.NODE_NAME,
@@ -2209,6 +2211,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         node_cls = NODE_REGISTRY[kind]
         type_ = f"{IDENTIFIER}.{node_cls.__name__}"
+        tab.graph.clear_selection()
         node = tab.graph.create_node(
             type_,
             name=getattr(model, "item_id", None) or getattr(model, "tab_id", "Node"),
