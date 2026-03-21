@@ -151,17 +151,36 @@ fabricators, and developers working on CraftGraph.
 
 #### Phase C -- Context Menu and File/Project Creation
 
-- [ ] Restructure context menu into categorized submenus (Recipe/Container/Utility/Variables)
-- [ ] If keeping "Add Ingredient" context menu, use the same categorized dropdown as node creation (split by TechType category or similar grouping instead of a flat list)
-- [ ] Implement New File dialog with block type templates and starter nodes
-- [ ] Implement New Project dialog (name, location, 10 starter files + Assets/ + .craftgraph/)
-- [ ] Starter node spawning per block type
+- [x] Restructure context menu into categorized submenus (Recipe/Container/Utility/Variables)
+- [x] If keeping "Add Ingredient" context menu, use the same categorized dropdown as node creation (split by TechType category or similar grouping instead of a flat list)
+- [x] Implement New File dialog with block type templates and starter nodes
+- [x] Implement New Project dialog (name, location, 10 starter files + Assets/ + .craftgraph/)
+- [x] Starter node spawning per block type
 
-#### Phase D -- Layout and Placement
+#### Phase D -- Layout, Placement, and Window Fixes
 
-- [ ] Processing-order column layout for initial file load (left-to-right: Fabricators -> ... -> BioFuels)
-- [ ] Variable node smart placement algorithm (between earliest non-connected and first connected consumer)
-- [ ] Layout persistence updates for new node types
+- [x] Processing-order column layout for initial file load (left-to-right: Fabricators -> ... -> BioFuels)
+- [x] Variable node smart placement algorithm (between earliest non-connected and first connected consumer)
+- [x] Layout persistence updates for new node types
+- [x] Fix node selection bug
+- [x] Investigate and fix dialogs/windows not contained inside the main window
+- [x] Tune node spacing (vertical and horizontal) so nodes never overlap or crowd on initial load
+- [x] Implement minimap widget (View > Minimap menu entry exists but is disabled; NodeGraphQt has no built-in minimap)
+- [x] Add labels to variable node input ports (show the field name the variable feeds into)
+
+#### Phase D-B -- Bug Fixes (Post-Phase-D)
+
+- [x] Minimap not rendering (no visible widget on screen)
+- [x] Node spacing still cramped on initial load (dynamic _node_step not applied visually)
+- [x] Dialogs (add ingredient, etc.) still spawn as separate OS windows instead of app-contained
+- [x] Reset Layout does not deselect the currently selected node
+- [x] Variable/Get nodes spawn at fixed position instead of cursor position
+- [x] Red error highlight missing on rejection messages (e.g. "cannot add X recipe type here")
+- [x] Category dropdown: scrollwheel does not work when hovering
+- [x] Category dropdown: z-order/layer issues (text from label below bleeds through open dropdown)
+- [x] Get Tab/Fab node spawns with oversized transparent dropdown (very wide until switching selection)
+- [x] Node selection bugs after adding/deleting nodes (tab-specific, reappears after reset layout)
+- [x] Smart placement edge cases (defer to later bug-fix pass)
 
 #### Phase E -- Validation and Error Prevention
 
@@ -177,6 +196,10 @@ fabricators, and developers working on CraftGraph.
 - [ ] Drag-from-panel-to-pin interaction
 - [ ] Enum combo box population with full value lists (FabricatorModel, FoodModel, TechGroup, TechCategory, CraftTree.Type)
 - [ ] CraftTree.Type Centrifuge marked as Below Zero / cut content for SN1
+- [ ] Rich text menu labels (QWidgetAction + QLabel with HTML) to replace `--` separators with bold names and styled descriptions
+- [x] Floating tooltips for context menu entries (show description on hover instead of inlining it in the label text)
+- [ ] Floating tooltips for node headers (show node type description on hover over a node in the graph)
+- [ ] Floating tooltips for node field widgets (show field-level help text on hover, e.g. "TechType ID", "Valid range 1-25")
 
 ---
 
