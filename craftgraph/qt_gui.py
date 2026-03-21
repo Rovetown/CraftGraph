@@ -1809,10 +1809,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             viewer = graph.viewer()
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
+            sx, sy = CraftGraphWindow._find_free_position(
+                graph, scene_pos.x(), scene_pos.y(),
+            )
             graph.clear_selection()
             node = graph.create_node(
                 type_name, name=cls.NODE_NAME,
-                pos=[scene_pos.x(), scene_pos.y()],
+                pos=[sx, sy],
             )
             tab = self._active_tab
             if tab is not None:
@@ -2115,11 +2118,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             viewer = tab.graph.viewer()
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
+            sx, sy = self._find_free_position(
+                tab.graph, scene_pos.x(), scene_pos.y(),
+            )
             tab.graph.clear_selection()
             node = tab.graph.create_node(
                 type_,
                 name=item_id or node_cls.NODE_NAME,
-                pos=[scene_pos.x(), scene_pos.y()],
+                pos=[sx, sy],
             )
             if item_id and kind == NodeKind.ORPHAN_INGREDIENT:
                 node.set_property("item_id", item_id)
@@ -2258,6 +2264,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         viewer = tab.graph.viewer()
         cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
         scene_pos = viewer.mapToScene(cursor_pos)
+        sx, sy = self._find_free_position(
+            tab.graph, scene_pos.x(), scene_pos.y(),
+        )
 
         node_cls = NODE_REGISTRY[kind]
         type_ = f"{IDENTIFIER}.{node_cls.__name__}"
@@ -2265,7 +2274,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         node = tab.graph.create_node(
             type_,
             name=getattr(model, "item_id", None) or getattr(model, "tab_id", "Node"),
-            pos=[scene_pos.x(), scene_pos.y()],
+            pos=[sx, sy],
         )
 
         if hasattr(model, "item_id"):

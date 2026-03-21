@@ -2287,3 +2287,25 @@ class TestSmartPlacement:
         """When no nodes exist, the position is returned unchanged."""
         fx, fy = window._find_free_position(window.graph, 100.0, 200.0)
         assert (fx, fy) == (100.0, 200.0)
+
+    def test_create_two_nodes_no_overlap(self, window, tmp_path):
+        """Two nodes created at the same cursor position get different positions."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        # Force Alpha to (0, 0) so it collides with cursor-derived positions
+        # (QCursor.pos() returns origin in headless tests).
+        alpha = window.graph.all_nodes()[0]
+        alpha.set_pos(0.0, 0.0)
+
+        from craftgraph.qt_nodes import NodeKind
+        window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="Beta")
+        window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="Gamma")
+
+        positions = [tuple(node.pos()) for node in window.graph.all_nodes()]
+        # All positions must be unique (no perfect overlap)
+        assert len(set(positions)) == len(positions)
