@@ -2472,3 +2472,49 @@ class TestPairedFields:
         cat_widget = node.get_widget("pda_category")
         assert "200, 160, 40" not in (grp_widget.get_custom_widget().styleSheet() or "")
         assert "200, 160, 40" not in (cat_widget.get_custom_widget().styleSheet() or "")
+
+
+class TestPathReferenceValidation:
+    """Phase E: path fields with unknown references get an orange border."""
+
+    def test_invalid_path_gets_orange_border(self, window, tmp_path, qapp):
+        """A path that references no known fabricator/tab is highlighted orange."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: NonExistentFab/Tab;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+
+        path_widget = node.get_widget("path")
+        assert path_widget is not None
+        qt_w = path_widget.get_custom_widget()
+        assert "200, 120, 40" in qt_w.styleSheet()
+
+    def test_valid_path_no_orange_border(self, window, tmp_path, qapp):
+        """A path referencing a built-in fabricator has no orange border."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = None
+        for n in window.graph.all_nodes():
+            if n.get_property("item_id") == "Alpha":
+                node = n
+                break
+        assert node is not None
+
+        path_widget = node.get_widget("path")
+        assert path_widget is not None
+        qt_w = path_widget.get_custom_widget()
+        assert "200, 120, 40" not in (qt_w.styleSheet() or "")

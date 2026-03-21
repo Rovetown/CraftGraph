@@ -2440,6 +2440,76 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     line_edit: QtWidgets.QLineEdit = widget.get_custom_widget()
                     self._node_popup.update_words(line_edit, sorted_paths)
 
+        self._validate_path_references()
+
+    _INVALID_PATH_STYLE = "border: 1px solid rgb(200, 120, 40);"
+    _VALID_PATH_STYLE = ""
+
+    # Built-in crafting station roots that are always valid path targets.
+    _BUILTIN_PATH_ROOTS: frozenset[str] = frozenset({
+        "Fabricator",
+        "Workbench",
+        "SeamothUpgrades",
+        "MapRoomFunctionality",
+        "CyclopsFabricator",
+    })
+
+    def _collect_valid_path_targets(self) -> set[str]:
+        """Build the set of valid path targets from fabricator/tab definitions.
+
+        Unlike ``_path_words`` (which includes paths used by recipes for
+        autocomplete), this set only contains paths that are *defined* by
+        fabricators and crafting tabs -- i.e. valid destinations.
+        """
+        targets: set[str] = set(self._BUILTIN_PATH_ROOTS)
+        for file_tab in self._file_tabs:
+            if file_tab.parsed_file is None:
+                continue
+            pf: ParsedFile = file_tab.parsed_file  # type: ignore[assignment]
+            for fab in pf.custom_fabricators:
+                targets.add(fab.item_id)
+                for ctab in fab.tabs:
+                    if ctab.parent_tab_path:
+                        targets.add(ctab.parent_tab_path)
+                        targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+                    else:
+                        targets.add(f"{fab.item_id}/{ctab.tab_id}")
+            for ctab in pf.crafting_tabs:
+                if ctab.parent_tab_path:
+                    targets.add(ctab.parent_tab_path)
+                    targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+        # Also add all prefix segments so "Fabricator/Resources" matches
+        # when "Fabricator" is a known root.
+        expanded: set[str] = set()
+        for t in targets:
+            parts = t.split("/")
+            for i in range(1, len(parts) + 1):
+                expanded.add("/".join(parts[:i]))
+        targets |= expanded
+        return targets
+
+    def _validate_path_references(self) -> None:
+        """Mark path fields orange when their value does not match any defined target."""
+        valid = self._collect_valid_path_targets()
+        for file_tab in self._file_tabs:
+            for node in file_tab.graph.all_nodes():
+                if not isinstance(node, CraftGraphBaseNode):
+                    continue
+                for name in self._PATH_WIDGET_NAMES:
+                    widget_item = node.get_widget(name)
+                    if widget_item is None:
+                        continue
+                    qt_widget = widget_item.get_custom_widget()
+                    if qt_widget is None:
+                        continue
+                    value = node.get_property(name)
+                    if not value or not isinstance(value, str) or not value.strip():
+                        continue
+                    if value.strip() in valid:
+                        qt_widget.setStyleSheet(self._VALID_PATH_STYLE)
+                    else:
+                        qt_widget.setStyleSheet(self._INVALID_PATH_STYLE)
+
     # -- Fab/Tab reference node refresh ---------------------------------------
 
     def _collect_fab_tab_choices(self) -> tuple[list[str], list[str]]:

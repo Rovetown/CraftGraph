@@ -186,7 +186,7 @@ fabricators, and developers working on CraftGraph.
 
 - [x] Required-field highlighting (red border on empty required pins)
 - [x] Mutual exclusion enforcement (Copied/Hidden, PdaGroup/PdaCategory)
-- [ ] Path reference validation (does the referenced tab exist?)
+- [x] Path reference validation (does the referenced tab exist?)
 - [ ] Export-time validation summary dialog
 - [ ] Syntax highlighter rules for common text-level mistakes (missing `;`, wrong separator, unquoted spaces)
 
