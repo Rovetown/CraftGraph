@@ -2518,3 +2518,55 @@ class TestPathReferenceValidation:
         assert path_widget is not None
         qt_w = path_widget.get_custom_widget()
         assert "200, 120, 40" not in (qt_w.styleSheet() or "")
+
+
+class TestValidationSummary:
+    """Phase E: export-time validation summary dialog."""
+
+    def test_no_issues_returns_empty_list(self, window, tmp_path, qapp):
+        """A file with valid data has no validation issues."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        issues = window._collect_validation_issues()
+        assert issues == []
+
+    def test_empty_required_field_reported(self, window, tmp_path, qapp):
+        """An empty required ItemID is reported as an issue."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Alpha;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        node = window.graph.all_nodes()[0]
+        # Simulate user clearing the ItemID field
+        node.set_property("item_id", "")
+        issues = window._collect_validation_issues()
+        assert any("required but empty" in i for i in issues)
+
+    def test_invalid_path_reported(self, window, tmp_path, qapp):
+        """A path referencing a non-existent target is reported."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: BogusPath;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        issues = window._collect_validation_issues()
+        assert any("does not match" in i for i in issues)
+
+    def test_paired_field_imbalance_reported(self, window, tmp_path, qapp):
+        """Setting PdaGroup but not PdaCategory is reported."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n"
+            "    PdaGroup: Resources;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        issues = window._collect_validation_issues()
+        assert any("both be set or both be empty" in i for i in issues)

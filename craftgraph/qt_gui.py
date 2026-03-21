@@ -1171,10 +1171,82 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         if file_path:
             self.load_recipes(Path(file_path))
 
+    def _collect_validation_issues(self, tab: FileTab | None = None) -> list[str]:
+        """Collect all validation issues for the given tab (or active tab)."""
+        from craftgraph.pin_registry import PinType
+
+        if tab is None:
+            tab = self._active_tab
+        issues: list[str] = []
+        valid_paths = self._collect_valid_path_targets()
+        for node in tab.graph.all_nodes():
+            if not isinstance(node, CraftGraphBaseNode):
+                continue
+            node_label = node.get_property("item_id") or node.get_property("tab_id") or node.NODE_NAME
+            for fp in node.FIELD_REGISTRY:
+                if fp.pin_type == PinType.INGREDIENT_LIST:
+                    continue
+                value = node.get_property(fp.name)
+                empty = value is None or (isinstance(value, str) and not value.strip())
+                if fp.required and empty:
+                    issues.append(f"{node_label}: {fp.label} is required but empty")
+                if fp.name in self._PATH_WIDGET_NAMES and not empty and isinstance(value, str):
+                    if value.strip() not in valid_paths:
+                        issues.append(f"{node_label}: Path '{value}' does not match any known fabricator or tab")
+            for a, b in node.PAIRED_FIELDS:
+                va = node.get_property(a)
+                vb = node.get_property(b)
+                ea = va is None or (isinstance(va, str) and not va.strip())
+                eb = vb is None or (isinstance(vb, str) and not vb.strip())
+                if ea != eb:
+                    fp_a = node._get_field_pin(a)
+                    fp_b = node._get_field_pin(b)
+                    la = fp_a.label if fp_a else a
+                    lb = fp_b.label if fp_b else b
+                    issues.append(f"{node_label}: {la} and {lb} should both be set or both be empty")
+        return issues
+
+    def _show_validation_summary(self, issues: list[str]) -> bool:
+        """Show a validation summary dialog. Returns True if user wants to save anyway."""
+        if not issues:
+            return True
+        dlg = QtWidgets.QDialog(self, _DIALOG_FLAGS)
+        dlg.setStyleSheet(_DIALOG_STYLE)
+        dlg.setMinimumSize(480, 300)
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        header = QtWidgets.QLabel(f"{len(issues)} validation issue(s) found:")
+        header.setStyleSheet("font-weight: bold; color: rgb(200, 160, 40);")
+        layout.addWidget(header)
+
+        issue_list = QtWidgets.QListWidget(dlg)
+        issue_list.addItems(issues)
+        issue_list.setStyleSheet(
+            "QListWidget { background: rgb(30, 30, 30); color: rgb(200, 200, 200); }"
+        )
+        layout.addWidget(issue_list)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Save
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+            parent=dlg,
+        )
+        buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save).setText("Save Anyway")
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+        dlg.move(QtGui.QCursor.pos())
+
+        return dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
+
     def _on_save(self) -> None:
-        """Save the active tab's file to disk."""
+        """Save the active tab's file to disk, showing validation summary first."""
         tab = self._active_tab
         if tab.parsed_file is None:
+            return
+        issues = self._collect_validation_issues(tab)
+        if issues and not self._show_validation_summary(issues):
+            self.statusBar().showMessage("Save cancelled")
             return
         path = tab.parsed_file.source_path
         text = serialize_file(tab.parsed_file)
@@ -1182,7 +1254,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         tab.history.mark_saved()
         self._save_positions()
         self._on_tab_changed(self._tab_bar.currentIndex())
-        self.statusBar().showMessage(f"Saved {path.name}")
+        msg = f"Saved {path.name}"
+        if issues:
+            msg += f" (with {len(issues)} warning(s))"
+        self.statusBar().showMessage(msg)
 
     def _on_save_all(self) -> None:
         """Save all dirty tabs to disk."""
