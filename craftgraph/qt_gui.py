@@ -27,6 +27,8 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
+from craftgraph.minimap import MinimapWidget
+from craftgraph.models import BlockType, ParsedFile
 from craftgraph.qt_nodes import (
     IDENTIFIER,
     NODE_REGISTRY,
@@ -48,13 +50,50 @@ from craftgraph.sync import (
     highlight_cycle_edges,
     model_position_key,
     overlay_user_positions,
+    place_variable_nodes,
     populate_graph,
     update_child_count_labels,
+)
+from craftgraph.tooltips import (
+    NODE_DESCRIPTIONS,
+    OPERATION_DESCRIPTIONS,
+    VARIABLE_DESCRIPTIONS,
+    enable_menu_tooltips,
 )
 
 if TYPE_CHECKING:
     from craftgraph.pin_registry import FieldPin
     from craftgraph.qt_variable_nodes import VariableNodeKind
+
+_DIALOG_FLAGS = (
+    QtCore.Qt.WindowType.Dialog
+    | QtCore.Qt.WindowType.WindowTitleHint
+    | QtCore.Qt.WindowType.WindowCloseButtonHint
+)
+
+
+def _pick_from_list(
+    parent: QtWidgets.QWidget,
+    title: str,
+    label: str,
+    items: list[str],
+    *,
+    editable: bool = False,
+) -> tuple[str, bool]:
+    """Show a modal list-picker dialog contained within *parent*.
+
+    Replaces ``QInputDialog.getItem()`` static calls so we can set
+    window flags that prevent the dialog from appearing as a separate
+    OS window on Windows.
+    """
+    dlg = QtWidgets.QInputDialog(parent, _DIALOG_FLAGS)
+    dlg.setWindowTitle(title)
+    dlg.setLabelText(label)
+    dlg.setComboBoxItems(items)
+    dlg.setComboBoxEditable(editable)
+    dlg.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+    ok = dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
+    return dlg.textValue(), ok
 
 _POPUP_MAX_VISIBLE = 12
 _POPUP_STYLE = (
@@ -68,6 +107,48 @@ _POPUP_STYLE = (
     "  background: rgb(60, 80, 120);"
     "}"
 )
+
+
+class _ViewerWheelFilter(QtCore.QObject):
+    """Forward wheel events to QGraphicsProxyWidget combo boxes.
+
+    NodeGraphQt's viewer unconditionally zooms on wheel events.
+    This filter intercepts the event and forwards it to the widget
+    under the cursor if it is a combo box, fixing scrollwheel-in-
+    dropdown behavior.
+    """
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if event.type() != QtCore.QEvent.Type.Wheel:
+            return False
+        viewer = obj
+        if not isinstance(viewer, QtWidgets.QGraphicsView):
+            return False
+        wheel = event  # QWheelEvent
+        pos = wheel.position().toPoint()
+        item = viewer.itemAt(pos)
+        if item is None:
+            return False
+        proxy = None
+        candidate = item
+        while candidate is not None:
+            if isinstance(candidate, QtWidgets.QGraphicsProxyWidget):
+                proxy = candidate
+                break
+            candidate = candidate.parentItem()
+        if proxy is None:
+            return False
+        widget = proxy.widget()
+        if widget is None:
+            return False
+        # Find the actual child widget under the cursor
+        local = proxy.mapFromScene(viewer.mapToScene(pos)).toPoint()
+        child = widget.childAt(local)
+        target = child if child is not None else widget
+        if isinstance(target, (QtWidgets.QComboBox, QtWidgets.QAbstractSpinBox)):
+            QtCore.QCoreApplication.sendEvent(target, event)
+            return True
+        return False
 
 
 def collect_fab_tab_choices(
@@ -97,6 +178,335 @@ def collect_fab_tab_choices(
                 tab_choices.append(f"{tab.parent_tab_path}/{tab.tab_id}")
 
     return fab_choices, tab_choices
+
+
+class ItemIdPickerDialog(QtWidgets.QDialog):
+    """Searchable item-ID picker with type-to-filter list.
+
+    Shows all known TechType IDs in a filterable list.  The user can
+    either select from the list or type a custom ID in the search field.
+    """
+
+    def __init__(
+        self,
+        words: list[str],
+        parent: QtWidgets.QWidget | None = None,
+    ) -> None:
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setWindowTitle("Add Ingredient")
+        self.setMinimumSize(340, 420)
+        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+
+        self._words = words
+
+        self._search = QtWidgets.QLineEdit(self)
+        self._search.setPlaceholderText("Type to filter or enter custom ID...")
+        self._search.setClearButtonEnabled(True)
+        self._search.textChanged.connect(self._filter)
+
+        self._list = QtWidgets.QListWidget(self)
+        self._list.addItems(words)
+        self._list.itemDoubleClicked.connect(self._accept_item)
+        self._list.currentItemChanged.connect(self._sync_search)
+
+        self._count_label = QtWidgets.QLabel(f"{len(words)} items", self)
+        self._count_label.setStyleSheet("color: gray; font-size: 11px;")
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self._search)
+        layout.addWidget(self._list)
+        layout.addWidget(self._count_label)
+        layout.addWidget(buttons)
+
+        self._search.setFocus()
+
+    @property
+    def selected_id(self) -> str:
+        """Return the chosen ID (from list selection or typed text)."""
+        return self._search.text().strip()
+
+    def _filter(self, text: str) -> None:
+        text_lower = text.lower()
+        self._list.clear()
+        if not text_lower:
+            self._list.addItems(self._words)
+            self._count_label.setText(f"{len(self._words)} items")
+            return
+        matches = [w for w in self._words if text_lower in w.lower()]
+        self._list.addItems(matches)
+        self._count_label.setText(f"{len(matches)} of {len(self._words)} items")
+
+    def _accept_item(self, item: QtWidgets.QListWidgetItem) -> None:
+        self._search.setText(item.text())
+        self.accept()
+
+    def _sync_search(
+        self,
+        current: QtWidgets.QListWidgetItem | None,
+        _previous: QtWidgets.QListWidgetItem | None,
+    ) -> None:
+        if current is not None:
+            self._search.setText(current.text())
+
+
+# -- Block type mappings ------------------------------------------------------
+
+# Maps BlockType -> the NodeKind used for starter node spawning.
+_BLOCK_TYPE_TO_NODE_KIND: dict[BlockType, NodeKind] = {
+    BlockType.MODIFIED_RECIPES: NodeKind.MODIFIED_RECIPE,
+    BlockType.ADDED_RECIPES: NodeKind.ADDED_RECIPE,
+    BlockType.ALIAS_RECIPES: NodeKind.ALIAS_RECIPE,
+    BlockType.CUSTOM_FOODS: NodeKind.CUSTOM_FOOD,
+    BlockType.CUSTOM_CRAFTING_TABS: NodeKind.CRAFTING_TAB,
+    BlockType.CUSTOM_FABRICATORS: NodeKind.FABRICATOR,
+    BlockType.MOVED_RECIPES: NodeKind.MOVED_RECIPE,
+    BlockType.CUSTOM_SIZES: NodeKind.CUSTOM_SIZE,
+    BlockType.CUSTOM_BIO_FUELS: NodeKind.CUSTOM_BIO_FUEL,
+    BlockType.CUSTOM_FRAGMENT_COUNTS: NodeKind.CUSTOM_FRAGMENT_COUNT,
+}
+
+# -- Block type display helpers -----------------------------------------------
+
+# Human-readable descriptions for each CC3 block type.
+_BLOCK_TYPE_LABELS: dict[BlockType, str] = {
+    BlockType.MODIFIED_RECIPES: "Modified Recipes -- change existing in-game recipes",
+    BlockType.ADDED_RECIPES: "Added Recipes -- new recipes at crafting paths",
+    BlockType.ALIAS_RECIPES: "Alias Recipes -- clone and rename existing recipes",
+    BlockType.CUSTOM_FOODS: "Custom Foods -- food or drink with nutrition values",
+    BlockType.CUSTOM_CRAFTING_TABS: "Custom Crafting Tabs -- organize recipes into tabs",
+    BlockType.CUSTOM_FABRICATORS: "Custom Fabricators -- custom crafting stations",
+    BlockType.MOVED_RECIPES: "Moved Recipes -- relocate existing recipes",
+    BlockType.CUSTOM_SIZES: "Custom Sizes -- change inventory slot sizes",
+    BlockType.CUSTOM_BIO_FUELS: "Custom BioFuels -- set bioreactor energy values",
+    BlockType.CUSTOM_FRAGMENT_COUNTS: "Custom Fragment Counts -- change scan requirements",
+}
+
+# Default filename stems for each block type (matches CC3 convention).
+_BLOCK_TYPE_DEFAULT_NAMES: dict[BlockType, str] = {
+    BlockType.MODIFIED_RECIPES: "ModifiedRecipes",
+    BlockType.ADDED_RECIPES: "AddedRecipes",
+    BlockType.ALIAS_RECIPES: "AliasRecipes",
+    BlockType.CUSTOM_FOODS: "CustomFoods",
+    BlockType.CUSTOM_CRAFTING_TABS: "CustomCraftingTabs",
+    BlockType.CUSTOM_FABRICATORS: "CustomFabricators",
+    BlockType.MOVED_RECIPES: "MovedRecipes",
+    BlockType.CUSTOM_SIZES: "CustomSizes",
+    BlockType.CUSTOM_BIO_FUELS: "CustomBioFuels",
+    BlockType.CUSTOM_FRAGMENT_COUNTS: "CustomFragmentCounts",
+}
+
+
+class NewFileDialog(QtWidgets.QDialog):
+    """Dialog for creating a new CC3 recipe file.
+
+    Collects a filename, block type, and target directory.
+    """
+
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        default_dir: Path | None = None,
+    ) -> None:
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setWindowTitle("New File")
+        self.setMinimumWidth(420)
+        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+
+        self._default_dir = default_dir or Path.cwd()
+
+        # Block type combo
+        type_label = QtWidgets.QLabel("Block Type:")
+        self._type_combo = QtWidgets.QComboBox(self)
+        for bt in BlockType:
+            self._type_combo.addItem(_BLOCK_TYPE_LABELS[bt], userData=bt)
+        self._type_combo.currentIndexChanged.connect(self._on_type_changed)
+
+        # Filename input
+        name_label = QtWidgets.QLabel("Filename:")
+        self._name_edit = QtWidgets.QLineEdit(self)
+        self._name_edit.setPlaceholderText("e.g. ModifiedRecipes.txt")
+        self._name_edit.setText(f"{_BLOCK_TYPE_DEFAULT_NAMES[BlockType.MODIFIED_RECIPES]}.txt")
+
+        # Directory picker
+        dir_label = QtWidgets.QLabel("Directory:")
+        dir_row = QtWidgets.QHBoxLayout()
+        self._dir_edit = QtWidgets.QLineEdit(self)
+        self._dir_edit.setText(str(self._default_dir))
+        browse_btn = QtWidgets.QPushButton("Browse...", self)
+        browse_btn.clicked.connect(self._browse_dir)
+        dir_row.addWidget(self._dir_edit)
+        dir_row.addWidget(browse_btn)
+
+        # Buttons
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self._validate_and_accept)
+        buttons.rejected.connect(self.reject)
+
+        form = QtWidgets.QFormLayout(self)
+        form.addRow(type_label, self._type_combo)
+        form.addRow(name_label, self._name_edit)
+        form.addRow(dir_label)
+        form.addRow(dir_row)
+        form.addRow(buttons)
+
+    @property
+    def block_type(self) -> BlockType:
+        return self._type_combo.currentData()
+
+    @property
+    def file_path(self) -> Path:
+        name = self._name_edit.text().strip()
+        if not name.endswith(".txt"):
+            name += ".txt"
+        return Path(self._dir_edit.text().strip()) / name
+
+    def _on_type_changed(self, _index: int) -> None:
+        bt = self._type_combo.currentData()
+        if bt in _BLOCK_TYPE_DEFAULT_NAMES:
+            self._name_edit.setText(f"{_BLOCK_TYPE_DEFAULT_NAMES[bt]}.txt")
+
+    def _browse_dir(self) -> None:
+        directory = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select Directory",
+            self._dir_edit.text(),
+        )
+        if directory:
+            self._dir_edit.setText(directory)
+
+    def _validate_and_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Filename cannot be empty.")
+            return
+        target_dir = Path(self._dir_edit.text().strip())
+        if not target_dir.is_dir():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid",
+                f"Directory does not exist: {target_dir}",
+            )
+            return
+        full_path = self.file_path
+        if full_path.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "File Exists",
+                f"A file already exists at:\n{full_path}\n\nUse Open File to load it instead.",
+            )
+            return
+        self.accept()
+
+
+class NewProjectDialog(QtWidgets.QDialog):
+    """Dialog for creating a new CC3 mod project directory.
+
+    Creates a project folder with 10 starter .txt files (one per block type),
+    an Assets/ directory for sprites, and a .craftgraph/ directory for layout data.
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setWindowTitle("New Project")
+        self.setMinimumWidth(420)
+        self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
+
+        # Project name
+        self._name_edit = QtWidgets.QLineEdit(self)
+        self._name_edit.setPlaceholderText("e.g. MySubnauticaMod")
+
+        # Parent directory
+        dir_row = QtWidgets.QHBoxLayout()
+        self._dir_edit = QtWidgets.QLineEdit(self)
+        self._dir_edit.setText(str(Path.cwd()))
+        browse_btn = QtWidgets.QPushButton("Browse...", self)
+        browse_btn.clicked.connect(self._browse_dir)
+        dir_row.addWidget(self._dir_edit)
+        dir_row.addWidget(browse_btn)
+
+        # Checkboxes for optional block types (all checked by default)
+        self._type_checks: dict[BlockType, QtWidgets.QCheckBox] = {}
+        types_group = QtWidgets.QGroupBox("Starter Files")
+        types_layout = QtWidgets.QVBoxLayout(types_group)
+        for bt in BlockType:
+            cb = QtWidgets.QCheckBox(bt.value, types_group)
+            cb.setChecked(True)
+            types_layout.addWidget(cb)
+            self._type_checks[bt] = cb
+
+        # Buttons
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self._validate_and_accept)
+        buttons.rejected.connect(self.reject)
+
+        form = QtWidgets.QFormLayout(self)
+        form.addRow("Project Name:", self._name_edit)
+        form.addRow("Location:", dir_row)
+        form.addRow(types_group)
+        form.addRow(buttons)
+
+    @property
+    def project_path(self) -> Path:
+        return Path(self._dir_edit.text().strip()) / self._name_edit.text().strip()
+
+    @property
+    def selected_block_types(self) -> list[BlockType]:
+        return [bt for bt, cb in self._type_checks.items() if cb.isChecked()]
+
+    def _browse_dir(self) -> None:
+        directory = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select Parent Directory",
+            self._dir_edit.text(),
+        )
+        if directory:
+            self._dir_edit.setText(directory)
+
+    def _validate_and_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Project name cannot be empty.")
+            return
+        parent = Path(self._dir_edit.text().strip())
+        if not parent.is_dir():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid",
+                f"Parent directory does not exist: {parent}",
+            )
+            return
+        project_dir = parent / name
+        if project_dir.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Already Exists",
+                f"Directory already exists:\n{project_dir}",
+            )
+            return
+        if not self.selected_block_types:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Files",
+                "Select at least one block type for the project.",
+            )
+            return
+        self.accept()
 
 
 class NodeCompletionPopup(QtWidgets.QFrame):
@@ -196,16 +606,32 @@ class NodeCompletionPopup(QtWidgets.QFrame):
         self.raise_()
 
     def _position_near(self, line_edit: QtWidgets.QLineEdit) -> None:
-        """Place the popup just below the QLineEdit in screen coordinates."""
-        global_pos = line_edit.mapToGlobal(
+        """Place the popup just below the QLineEdit in screen coordinates.
+
+        If the popup would extend below the visible screen area, it flips
+        to appear above the line edit instead.
+        """
+        below = line_edit.mapToGlobal(
             QtCore.QPoint(0, line_edit.height()),
         )
         row_height = self._list.sizeHintForRow(0) or 20
         visible = min(self._list.count(), _POPUP_MAX_VISIBLE)
         popup_h = row_height * visible + 4
-        self.setFixedWidth(max(line_edit.width(), 180))
+        popup_w = max(line_edit.width(), 180)
+        self.setFixedWidth(popup_w)
         self.setFixedHeight(popup_h)
-        self.move(global_pos)
+
+        # Flip above the line edit if the popup would go off-screen
+        screen = line_edit.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            if below.y() + popup_h > avail.bottom():
+                above = line_edit.mapToGlobal(QtCore.QPoint(0, 0))
+                below = QtCore.QPoint(above.x(), above.y() - popup_h)
+            if below.x() + popup_w > avail.right():
+                below.setX(avail.right() - popup_w)
+
+        self.move(below)
 
     # -- accept / dismiss -----------------------------------------------------
 
@@ -343,6 +769,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # File menu
         file_menu = menu_bar.addMenu("&File")
 
+        new_file_action = QtGui.QAction("&New File...", self)
+        new_file_action.setShortcut(QtGui.QKeySequence.StandardKey.New)
+        new_file_action.triggered.connect(self._on_new_file)
+        file_menu.addAction(new_file_action)
+
+        new_project_action = QtGui.QAction("New &Project...", self)
+        new_project_action.triggered.connect(self._on_new_project)
+        file_menu.addAction(new_project_action)
+
+        file_menu.addSeparator()
+
         open_folder_action = QtGui.QAction("Open &Folder...", self)
         open_folder_action.setShortcut(QtGui.QKeySequence.StandardKey.Open)
         open_folder_action.triggered.connect(self._on_open_folder)
@@ -392,8 +829,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         self._minimap_action = QtGui.QAction("&Minimap", self)
         self._minimap_action.setCheckable(True)
-        self._minimap_action.setChecked(False)
-        self._minimap_action.setEnabled(False)  # No built-in minimap in NodeGraphQt
+        self._minimap_action.setChecked(True)
+        self._minimap_action.triggered.connect(self._on_toggle_minimap)
         view_menu.addAction(self._minimap_action)
 
         self._reset_layout_action = QtGui.QAction("&Reset Layout", self)
@@ -430,14 +867,25 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Splitter with two stacked widgets
         self._splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
+        # Wrap graph_stack in a plain container so the minimap can overlay
+        # on top without being managed by QStackedWidget.
+        self._graph_container = QtWidgets.QWidget()
+        container_layout = QtWidgets.QVBoxLayout(self._graph_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
         self._graph_stack = QtWidgets.QStackedWidget()
-        self._splitter.addWidget(self._graph_stack)
+        container_layout.addWidget(self._graph_stack)
+        self._splitter.addWidget(self._graph_container)
 
         self._editor_stack = QtWidgets.QStackedWidget()
         self._splitter.addWidget(self._editor_stack)
 
         self._splitter.setSizes([980, 420])
         layout.addWidget(self._splitter)
+
+        # Minimap overlay (anchored to bottom-right of graph container)
+        self._minimap = MinimapWidget(parent=self._graph_container)
+        self._minimap.raise_()
+        self._graph_container.installEventFilter(self)
 
         self.setCentralWidget(central)
 
@@ -477,6 +925,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._tab_bar.addTab("untitled")
 
         self._setup_context_menus_for(graph)
+        self._minimap.attach(graph)
 
     def _on_tab_changed(self, index: int) -> None:
         """Switch both stacked widgets to the selected file tab."""
@@ -492,6 +941,46 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         if hasattr(tab.history, "is_dirty") and tab.history.is_dirty:
             name += " *"
         self.setWindowTitle(name)
+
+        self._attach_minimap_to_current_tab()
+
+    # -- Minimap --------------------------------------------------------------
+
+    def _position_minimap(self) -> None:
+        """Anchor the minimap to the bottom-right corner of the graph panel."""
+        margin = 8
+        parent = self._graph_container
+        x = parent.width() - self._minimap.width() - margin
+        y = parent.height() - self._minimap.height() - margin
+        if x < 0 or y < 0:
+            return  # Window not sized yet
+        self._minimap.move(x, y)
+        self._minimap.raise_()
+
+    def _on_toggle_minimap(self, checked: bool) -> None:
+        self._minimap.setVisible(checked)
+
+    def _attach_minimap_to_current_tab(self) -> None:
+        """Bind the minimap to the active tab's graph."""
+        idx = self._tab_bar.currentIndex()
+        if idx < 0 or idx >= len(self._file_tabs):
+            self._minimap.detach()
+            return
+        self._minimap.attach(self._file_tabs[idx].graph)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._position_minimap()
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if obj is self._graph_container and event.type() == QtCore.QEvent.Type.Resize:
+            self._position_minimap()
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        super().showEvent(event)
+        # Deferred positioning so widget geometry is finalized
+        QtCore.QTimer.singleShot(0, self._position_minimap)
 
     # -- Status bar -----------------------------------------------------------
 
@@ -577,6 +1066,78 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     # -- Menu handlers --------------------------------------------------------
 
+    def _on_new_file(self) -> None:
+        """Open the New File dialog and create an empty tab for the chosen block type."""
+        default_dir = (
+            self._source_path.parent
+            if self._source_path.is_file()
+            else self._source_path
+            if self._source_path.is_dir()
+            else Path.cwd()
+        )
+        dialog = NewFileDialog(parent=self, default_dir=default_dir)
+        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        pf = ParsedFile(source_path=dialog.file_path, block_type=dialog.block_type)
+        tab = self._create_file_tab(pf)
+        self._file_tabs.append(tab)
+
+        self._graph_stack.addWidget(tab.graph.widget)
+        self._editor_stack.addWidget(tab.editor)
+        self._tab_bar.addTab(pf.source_path.stem)
+
+        # Switch to the new tab
+        new_index = len(self._file_tabs) - 1
+        self._tab_bar.setCurrentIndex(new_index)
+        self._on_tab_changed(new_index)
+
+        # Spawn a starter node for the block type
+        self._spawn_starter_node(pf.block_type)
+
+        self.statusBar().showMessage(
+            f"New file: {pf.source_path.name} ({pf.block_type.value})"
+        )
+
+    def _on_new_project(self) -> None:
+        """Open the New Project dialog and scaffold a CC3 mod directory."""
+        dialog = NewProjectDialog(parent=self)
+        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+
+        project_dir = dialog.project_path
+        block_types = dialog.selected_block_types
+
+        # Create directory structure
+        project_dir.mkdir(parents=True)
+        (project_dir / "Assets").mkdir()
+        (project_dir / ".craftgraph").mkdir()
+
+        # Create one empty .txt file per selected block type
+        for bt in block_types:
+            filename = f"{_BLOCK_TYPE_DEFAULT_NAMES[bt]}.txt"
+            file_path = project_dir / filename
+            # Write a minimal template: just the block type header with empty body
+            file_path.write_text(f"{bt.value}:\n", encoding="utf-8")
+
+        # Load the newly created project
+        self.load_recipes(project_dir)
+
+        # Spawn a starter node on each tab
+        for i, tab in enumerate(self._file_tabs):
+            if tab.parsed_file is not None and tab.parsed_file.block_type is not None:
+                self._tab_bar.setCurrentIndex(i)
+                self._on_tab_changed(i)
+                self._spawn_starter_node(tab.parsed_file.block_type)
+        # Return to the first tab
+        if self._file_tabs:
+            self._tab_bar.setCurrentIndex(0)
+            self._on_tab_changed(0)
+
+        self.statusBar().showMessage(
+            f"Created project: {project_dir.name} ({len(block_types)} files)"
+        )
+
     def _on_open_folder(self) -> None:
         directory = QtWidgets.QFileDialog.getExistingDirectory(
             self,
@@ -640,14 +1201,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         with tab.sync_guard():
             positions = compute_hierarchy_layout([tab.parsed_file], tab.model_to_node)
             apply_layout(positions, tab.model_to_node)
+            place_variable_nodes(tab.graph)
+        tab.graph.clear_selection()
         self._save_positions()
         self.statusBar().showMessage("Layout reset to default")
 
     def _on_settings(self) -> None:
         """Show a placeholder Settings dialog."""
-        dialog = QtWidgets.QDialog(self)
+        dialog = QtWidgets.QDialog(self, _DIALOG_FLAGS)
         dialog.setWindowTitle("Settings")
         dialog.setMinimumSize(300, 150)
+        dialog.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
         layout = QtWidgets.QVBoxLayout(dialog)
         label = QtWidgets.QLabel("Settings coming soon.")
         label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -671,14 +1235,18 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             f"dependencies, and provides a visual node editor.</p>",
         )
 
-    def _on_cycle_rejected(self, consumer_id: str, ingredient_id: str) -> None:
-        """Show a red-background status bar warning when a connection would create a cycle."""
+    def _show_error_status(self, message: str, duration_ms: int = 5000) -> None:
+        """Show *message* with a red background in the status bar."""
         bar = self.statusBar()
         bar.setStyleSheet("QStatusBar { background-color: #cc3c3c; color: white; }")
-        bar.showMessage(
+        bar.showMessage(message)
+        QtCore.QTimer.singleShot(duration_ms, self._clear_status_style)
+
+    def _on_cycle_rejected(self, consumer_id: str, ingredient_id: str) -> None:
+        """Show a red-background status bar warning when a connection would create a cycle."""
+        self._show_error_status(
             f"Rejected: adding {ingredient_id} to {consumer_id} would create a circular dependency"
         )
-        QtCore.QTimer.singleShot(5000, self._clear_status_style)
 
     def _clear_status_style(self) -> None:
         """Reset the status bar to its default style."""
@@ -707,6 +1275,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         selected = self.graph.selected_nodes()
         if not selected:
             return
+        self.graph.clear_selection()
         self.graph.delete_nodes(selected)
         self._update_code_editor_from_model()
 
@@ -716,6 +1285,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         node: CraftGraphBaseNode,
     ) -> None:
         """Context menu callback: delete a single node."""
+        graph.clear_selection()
         graph.delete_node(node)
         self._update_code_editor_from_model()
 
@@ -769,7 +1339,6 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             CustomFood,
             CustomFragmentCount,
             CustomSize,
-            Ingredient,
             ModifiedRecipe,
             MovedRecipe,
         )
@@ -1049,6 +1618,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_context_menus_for(self, graph: NodeGraph) -> None:
         """Register sprite and node-creation context menus on a graph."""
+        # Fix scrollwheel in embedded combo boxes
+        viewer = graph.viewer()
+        wheel_filter = _ViewerWheelFilter(viewer)
+        viewer.installEventFilter(wheel_filter)
+
         # Node operations
         nodes_menu = graph.get_context_menu("nodes")
         nodes_menu.add_command(
@@ -1075,23 +1649,24 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
 
         # Ingredient management (recipe nodes only)
-        nodes_menu.add_command(
-            "Delete Ingredient...",
-            func=self._on_delete_ingredient,
-            node_class=ModifiedRecipeNode,
-        )
-        nodes_menu.add_command(
-            "Promote Ingredient to Recipe...",
-            func=self._on_promote_ingredient,
-            node_class=ModifiedRecipeNode,
-        )
+        for op_name, op_func in [
+            ("Delete Ingredient...", self._on_delete_ingredient),
+            ("Promote Ingredient to Recipe...", self._on_promote_ingredient),
+        ]:
+            cmd = nodes_menu.add_command(
+                op_name, func=op_func, node_class=ModifiedRecipeNode,
+            )
+            if op_name in OPERATION_DESCRIPTIONS:
+                cmd.qaction.setToolTip(OPERATION_DESCRIPTIONS[op_name])
 
         # Promote field to variable node
-        nodes_menu.add_command(
+        cmd = nodes_menu.add_command(
             "Promote to Variable...",
             func=self._on_promote_to_variable,
             node_class=CraftGraphBaseNode,
         )
+        if "Promote to Variable..." in OPERATION_DESCRIPTIONS:
+            cmd.qaction.setToolTip(OPERATION_DESCRIPTIONS["Promote to Variable..."])
 
         # Sprite context menu entries removed -- use SpriteNode instead
 
@@ -1102,54 +1677,57 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             func=lambda g: self._paste_nodes(),
         )
 
-        # Quick ingredient shortcut on canvas root
-        graph_menu.add_command(
-            "Add Ingredient",
-            func=lambda g: self._create_orphan_ingredient(),
-        )
-
         # Node creation submenu
         add_menu = graph_menu.add_menu("Add Node")
 
+        cmd = add_menu.add_command(
+            "Ingredient",
+            func=lambda g: self._create_orphan_ingredient(),
+        )
+        cmd.qaction.setToolTip(NODE_DESCRIPTIONS["Ingredient"])
+
         recipes_menu = add_menu.add_menu("Recipes")
-        for kind, label in [
-            (NodeKind.MODIFIED_RECIPE, "Modified Recipe -- change an existing in-game recipe"),
-            (NodeKind.ADDED_RECIPE, "Added Recipe -- new recipe at a crafting path"),
-            (NodeKind.ALIAS_RECIPE, "Alias Recipe -- clone and rename an existing recipe"),
-            (NodeKind.CUSTOM_FOOD, "Custom Food -- food or drink with nutrition values"),
+        for kind, name in [
+            (NodeKind.MODIFIED_RECIPE, "Modified Recipe"),
+            (NodeKind.ADDED_RECIPE, "Added Recipe"),
+            (NodeKind.ALIAS_RECIPE, "Alias Recipe"),
+            (NodeKind.CUSTOM_FOOD, "Custom Food"),
         ]:
-            recipes_menu.add_command(
-                label,
-                func=self._make_create_callback(kind),
+            cmd = recipes_menu.add_command(
+                name, func=self._make_create_callback(kind),
             )
+            if name in NODE_DESCRIPTIONS:
+                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
 
         containers_menu = add_menu.add_menu("Containers")
-        for kind, label in [
-            (NodeKind.FABRICATOR, "Fabricator -- custom crafting station"),
-            (NodeKind.CRAFTING_TAB, "Crafting Tab -- organize recipes into tabs"),
+        for kind, name in [
+            (NodeKind.FABRICATOR, "Fabricator"),
+            (NodeKind.CRAFTING_TAB, "Crafting Tab"),
         ]:
-            containers_menu.add_command(
-                label,
-                func=self._make_create_callback(kind),
+            cmd = containers_menu.add_command(
+                name, func=self._make_create_callback(kind),
             )
+            if name in NODE_DESCRIPTIONS:
+                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
 
-        other_menu = add_menu.add_menu("Other")
-        for kind, label in [
-            (NodeKind.CUSTOM_SIZE, "Custom Size -- change inventory slot size"),
-            (NodeKind.MOVED_RECIPE, "Moved Recipe -- relocate an existing recipe"),
-            (NodeKind.CUSTOM_BIO_FUEL, "Custom BioFuel -- set bioreactor energy value"),
-            (NodeKind.CUSTOM_FRAGMENT_COUNT, "Custom Fragment Count -- change scan requirements"),
-            (NodeKind.SPRITE, "Sprite -- assign an image to a node"),
+        other_menu = add_menu.add_menu("Utility")
+        for kind, name in [
+            (NodeKind.CUSTOM_SIZE, "Custom Size"),
+            (NodeKind.MOVED_RECIPE, "Moved Recipe"),
+            (NodeKind.CUSTOM_BIO_FUEL, "Custom BioFuel"),
+            (NodeKind.CUSTOM_FRAGMENT_COUNT, "Custom Fragment Count"),
+            (NodeKind.SPRITE, "Sprite"),
         ]:
-            other_menu.add_command(
-                label,
-                func=self._make_create_callback(kind),
+            cmd = other_menu.add_command(
+                name, func=self._make_create_callback(kind),
             )
+            if name in NODE_DESCRIPTIONS:
+                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
 
         from craftgraph.qt_variable_nodes import VariableNodeKind
 
         variables_menu = add_menu.add_menu("Variables")
-        for var_kind, label in [
+        for var_kind, name in [
             (VariableNodeKind.STRING_VAR, "String Variable"),
             (VariableNodeKind.INT_VAR, "Int Variable"),
             (VariableNodeKind.FLOAT_VAR, "Float Variable"),
@@ -1161,10 +1739,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             (VariableNodeKind.GET_FABRICATOR, "Get Fabricator"),
             (VariableNodeKind.GET_TAB, "Get Tab"),
         ]:
-            variables_menu.add_command(
-                label,
-                func=self._make_var_create_cb(var_kind),
+            cmd = variables_menu.add_command(
+                name, func=self._make_var_create_cb(var_kind),
             )
+            if name in VARIABLE_DESCRIPTIONS:
+                cmd.qaction.setToolTip(VARIABLE_DESCRIPTIONS[name])
+
+        # Enable floating tooltips on all context menus
+        enable_menu_tooltips(nodes_menu.qmenu)
+        enable_menu_tooltips(graph_menu.qmenu)
 
     def _make_var_create_cb(self, kind: VariableNodeKind):  # type: ignore[no-untyped-def]
         """Return a callback that creates a variable node of the given kind."""
@@ -1173,7 +1756,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         def callback(graph: NodeGraph) -> None:
             cls = VARIABLE_NODE_REGISTRY[kind]
             type_name = f"com.craftgraph.{cls.__name__}"
-            node = graph.create_node(type_name, name=cls.NODE_NAME)
+            viewer = graph.viewer()
+            cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
+            scene_pos = viewer.mapToScene(cursor_pos)
+            node = graph.create_node(
+                type_name, name=cls.NODE_NAME,
+                pos=[scene_pos.x(), scene_pos.y()],
+            )
             tab = self._active_tab
             if tab is not None:
                 node.set_edit_history(tab.history)
@@ -1220,16 +1809,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage("No promotable fields available", 3000)
             return
 
-        from PySide6.QtWidgets import QInputDialog
-
         labels = [p[0] for p in promotable]
-        chosen, ok = QInputDialog.getItem(
+        chosen, ok = _pick_from_list(
             self,
             "Promote to Variable",
             "Select field:",
             labels,
-            0,
-            False,
         )
         if not ok:
             return
@@ -1253,9 +1838,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         current_value = node.get_property(field_name)
         var_node.set_property("value", current_value)
 
-        # Position 200px left of consumer
+        # Position one offset left of consumer
+        from craftgraph.sync import _VAR_X_OFFSET
+
         nx, ny = node.pos()
-        var_node.set_pos(nx - 200, ny)
+        var_node.set_pos(nx - _VAR_X_OFFSET, ny)
 
         # Set edit history and attach completers
         tab = self._active_tab
@@ -1277,7 +1864,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_toggle_selection(self, graph: NodeGraph, node: CraftGraphBaseNode) -> None:
         """Toggle the selection state of the right-clicked node."""
-        node.set_selected(not node.selected())
+        now_selected = not node.selected()
+        node.set_selected(now_selected)
+        # NodeGraphQt's set_selected() doesn't emit node_selected, so
+        # fire it manually to trigger code editor scroll.
+        if now_selected:
+            graph.node_selected.emit(node)
 
     def _on_delete_ingredient(self, graph: NodeGraph, node: CraftGraphBaseNode) -> None:
         """Show a dialog to pick and delete an ingredient from this recipe."""
@@ -1291,12 +1883,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         # Build list labels: "ItemID x Required"
         labels = [f"{ing.item_id} x{ing.required}" for ing in ingredients]
-        chosen, ok = QtWidgets.QInputDialog.getItem(
+        chosen, ok = _pick_from_list(
             self,
             "Delete Ingredient",
             "Select ingredient to remove:",
             labels,
-            editable=False,
         )
         if not ok:
             return
@@ -1330,12 +1921,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         # Step 1: pick ingredient
         labels = [f"{ing.item_id} x{ing.required}" for ing in ingredients]
-        chosen, ok = QtWidgets.QInputDialog.getItem(
+        chosen, ok = _pick_from_list(
             self,
             "Promote Ingredient to Recipe",
             "Select ingredient to promote:",
             labels,
-            editable=False,
         )
         if not ok:
             return
@@ -1349,12 +1939,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             "Alias Recipe",
             "Custom Food",
         ]
-        type_chosen, ok = QtWidgets.QInputDialog.getItem(
+        type_chosen, ok = _pick_from_list(
             self,
             "Recipe Type",
             f"Create recipe type for '{item_id}':",
             type_labels,
-            editable=False,
         )
         if not ok:
             return
@@ -1371,17 +1960,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _create_orphan_ingredient(self) -> None:
         """Create an OrphanIngredientNode at the cursor position.
 
-        Opens a text input dialog for the ingredient ItemID.  The orphan
-        node is visual-only (no model_ref) and has a muted grey style.
+        Opens a searchable item-ID picker dialog.  The orphan node is
+        visual-only (no model_ref) and has a muted grey style.
         """
-        item_id, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Add Ingredient",
-            "Ingredient ItemID:",
-        )
-        if not ok or not item_id.strip():
+        dialog = ItemIdPickerDialog(self._get_id_words(), parent=self)
+        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
             return
-        item_id = item_id.strip()
+        item_id = dialog.selected_id
+        if not item_id:
+            return
 
         tab = self._active_tab
         type_ = f"{IDENTIFIER}.{OrphanIngredientNode.__name__}"
@@ -1436,6 +2023,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         return _callback
 
+    def _spawn_starter_node(self, block_type: BlockType) -> None:
+        """Create a starter node at the canvas center for the given block type."""
+        node_kind = _BLOCK_TYPE_TO_NODE_KIND.get(block_type)
+        if node_kind is None:
+            return
+        self._create_node_from_menu(node_kind, item_id="NewItem")
+
     def _create_node_from_menu(
         self,
         kind: NodeKind,
@@ -1451,7 +2045,6 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         from craftgraph.models import (
             AddedRecipe,
             AliasRecipe,
-            BlockType,
             CraftingTab,
             CustomBioFuel,
             CustomFabricator,
@@ -1460,7 +2053,6 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             CustomSize,
             ModifiedRecipe,
             MovedRecipe,
-            ParsedFile,
         )
 
         tab = self._active_tab
@@ -1570,7 +2162,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                         BlockType.CUSTOM_FRAGMENT_COUNTS: "custom_fragment_counts",
                     }[existing_bt]
                     if getattr(tab.parsed_file, existing_attr):
-                        self.statusBar().showMessage(
+                        self._show_error_status(
                             f"Cannot add {block_type.value} to a "
                             f"{existing_bt.value} file -- CC3 requires "
                             f"one block type per file"
@@ -1601,7 +2193,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             # Append to the first fabricator's nested list
             fabs = pf.custom_fabricators
             if not fabs:
-                self.statusBar().showMessage(
+                self._show_error_status(
                     "No fabricator to nest into -- add a Fabricator first"
                 )
                 return
@@ -1718,8 +2310,6 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _update_path_completions(self) -> None:
         """Extract all known paths from parsed files and update editors + nodes."""
-        from craftgraph.models import ParsedFile
-
         paths: set[str] = {
             "Fabricator",
             "Workbench",
@@ -1920,9 +2510,22 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         with guard():
             editor.setPlainText(serialize_file(parsed_file))
 
-        # Wire node selection -> code editor scroll
+        # Wire node selection -> code editor scroll + z-order raise
+        _Z_SELECTED = 10.0
+        _Z_DEFAULT = 0.0
+
         def on_node_selected(node: object, _tab: FileTab = tab) -> None:
             self._scroll_editor_to_node(node, _tab)
+            # Raise selected node above siblings so combo dropdowns
+            # don't get occluded by neighbouring nodes.
+            view = getattr(node, "view", None)
+            if view is not None:
+                # Reset all other nodes to default z
+                for other in _tab.graph.all_nodes():
+                    other_view = getattr(other, "view", None)
+                    if other_view is not None and other_view is not view:
+                        other_view.setZValue(_Z_DEFAULT)
+                view.setZValue(_Z_SELECTED)
 
         graph.node_selected.connect(on_node_selected)
 
@@ -1935,6 +2538,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 # Variable nodes use UUID-based keys
                 if hasattr(node, "_var_uuid"):
                     key = f"VarNode:{node._var_uuid}"
+                # Orphan/sprite nodes use _node_uuid keys
+                elif hasattr(node, "_node_uuid"):
+                    key = f"{node.NODE_NAME}:{node._node_uuid}"
                 elif hasattr(node, "model_ref") and node.model_ref is not None:
                     key = model_position_key(node.model_ref)
                 else:
