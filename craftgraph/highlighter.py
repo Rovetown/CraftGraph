@@ -120,6 +120,11 @@ _PATH_FIELDS: frozenset[str] = frozenset(
 
 _SPACE_CHECK_FIELDS: frozenset[str] = _ID_FIELDS | _PATH_FIELDS
 
+# Pre-computed lowercase sets for case-insensitive matching in highlightBlock()
+_STRUCTURAL_KEYS_LOWER: frozenset[str] = frozenset(k.lower() for k in _STRUCTURAL_KEYS)
+_FIELD_KEYS_LOWER: frozenset[str] = frozenset(k.lower() for k in FIELD_KEYS)
+_SPACE_CHECK_FIELDS_LOWER: frozenset[str] = frozenset(k.lower() for k in _SPACE_CHECK_FIELDS)
+
 
 # -- Internal types ------------------------------------------------------------
 
@@ -330,7 +335,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
         value_clean = self._strip_inline_comment(value).rstrip()
         if not value_clean:
             # Key with no value -- structural keys are always fine
-            if key.lower() in {k.lower() for k in _STRUCTURAL_KEYS}:
+            if key.lower() in _STRUCTURAL_KEYS_LOWER:
                 return
             # Non-structural key with no value: not clearly an error
             last_char = stripped[-1] if stripped else ""
@@ -347,7 +352,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
         # Structural key exemption: if the next non-empty line opens a block,
         # this key is a section header, not a value-bearing field.
         key_lower = key.lower()
-        if key_lower in {k.lower() for k in _STRUCTURAL_KEYS}:
+        if key_lower in _STRUCTURAL_KEYS_LOWER:
             next_text = self._next_non_empty_text()
             if next_text is not None and next_text.startswith("("):
                 return
@@ -376,7 +381,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         key = m.group(1)
-        if key.lower() not in {k.lower() for k in FIELD_KEYS}:
+        if key.lower() not in _FIELD_KEYS_LOWER:
             return
 
         comma_idx = effective.rfind(",")
@@ -488,7 +493,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             return
 
         key = m.group(2)
-        if key.lower() not in {k.lower() for k in _SPACE_CHECK_FIELDS}:
+        if key.lower() not in _SPACE_CHECK_FIELDS_LOWER:
             return
 
         key_end = m.start(4)
