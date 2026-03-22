@@ -17,6 +17,7 @@ Architecture notes:
 from __future__ import annotations
 
 import sys
+import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -28,7 +29,7 @@ from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
 from craftgraph.minimap import MinimapWidget
-from craftgraph.models import BlockType, ParsedFile
+from craftgraph.models import SN1_CRAFT_TREE_PATH_ROOTS, BlockType, ParsedFile
 from craftgraph.qt_nodes import (
     IDENTIFIER,
     NODE_REGISTRY,
@@ -59,6 +60,7 @@ from craftgraph.tooltips import (
     OPERATION_DESCRIPTIONS,
     VARIABLE_DESCRIPTIONS,
     enable_menu_tooltips,
+    format_tooltip,
 )
 
 if TYPE_CHECKING:
@@ -730,6 +732,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._setup_menu_bar()
         self._setup_central_widget()
         self._setup_status_bar()
+        self._setup_id_reference_panel()
 
         # Force combo box dropdowns to be fully opaque so underlying
         # scene content does not bleed through the popup list.
@@ -841,6 +844,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         # View menu
         view_menu = menu_bar.addMenu("&View")
+        view_menu.setObjectName("view_menu")
 
         self._minimap_action = QtGui.QAction("&Minimap", self)
         self._minimap_action.setCheckable(True)
@@ -1001,6 +1005,82 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self.statusBar().showMessage("Ready")
+
+    # -- ItemID reference panel (dockable) ------------------------------------
+
+    def _setup_id_reference_panel(self) -> None:
+        """Create a dockable panel listing all vanilla and mod-compat IDs."""
+        from craftgraph.vanilla_ids import load_mod_compat_ids, load_vanilla_ids
+
+        dock = QtWidgets.QDockWidget("ItemID Reference", self)
+        dock.setAllowedAreas(
+            QtCore.Qt.DockWidgetArea.LeftDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.RightDockWidgetArea,
+        )
+
+        container = QtWidgets.QWidget()
+        vbox = QtWidgets.QVBoxLayout(container)
+        vbox.setContentsMargins(4, 4, 4, 4)
+        vbox.setSpacing(4)
+
+        # Search filter
+        self._id_filter = QtWidgets.QLineEdit()
+        self._id_filter.setPlaceholderText("Filter IDs...")
+        self._id_filter.setClearButtonEnabled(True)
+        vbox.addWidget(self._id_filter)
+
+        # ID count label
+        self._id_count_label = QtWidgets.QLabel()
+        vbox.addWidget(self._id_count_label)
+
+        # List model + proxy filter
+        vanilla = sorted(load_vanilla_ids())
+        mod = sorted(load_mod_compat_ids() - load_vanilla_ids())
+
+        model = QtGui.QStandardItemModel()
+        if vanilla:
+            header = QtGui.QStandardItem("-- Vanilla --")
+            header.setEnabled(False)
+            header.setDragEnabled(False)
+            model.appendRow(header)
+            for tid in vanilla:
+                model.appendRow(QtGui.QStandardItem(tid))
+        if mod:
+            header = QtGui.QStandardItem("-- Mod Compat --")
+            header.setEnabled(False)
+            header.setDragEnabled(False)
+            model.appendRow(header)
+            for tid in mod:
+                model.appendRow(QtGui.QStandardItem(tid))
+
+        proxy = QtCore.QSortFilterProxyModel()
+        proxy.setSourceModel(model)
+        proxy.setFilterCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+
+        self._id_list = QtWidgets.QListView()
+        self._id_list.setModel(proxy)
+        self._id_list.setEditTriggers(
+            QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers,
+        )
+        self._id_list.setDragEnabled(True)
+        self._id_list.setDragDropMode(
+            QtWidgets.QAbstractItemView.DragDropMode.DragOnly,
+        )
+        self._id_list.setDefaultDropAction(QtCore.Qt.DropAction.CopyAction)
+        vbox.addWidget(self._id_list)
+
+        self._id_count_label.setText(f"{len(vanilla)} vanilla, {len(mod)} mod-compat")
+
+        self._id_filter.textChanged.connect(proxy.setFilterFixedString)
+
+        dock.setWidget(container)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self._id_dock = dock
+
+        # Add toggle to View menu
+        view_menu = self.menuBar().findChild(QtWidgets.QMenu, "view_menu")
+        if view_menu is not None:
+            view_menu.addAction(dock.toggleViewAction())
 
     # -- Close event ----------------------------------------------------------
 
@@ -1817,14 +1897,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             func=lambda g: self._paste_nodes(),
         )
 
-        # Node creation submenu
+        # Node creation submenu (regular QActions with HTML tooltips)
         add_menu = graph_menu.add_menu("Add Node")
 
         cmd = add_menu.add_command(
             "Ingredient",
             func=lambda g: self._create_orphan_ingredient(),
         )
-        cmd.qaction.setToolTip(NODE_DESCRIPTIONS["Ingredient"])
+        cmd.qaction.setToolTip(
+            format_tooltip("Ingredient", NODE_DESCRIPTIONS["Ingredient"])
+        )
 
         recipes_menu = add_menu.add_menu("Recipes")
         for kind, name in [
@@ -1833,22 +1915,22 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             (NodeKind.ALIAS_RECIPE, "Alias Recipe"),
             (NodeKind.CUSTOM_FOOD, "Custom Food"),
         ]:
+            desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = recipes_menu.add_command(
                 name, func=self._make_create_callback(kind),
             )
-            if name in NODE_DESCRIPTIONS:
-                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
+            cmd.qaction.setToolTip(format_tooltip(name, desc))
 
         containers_menu = add_menu.add_menu("Containers")
         for kind, name in [
             (NodeKind.FABRICATOR, "Fabricator"),
             (NodeKind.CRAFTING_TAB, "Crafting Tab"),
         ]:
+            desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = containers_menu.add_command(
                 name, func=self._make_create_callback(kind),
             )
-            if name in NODE_DESCRIPTIONS:
-                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
+            cmd.qaction.setToolTip(format_tooltip(name, desc))
 
         other_menu = add_menu.add_menu("Utility")
         for kind, name in [
@@ -1858,11 +1940,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             (NodeKind.CUSTOM_FRAGMENT_COUNT, "Custom Fragment Count"),
             (NodeKind.SPRITE, "Sprite"),
         ]:
+            desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = other_menu.add_command(
                 name, func=self._make_create_callback(kind),
             )
-            if name in NODE_DESCRIPTIONS:
-                cmd.qaction.setToolTip(NODE_DESCRIPTIONS[name])
+            cmd.qaction.setToolTip(format_tooltip(name, desc))
 
         from craftgraph.qt_variable_nodes import VariableNodeKind
 
@@ -1879,11 +1961,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             (VariableNodeKind.GET_FABRICATOR, "Get Fabricator"),
             (VariableNodeKind.GET_TAB, "Get Tab"),
         ]:
+            desc = VARIABLE_DESCRIPTIONS.get(name, "")
             cmd = variables_menu.add_command(
                 name, func=self._make_var_create_cb(var_kind),
             )
-            if name in VARIABLE_DESCRIPTIONS:
-                cmd.qaction.setToolTip(VARIABLE_DESCRIPTIONS[name])
+            cmd.qaction.setToolTip(format_tooltip(name, desc))
 
         # Enable floating tooltips on all context menus
         enable_menu_tooltips(nodes_menu.qmenu)
@@ -2156,11 +2238,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._manual_sprites.pop(item_id.lower(), None)
 
     def _make_create_callback(self, kind: NodeKind):  # type: ignore[no-untyped-def]
-        """Return a callback that creates a node of the given kind.
-
-        Each callback must be a separate closure so that ``kind`` is
-        captured by value, not by reference.
-        """
+        """Return a callback(graph) that creates a node of the given kind."""
 
         def _callback(graph: NodeGraph) -> None:
             self._create_node_from_menu(kind)
@@ -2462,13 +2540,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _update_path_completions(self) -> None:
         """Extract all known paths from parsed files and update editors + nodes."""
-        paths: set[str] = {
-            "Fabricator",
-            "Workbench",
-            "SeamothUpgrades",
-            "MapRoomFunctionality",
-            "CyclopsFabricator",
-        }
+        paths: set[str] = set(SN1_CRAFT_TREE_PATH_ROOTS)
 
         def _add_path(p: str) -> None:
             if not p:
@@ -2521,13 +2593,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     _VALID_PATH_STYLE = ""
 
     # Built-in crafting station roots that are always valid path targets.
-    _BUILTIN_PATH_ROOTS: frozenset[str] = frozenset({
-        "Fabricator",
-        "Workbench",
-        "SeamothUpgrades",
-        "MapRoomFunctionality",
-        "CyclopsFabricator",
-    })
+    _BUILTIN_PATH_ROOTS: frozenset[str] = SN1_CRAFT_TREE_PATH_ROOTS
 
     def _collect_valid_path_targets(self) -> set[str]:
         """Build the set of valid path targets from fabricator/tab definitions.
@@ -2649,6 +2715,34 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             w = self._editor_stack.widget(0)
             self._editor_stack.removeWidget(w)
 
+    @staticmethod
+    def _apply_node_header_tooltip(node: object) -> None:
+        """Patch a node's view so its tooltip shows a type description.
+
+        NodeGraphQt's ``_draw_node_horizontal`` calls ``_tooltip_disable``
+        on every redraw, overwriting any tooltip set via ``setToolTip``.
+        We monkey-patch ``_tooltip_disable`` on the view instance so the
+        description survives redraws.
+        """
+        if not isinstance(node, CraftGraphBaseNode):
+            return
+        # Use the class-level NODE_NAME (e.g. "Modified Recipe") rather than
+        # the instance-level name (e.g. "Knife") which create_node() overwrites.
+        type_name = type(node).NODE_NAME
+        desc = NODE_DESCRIPTIONS.get(type_name) or VARIABLE_DESCRIPTIONS.get(type_name)
+        if desc is None:
+            return
+
+        def _patched_tooltip_disable(self: object, state: bool) -> None:
+            tooltip = f"<b>{type_name}</b>: {desc}"
+            if state:
+                tooltip += ' <font color="red"><b>(DISABLED)</b></font>'
+            self.setToolTip(tooltip)  # type: ignore[attr-defined]
+
+        node.view._tooltip_disable = types.MethodType(  # type: ignore[attr-defined]
+            _patched_tooltip_disable, node.view,
+        )
+
     def _create_file_tab(
         self,
         parsed_file: object,
@@ -2672,6 +2766,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for cls in all_variable_node_classes():
             graph.register_node(cls)
         self._setup_context_menus_for(graph)
+        graph.node_created.connect(self._apply_node_header_tooltip)
 
         guard = SyncGuard()
         history = EditHistory(on_change=self._on_model_changed)
