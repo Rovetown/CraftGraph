@@ -1078,6 +1078,28 @@ class TestUtilityNodeRegistries:
         assert int(node.get_property("fragments_to_scan")) == 5
 
 
+class TestWidgetZOrder:
+    def test_widget_z_values_descend(self, graph):
+        """Proxy widgets should have descending z-values (topmost highest)."""
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab")
+        widgets = list(node.view.widgets.values())
+        assert len(widgets) > 2
+        z_values = [w.zValue() for w in widgets]
+        for i in range(len(z_values) - 1):
+            assert z_values[i] > z_values[i + 1], (
+                f"widget {i} z={z_values[i]} should be > widget {i + 1} z={z_values[i + 1]}"
+            )
+
+    def test_first_widget_above_z_val_node_widget(self, graph):
+        """First widget z-value should be above the base Z_VAL_NODE_WIDGET."""
+        from NodeGraphQt.constants import Z_VAL_NODE_WIDGET
+
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        widgets = list(node.view.widgets.values())
+        assert len(widgets) > 0
+        assert widgets[0].zValue() > Z_VAL_NODE_WIDGET
+
+
 class TestWidgetOverride:
     def test_string_without_override_creates_text_input(self, graph):
         """A STRING FieldPin without widget_override should render as text input."""
@@ -1088,3 +1110,48 @@ class TestWidgetOverride:
         from PySide6.QtWidgets import QLineEdit
 
         assert isinstance(inner, QLineEdit)
+
+
+# ---------------------------------------------------------------------------
+# Overflow tooltips (Task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestOverflowTooltips:
+    """Node field widgets update their tooltip to the current text value."""
+
+    def test_string_field_tooltip_updates_on_text_change(self, graph):
+        """QLineEdit tooltip tracks the field's text content."""
+        node = graph.create_node(
+            "com.craftgraph.ModifiedRecipeNode", name="Test",
+        )
+        widget_item = node.get_widget("item_id")
+        assert widget_item is not None
+        qt_widget = widget_item.get_custom_widget()
+        qt_widget.setText("VeryLongItemIDThatWouldBeTruncated")
+        assert qt_widget.toolTip() == "VeryLongItemIDThatWouldBeTruncated"
+
+    def test_int_field_tooltip_updates_on_value_change(self, graph):
+        """Int editor tooltip tracks the displayed value."""
+        node = graph.create_node(
+            "com.craftgraph.ModifiedRecipeNode", name="Test",
+        )
+        widget_item = node.get_widget("amount_crafted")
+        assert widget_item is not None
+        qt_widget = widget_item.get_custom_widget()
+        # _IntEditWidget has a _edit QLineEdit inside
+        inner_edit = qt_widget._edit
+        qt_widget.setValue(42)
+        assert inner_edit.toolTip() == "42"
+
+    def test_combo_field_tooltip_updates_on_selection(self, graph):
+        """Combo box tooltip tracks the selected item text."""
+        node = graph.create_node(
+            "com.craftgraph.FabricatorNode", name="Test",
+        )
+        widget_item = node.get_widget("model")
+        assert widget_item is not None
+        qt_widget = widget_item.get_custom_widget()
+        if qt_widget.count() > 0:
+            qt_widget.setCurrentIndex(0)
+            assert qt_widget.toolTip() == qt_widget.currentText()
