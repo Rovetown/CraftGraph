@@ -157,6 +157,26 @@ class _ViewerWheelFilter(QtCore.QObject):
         return False
 
 
+class _ViewerModifierSyncFilter(QtCore.QObject):
+    """Sync viewer modifier states from actual event modifiers on mouse press.
+
+    NodeGraphQt's viewer tracks ALT_state/CTRL_state/SHIFT_state via
+    keyPressEvent/keyReleaseEvent.  If focus leaves the viewer between a key
+    press and its release (e.g. ALT activating the menu bar), the stored state
+    becomes stale.  This filter resets the states from the real modifiers on
+    every mouse-button press so that stale modifier flags never affect panning
+    or zooming behavior.
+    """
+
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:  # type: ignore[override]
+        if event.type() == QtCore.QEvent.Type.MouseButtonPress:
+            mods = event.modifiers()
+            obj.ALT_state = bool(mods & QtCore.Qt.KeyboardModifier.AltModifier)
+            obj.CTRL_state = bool(mods & QtCore.Qt.KeyboardModifier.ControlModifier)
+            obj.SHIFT_state = bool(mods & QtCore.Qt.KeyboardModifier.ShiftModifier)
+        return False
+
+
 def collect_fab_tab_choices(
     parsed_files: list,
 ) -> tuple[list[str], list[str]]:
@@ -942,6 +962,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._graph_stack.addWidget(graph.widget)
         self._editor_stack.addWidget(editor)
         self._tab_bar.addTab("untitled")
+        self._tab_bar.setTabToolTip(self._tab_bar.count() - 1, "untitled")
 
         self._setup_context_menus_for(graph)
         self._minimap.attach(graph)
@@ -1181,6 +1202,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._graph_stack.addWidget(tab.graph.widget)
         self._editor_stack.addWidget(tab.editor)
         self._tab_bar.addTab(pf.source_path.stem)
+        self._tab_bar.setTabToolTip(
+            self._tab_bar.count() - 1, str(pf.source_path),
+        )
 
         # Switch to the new tab
         new_index = len(self._file_tabs) - 1
@@ -1842,6 +1866,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         viewer = graph.viewer()
         wheel_filter = _ViewerWheelFilter(viewer)
         viewer.installEventFilter(wheel_filter)
+
+        # Sync modifier states on mouse press to fix stale ALT_state
+        mod_filter = _ViewerModifierSyncFilter(viewer)
+        viewer.installEventFilter(mod_filter)
 
         # Node operations
         nodes_menu = graph.get_context_menu("nodes")
@@ -2918,6 +2946,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._graph_stack.addWidget(tab.graph.widget)
             self._editor_stack.addWidget(tab.editor)
             self._tab_bar.addTab(pf.source_path.stem)
+            self._tab_bar.setTabToolTip(
+                self._tab_bar.count() - 1, str(pf.source_path),
+            )
 
         # Apply sprites across all tabs
         for tab in self._file_tabs:

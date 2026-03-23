@@ -192,15 +192,23 @@ fabricators, and developers working on CraftGraph.
 
 #### Phase F -- Reference Panel and Polish
 
-- [ ] Vanilla ItemID categorized reference panel (dockable, 498 IDs by TechGroup/TechCategory)
-- [ ] Drag-from-panel-to-pin interaction
-- [ ] Enum combo box population with full value lists (FabricatorModel, FoodModel, TechGroup, TechCategory, CraftTree.Type)
-- [ ] CraftTree.Type Centrifuge marked as Below Zero / cut content for SN1
-- [ ] Rich text menu labels (QWidgetAction + QLabel with HTML) to replace `--` separators with bold names and styled descriptions
+- [x] CraftTree.Type Centrifuge marked as Below Zero / cut content for SN1
 - [x] Floating tooltips for context menu entries (show description on hover instead of inlining it in the label text)
-- [ ] Floating tooltips for node headers (show node type description on hover over a node in the graph)
-- [ ] Floating tooltips for node field widgets (show field-level help text on hover, e.g. "TechType ID", "Valid range 1-25")
-- [ ] Category dropdown: z-order/layer issues (proxy widgets below bleed through open dropdown -- needs z-value or native popup approach)
+- [x] Floating tooltips for node headers (show node type description on hover over a node in the graph)
+- [x] Floating tooltips for node field widgets (show field-level help text on hover, e.g. "TechType ID", "Valid range 1-25")
+- [x] Enum combo box population with full value lists (FabricatorModel, FoodModel, TechGroup, TechCategory, CraftTree.Type)
+- [x] Rich text menu labels (QWidgetAction + QLabel with HTML) to replace `--` separators with bold names and styled descriptions
+- [x] Category dropdown: z-order/layer issues (proxy widgets below bleed through open dropdown -- assign descending z-values so the topmost combo+label pair sits above all others, each successive pair one layer lower, preventing lower widgets from bleeding through open dropdowns)
+- [x] Vanilla ItemID categorized reference panel (dockable, 498 IDs by TechGroup/TechCategory)
+- [x] Drag-from-panel-to-pin interaction
+- [x] Case-insensitive autocomplete audit (deduplicate mixed-case TechType IDs, ensure canonical PascalCase insertion, verify camelCase prefix matching across code editor and node widgets)
+
+#### Phase G -- Context Menu + Field UX Fixes
+
+- [x] **Revert context menu to regular QActions with hover highlight:** The Phase F `add_rich_command()` / `QWidgetAction + QLabel` approach broke the selection highlight on menu items (QLabel sits on top of `QMenu::item:selected` styling). Revert all "Add Node" submenu entries back to regular `QAction`s via `add_command()`. Remove `add_rich_command()` from tooltips.py and the `_make_rich_create_cb` / `_make_rich_var_create_cb` wrappers from qt_gui.py. Remove import of `add_rich_command`. Update tests in `TestRichMenuLabels` accordingly.
+- [x] **Rich HTML tooltips on context menu actions:** The original Phase F intent was rich text in the *tooltips*, not in the menu labels. After reverting to regular QActions, set each action's tooltip to `format_tooltip(name, description)` (bold name + description via HTML). This uses the existing `format_tooltip()` helper in tooltips.py. The `enable_menu_tooltips()` call already makes these visible on hover.
+- [x] **Overflow tooltips for truncated node fields and tab labels:** Hovering a truncated QLineEdit, combo box, or int/float editor shows the full value. Tab bar labels show the full file path on hover.
+- [x] **Mouse middle button (MMB) pan behavior fix:** Root cause: NodeGraphQt viewer tracks ALT_state via keyPressEvent/keyReleaseEvent, but if focus leaves the viewer (e.g. ALT activates menu bar, dock widget takes focus), keyReleaseEvent is delivered elsewhere, leaving ALT_state stuck True. Fix: _ViewerModifierSyncFilter event filter syncs modifier states from actual event.modifiers() on every mouse press.
 
 ---
 

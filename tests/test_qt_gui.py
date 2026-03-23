@@ -2613,7 +2613,9 @@ class TestNodeHeaderTooltips:
 
 
 class TestFieldWidgetTooltips:
-    def test_item_id_widget_has_help_text(self, window, tmp_path):
+    """Field widget tooltips show the current value (overflow tooltip)."""
+
+    def test_item_id_widget_shows_current_value(self, window, tmp_path):
         recipe_file = tmp_path / "Recipes.txt"
         recipe_file.write_text(
             "ModifiedRecipes:\n(\n    ItemID: Knife;\n);\n",
@@ -2626,9 +2628,9 @@ class TestFieldWidgetTooltips:
         assert widget is not None
         qt_widget = widget.get_custom_widget()
         assert qt_widget is not None
-        assert "TechType" in qt_widget.toolTip()
+        assert qt_widget.toolTip() == qt_widget.text()
 
-    def test_amount_widget_has_help_text(self, window, tmp_path):
+    def test_amount_widget_shows_current_value(self, window, tmp_path):
         recipe_file = tmp_path / "Recipes.txt"
         recipe_file.write_text(
             "ModifiedRecipes:\n(\n    ItemID: Knife;\n);\n",
@@ -2641,7 +2643,8 @@ class TestFieldWidgetTooltips:
         assert widget is not None
         qt_widget = widget.get_custom_widget()
         assert qt_widget is not None
-        assert "per craft" in qt_widget.toolTip()
+        inner = qt_widget._edit
+        assert inner.toolTip() == inner.text()
 
 
 class TestItemIdReferencePanel:
@@ -2790,3 +2793,80 @@ class TestCaseInsensitiveAutocomplete:
         matches = [w for w in words if prefix in w.lower()]
         assert "Knife" in matches
         assert len(matches) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tab bar tooltips
+# ---------------------------------------------------------------------------
+
+
+class TestTabBarTooltips:
+    """Per-file tab labels show the full path as a tooltip."""
+
+    def test_untitled_tab_has_tooltip(self, window):
+        """The default 'untitled' tab has a tooltip."""
+        tip = window._tab_bar.tabToolTip(0)
+        assert tip == "untitled"
+
+    def test_loaded_file_tab_has_full_path_tooltip(self, window, tmp_path):
+        """Tabs loaded from files show the full file path as tooltip."""
+        recipe_file = tmp_path / "ModifiedRecipes.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        # Find the tab for our file
+        found = False
+        for i in range(window._tab_bar.count()):
+            tip = window._tab_bar.tabToolTip(i)
+            if str(recipe_file) in tip:
+                found = True
+                break
+        assert found, "No tab tooltip contains the full file path"
+
+
+# ---------------------------------------------------------------------------
+# MMB pan regression fix (modifier state sync)
+# ---------------------------------------------------------------------------
+
+
+class TestModifierStateSync:
+    """Viewer ALT_state is synced from actual modifiers on mouse press."""
+
+    def test_stale_alt_state_reset_on_mouse_press(self, window):
+        """If ALT_state gets stuck True, a mouse press without ALT resets it."""
+        from PySide6 import QtCore, QtGui
+
+        viewer = window.graph.viewer()
+        # Simulate stale ALT_state (as if ALT was pressed then focus lost)
+        viewer.ALT_state = True
+
+        # Deliver event through the event system so filters intercept it
+        press = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(100, 100),
+            QtCore.Qt.MouseButton.MiddleButton,
+            QtCore.Qt.MouseButton.MiddleButton,
+            QtCore.Qt.KeyboardModifier.NoModifier,
+        )
+        QtCore.QCoreApplication.sendEvent(viewer, press)
+
+        assert not viewer.ALT_state, "ALT_state should be synced to False on mouse press"
+
+    def test_alt_state_preserved_when_alt_held(self, window):
+        """If ALT is actually held during mouse press, ALT_state stays True."""
+        from PySide6 import QtCore, QtGui
+
+        viewer = window.graph.viewer()
+
+        press = QtGui.QMouseEvent(
+            QtCore.QEvent.Type.MouseButtonPress,
+            QtCore.QPointF(100, 100),
+            QtCore.Qt.MouseButton.MiddleButton,
+            QtCore.Qt.MouseButton.MiddleButton,
+            QtCore.Qt.KeyboardModifier.AltModifier,
+        )
+        QtCore.QCoreApplication.sendEvent(viewer, press)
+
+        assert viewer.ALT_state, "ALT_state should be True when ALT is held"
