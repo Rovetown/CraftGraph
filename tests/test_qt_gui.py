@@ -2088,6 +2088,19 @@ class TestNodeAutocomplete:
         widget = node.get_widget("amount_crafted")
         assert widget.type_ != "LineEditNodeWidget"
 
+    def test_popup_items_have_tooltips(self, window, tmp_path):
+        """Autocomplete popup items show the full text as a tooltip."""
+        node = self._load_modified_recipe(window, tmp_path)
+        line_edit = node.get_widget("item_id").get_custom_widget()
+        popup = window._node_popup
+        line_edit.textEdited.emit("tit")
+        assert popup._list.count() > 0
+        for i in range(popup._list.count()):
+            item = popup._list.item(i)
+            assert item.toolTip() == item.text(), (
+                f"Item '{item.text()}' should have its full text as tooltip"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Undo/redo status bar descriptions (Step M7.9)

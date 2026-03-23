@@ -624,7 +624,9 @@ class NodeCompletionPopup(QtWidgets.QFrame):
 
         self._list.clear()
         for m in matches[:_POPUP_MAX_VISIBLE]:
-            self._list.addItem(m)
+            item = QtWidgets.QListWidgetItem(m)
+            item.setToolTip(m)
+            self._list.addItem(item)
         self._list.setCurrentRow(0)
 
         self._position_near(line_edit)
