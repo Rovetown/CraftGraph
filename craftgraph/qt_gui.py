@@ -41,6 +41,7 @@ from craftgraph.qt_nodes import (
     all_node_classes,
 )
 from craftgraph.paths import cc3_assets, cc3_working_files, default_project_folder, detect_subnautica_cc3_path
+from craftgraph.project import ProjectFile, ProjectLoadError, load_project, new_project, save_project
 from craftgraph.save_utils import save_with_backup
 from craftgraph.serializer import serialize_file
 from craftgraph.sprite_loader import resolve_sprite, scan_assets_dir
@@ -1725,6 +1726,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._subnautica_cc3_path: str = str(detected) if detected is not None else ""
         self._auto_save_timer = QtCore.QTimer(self)
         self._auto_save_timer.timeout.connect(self._auto_save_tick)
+        self._project: ProjectFile | None = None
 
         # -- Build UI ---------------------------------------------------------
         self._setup_menu_bar()
@@ -1804,6 +1806,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         open_file_action = QtGui.QAction("Open &File...", self)
         open_file_action.triggered.connect(self._on_open_file)
         file_menu.addAction(open_file_action)
+
+        open_project_action = QtGui.QAction("Open Pro&ject...", self)
+        open_project_action.triggered.connect(self._on_open_project)
+        file_menu.addAction(open_project_action)
+
+        file_menu.addSeparator()
 
         self._save_action = QtGui.QAction("&Save", self)
         self._save_action.setShortcut(QtGui.QKeySequence.StandardKey.Save)
@@ -2295,6 +2303,92 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         if file_path:
             self.load_recipes(Path(file_path))
+
+    def _on_open_project(self) -> None:
+        """Open a .craftgraph project file and restore workspace state."""
+        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Open CraftGraph Project",
+            str(docs_dir),
+            "CraftGraph Projects (*.craftgraph);;All Files (*)",
+        )
+        if not file_path:
+            return
+        try:
+            project = load_project(Path(file_path))
+        except ProjectLoadError as exc:
+            QtWidgets.QMessageBox.critical(self, "Project Load Error", str(exc))
+            return
+
+        cc3_path = Path(project.cc3_path)
+        if not cc3_path.is_dir():
+            new_dir = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                f"CC3 folder not found at {cc3_path}. Browse to the correct location:",
+                "",
+            )
+            if not new_dir:
+                return
+            project.cc3_path = new_dir
+            cc3_path = Path(new_dir)
+            save_project(project)
+
+        self._project = project
+
+        # Load recipes from CC3 path
+        self.load_recipes(cc3_path)
+
+        # Restore node positions from project (overwrite sidecar-loaded ones)
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            tab_key = tab.parsed_file.source_path.stem
+            if tab_key in project.node_positions:
+                pos = project.node_positions[tab_key]
+                tab.user_positions = {k: (v[0], v[1]) for k, v in pos.items()}
+                for node_key, (x, y) in tab.user_positions.items():
+                    for node in tab.graph.all_nodes():
+                        if node.name() == node_key:
+                            node.set_pos(x, y)
+                            break
+
+        # Restore active tab
+        if project.active_tab:
+            for i, tab in enumerate(self._file_tabs):
+                if (
+                    tab.parsed_file is not None
+                    and tab.parsed_file.source_path.stem == project.active_tab
+                ):
+                    self._tab_bar.setCurrentIndex(i)
+                    self._on_tab_changed(i)
+                    break
+
+        # Restore editor state (cursor position, scroll)
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            tab_key = tab.parsed_file.source_path.stem
+            if tab_key in project.editor_state:
+                state = project.editor_state[tab_key]
+                cursor = tab.editor.textCursor()
+                cursor.setPosition(state.get("cursor_pos", 0))
+                tab.editor.setTextCursor(cursor)
+                scroll_bar = tab.editor.verticalScrollBar()
+                if scroll_bar is not None:
+                    scroll_bar.setValue(state.get("scroll", 0))
+
+        # Update window title
+        self.setWindowTitle(f"CraftGraph - {project.name}")
+
+        missing = [r for r in project.open_files if not (cc3_path / r).is_file()]
+        if missing:
+            self.statusBar().showMessage(
+                f"Opened project '{project.name}' ({len(missing)} file(s) not found, skipped)"
+            )
+        else:
+            self.statusBar().showMessage(f"Opened project '{project.name}'")
 
     def _collect_validation_issues(self, tab: FileTab | None = None) -> list[str]:
         """Collect all validation issues for the given tab (or active tab)."""
