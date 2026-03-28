@@ -3482,3 +3482,31 @@ class TestOpenFolderDefault:
             assert dir_arg == ""
 
 
+class TestOpenFileDefault:
+    """_on_open_file passes CC3 WorkingFiles as default directory."""
+
+    def test_open_file_uses_cc3_working_dir(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        window._subnautica_cc3_path = "/fake/CC3"
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getOpenFileName",
+            return_value=("", ""),
+        ) as mock_dialog:
+            window._on_open_file()
+            args = mock_dialog.call_args
+            dir_arg = args[0][2] if len(args[0]) > 2 else ""
+            assert "WorkingFiles" in dir_arg
+
+    def test_open_file_falls_back_when_cc3_unset(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        window._subnautica_cc3_path = ""
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getOpenFileName",
+            return_value=("", ""),
+        ) as mock_dialog:
+            window._on_open_file()
+            args = mock_dialog.call_args
+            dir_arg = args[0][2] if len(args[0]) > 2 else ""
+            assert dir_arg == ""

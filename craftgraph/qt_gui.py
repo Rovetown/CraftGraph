@@ -2282,7 +2282,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "Open Recipe File",
-            "",
+            self._cc3_working_dir(),
             "CC3 Recipe Files (*.txt);;All Files (*)",
         )
         if file_path:
