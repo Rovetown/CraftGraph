@@ -610,84 +610,166 @@ connections, matching the CC3 data model's containment structure:
 
 ---
 
-### Step 11h -- Direct Recipe-to-Recipe Connections
+### Step 11h -- Recipe-to-Recipe Links + Orphan Ingredient Nodes
 
 **Priority:** High (must fix before Step 12)
 **Depends on:** Step 11c (Node Kind system)
-**Effort:** Medium -- rework visual graph builder and node wiring, update layout
+**Effort:** Medium -- extend connect_ingredients, add orphan creation, update layout
 
-The current instance-per-usage model creates a separate ingredient instance node for every
-edge in the dependency graph, even when the ingredient is itself a recipe already on the
-canvas. This means recipe A and a duplicate "instance of A" both appear, which looks like
-two unrelated things and confuses the dependency chain.
+**Current state:** `connect_ingredients()` in `sync.py` already wires recipe-to-recipe
+links: if recipe B is an ingredient of recipe A, B's output port connects to A's
+ingredient slot. This works today. What is missing: raw-material ingredients (items with
+no recipe on the canvas) leave ingredient slots unconnected with no visual indication of
+what they represent.
 
-**Expected behavior:** When an ingredient ItemID matches an existing recipe node, the link
-goes directly from that recipe node's output pin to the consuming recipe's input pin. No
-intermediate instance node is created. Instance nodes are only created for **raw materials**
-(items that have no recipe of their own in the loaded file set).
+**Expected behavior:** After wiring recipe-to-recipe links, every remaining unmatched
+ingredient gets an `OrphanIngredientNode` (output-only, visual, no model_ref). One
+orphan per unique raw-material ItemID; its `output` port (multi=True) connects to every
+recipe that uses it. The graph becomes fully connected and self-documenting.
 
-This turns the flat two-layer layout into a true dependency DAG where recipe chains are
-visually connected, making the graph actually useful for understanding crafting dependencies.
+- [x] **Auto-create OrphanIngredientNodes for unmatched ingredients** (`sync.py`):
+  Extend `connect_ingredients()`. After the existing recipe-to-recipe wiring pass,
+  collect ingredient ItemIDs that had no matching recipe node. For each unique unmatched
+  ID, create one `OrphanIngredientNode` with `item_id` set, then connect its `output`
+  port to every consuming recipe's first unconnected `ingredient_N` slot. Return the
+  orphan nodes alongside the connection count so the caller can track them.
+- [x] **Include orphan nodes in layout** (`sync.py`): `compute_hierarchy_layout()`
+  positions only model-backed nodes (keyed by `id(model)`). Orphan nodes have no model,
+  so they need a separate positioning pass. Place them in a column to the left of the
+  recipe columns, ordered alphabetically or by connection count.
+- [x] **Register orphans with the active tab**: The loading pipeline in `qt_gui.py`
+  needs to store orphan nodes so they can receive completers, sprites, and be included
+  in export/save flows. Track them in a side map (e.g. `tab.orphan_nodes`) since they
+  are not in `model_to_node`.
+- [x] **Verify interactive editor compatibility** (`sync.py`): The
+  `_handle_ingredient_connected` / `_handle_ingredient_disconnected` handlers check
+  `model_ref` on the source node. OrphanIngredientNodes have `model_ref=None`, so
+  connecting FROM an orphan to a recipe is a data-model no-op (correct -- orphans are
+  visual-only, the user edits the ingredient list via text fields or by connecting
+  recipe nodes). Disconnecting must also handle None gracefully. Verify both paths
+  with manual testing and add test coverage.
+- [x] **Cycle highlighting verification**: `highlight_cycle_edges()` already works for
+  recipe-to-recipe edges (matches `item_id` pairs from the NetworkX graph). Orphan
+  nodes cannot participate in cycles (they have no incoming edges). Verify with a test
+  that the existing highlighting still works correctly with orphan nodes present.
+- [x] **Tests**: Verify that loading a file with A -> B -> C (all recipes) produces
+  direct recipe-to-recipe links (no orphans for B or C). Verify that A -> X (X is raw)
+  creates an OrphanIngredientNode for X wired to A. Verify one orphan per unique raw
+  material (if both A and B use Titanium, one orphan feeds both). Verify layout assigns
+  positions to orphan nodes. Verify cycle highlighting ignores orphan edges.
 
-- [ ] **Rework `_build_visual_graph()`** (`qt_nodes.py`): For edges where `ing_id` has
-  `is_crafted=True` in the data graph, add a direct edge from `ing_id` to `recipe_id`
-  (both are recipe nodes) instead of creating an instance node. Instance nodes remain only
-  for edges where `ing_id` is NOT crafted.
-- [ ] **Update `RecipeNodeEditor.load()` wiring loop** (`qt_nodes.py`): After creating
-  recipe nodes, wire direct links from recipe output attrs to consuming recipe input attrs
-  for crafted ingredients. Keep the instance-node creation loop for raw materials only.
-- [ ] **Layout adjustments**: The multipartite layout assumed two layers (instances left,
-  recipes right). With recipe-to-recipe edges, the layout needs to handle a multi-level
-  DAG. Consider topological-sort-based layering or a hierarchical spring layout.
-- [ ] **Interactive editor compatibility** (`sync.py`): Verify that drag-and-drop
-  wiring, link deletion, and swap logic still work when the source node is a recipe (not
-  just an instance). The `_find_recipe_for_ingredient()` helper and delink logic may need
-  updates since the source of a link can now be a recipe node, not just an ingredient node.
-- [ ] **Cycle highlighting**: Ensure cycle detection still highlights both the recipe nodes
-  and the direct edges between them (no instance nodes to color for crafted-ingredient edges).
-- [ ] **Tests**: Update or add tests for the new visual graph topology. Verify that a graph
-  with A -> B -> C (all recipes) produces direct links, while A -> X (X is raw) still
-  creates an instance node for X.
+### Step 11g.2 -- Enhanced SpriteNode: File Picker, Preview, and Drag-Drop
 
-### Step 11j -- User-Facing Validation Warnings and Error Popups
+**Priority:** Medium (quality-of-life for sprite workflow)
+**Depends on:** Step 11g (sprite infrastructure exists)
+**Effort:** Medium -- enhances existing SpriteNode, adds drag-drop handler on viewer
+
+The current SpriteNode has only a plain text field for the file path. This step
+makes sprite assignment intuitive by adding a file browser, live preview, and
+drag-drop support from the OS file manager.
+
+**Design decisions:**
+- Enhance existing SpriteNode (no new node types)
+- Header icon (64x64) serves as the image preview (consistent with all other nodes)
+- Smart drag-drop: dropping on a node sets its sprite directly, dropping on empty canvas creates a SpriteNode
+- Connecting a SpriteNode to a recipe extracts the filename stem as the sprite ID (existing behavior, unchanged)
+
+- [x] **SpriteNode self-preview:** Hook `file_path` textChanged to call `self.set_sprite(Path(value))` on the SpriteNode itself, so its header icon always reflects the current file. Clearing the field clears the preview.
+- [x] **Browse button widget:** Add a `_BrowseButtonWidget(NodeBaseWidget)` to SpriteNode -- a "Browse..." QPushButton that opens `QFileDialog.getOpenFileName()` filtered to `*.png`. On selection, writes the path into the node's `file_path` property. Both the text field and the button update the same underlying value. Remembers last-used directory between clicks.
+- [x] **Canvas drag-drop (dragEnterEvent):** Install drag-enter/drop handlers on the NodeGraphQt viewer. Accept drags carrying file URLs that end in `.png`. Reject everything else.
+- [x] **Canvas drag-drop (dropEvent -- smart drop on node):** On drop, map position to scene coordinates and check for an existing node under the cursor. If a node with a `sprite_in` port is found, set the sprite directly on that node and store a manual override (reuse the existing `_on_set_sprite` flow).
+- [x] **Canvas drag-drop (dropEvent -- create SpriteNode on empty canvas):** If no node is under the drop cursor, create a new SpriteNode at the drop position with `file_path` pre-filled to the dropped file's path. The self-preview hook displays the image automatically.
+- [x] **Tests:** SpriteNode browse button exists, textChanged triggers self-preview, drag-drop event acceptance/rejection, drop-on-node sets sprite, drop-on-canvas creates SpriteNode.
+
+### Step 11g.3 -- Autocomplete Popup: "New Item" Entry for Custom IDs
+
+**Priority:** Medium (quality-of-life for custom items)
+**Depends on:** Step 11g.2 (autocomplete popup already functional)
+**Effort:** Small -- modifies filtering logic in `NodeCompletionPopup`
+
+The autocomplete popup currently filters suggestions as you type, showing the closest
+matches from vanilla/mod-compat word lists. The problem: when typing a custom item ID
+like `test`, the popup suggests existing items like `devdefaulttest` and pressing Enter
+accepts that suggestion instead of keeping the intended custom value. There is no way to
+dismiss the autocomplete and keep your exact typed text without clicking away.
+
+This is a standard UX pattern in node editors (Blender, UE5): the popup always includes
+an entry at the bottom representing the literal text you typed, so you can explicitly
+select it to keep your input as-is. Selecting this entry closes the popup and preserves
+the raw typed value. The entry updates live with every keystroke.
+
+**Design decisions:**
+- A "New item: {current input}" entry appears as the **last** item in the popup list
+  (below all matching suggestions), matching the Blender/UE5 convention
+- The entry updates live on every keystroke (textEdited signal already fires per character)
+- Selecting the "New item" entry keeps the typed text exactly as-is and closes the popup
+- The popup never hides due to zero word-list matches -- the "New item" entry keeps it
+  visible as long as there is non-empty text
+- If the typed text exactly matches a known word (case-insensitive), the "New item" entry
+  is still shown (the user may want to type something that is a substring of a known ID
+  but is itself a new custom item)
+
+- [x] **Add "New item" entry to popup** (`qt_gui.py`): In
+  `NodeCompletionPopup._on_text_edited()`, after populating the list with word-list
+  matches, always append a `New item: {text}` entry as the last item. Style it
+  distinctly (e.g. italic or gray text) so it is visually separate from real matches.
+  Change the hide condition: only hide when `text` is empty, never when word-list
+  matches are empty (the "New item" entry keeps the popup open).
+- [x] **Selecting "New item" keeps typed text** (`qt_gui.py`): In `_accept_current()`
+  and `_on_item_clicked`, detect if the selected item is the "New item" entry (check
+  prefix `New item: `). If so, extract just the raw text after the prefix, write it
+  into the line edit, and close the popup. This preserves the user's exact input.
+- [x] **Live update on every keystroke**: The entry text must reflect the current
+  input at all times. Since `_on_text_edited` already fires on each character via
+  `textEdited`, the list rebuild naturally keeps the "New item" entry current. Verify
+  backspace/delete also update it.
+- [x] **Tests**: Typing unknown text shows "New item: ..." as the last entry. Selecting
+  "New item: test" writes "test" into the line edit. Pressing Enter when "New item" is
+  highlighted keeps exact typed text. Entry updates when text changes. Empty text hides
+  popup entirely (no "New item" entry for blank input). Entry appears even when there
+  are word-list matches (so user can always choose their exact input over a suggestion).
+
+### Step 11j -- User-Facing Validation Warnings
 
 **Priority:** Medium (polish, after core connections work)
 **Depends on:** Step 11i (hierarchy connections), Step 11h (recipe-to-recipe links)
-**Effort:** Small-Medium -- UI feedback layer on top of existing validation logic
+**Effort:** Small -- most validation feedback already exists
 
-The editor should warn users about invalid states rather than silently rejecting connections
-or producing broken output. Currently, invalid operations (self-loops, duplicate ingredients,
-cycles) either silently fail or show a basic modal dialog (the cycle warning from checkbox 9).
-This step standardizes all validation feedback into a consistent, non-blocking notification
-system.
+The editor warns users about invalid states via the status bar notification system
+(`_show_error_status` with auto-dismiss, red background for errors). Cycle detection,
+port constraints, required-field borders, and paired-field borders are all in place.
+Remaining items are small targeted additions.
 
-- [ ] **Notification/toast system**: Add a lightweight notification area (bottom-right or
-  status bar) that shows temporary warnings without blocking interaction. Toasts auto-dismiss
-  after a few seconds. More severe errors (data loss risk) use the existing modal dialog
-  pattern. Avoid blocking the user for recoverable issues.
-- [ ] **Circular dependency warning** (already exists as modal -- migrate to toast or keep as
-  modal with more detail). Show the full cycle path (A -> B -> C -> A) so the user knows
-  exactly what to fix.
-- [ ] **Invalid hierarchy connection warnings**: When the user tries to:
-  - Connect a recipe to a tab whose fabricator doesn't exist: toast "Tab 'X' has no parent
-    fabricator on canvas"
-  - Connect a fabricator to another fabricator: toast "Fabricators cannot be nested"
-  - Connect a tab to itself or create a tab cycle: toast with cycle path
-  - Connect a recipe that already has a Path to a different tab: toast "Recipe 'X' already
-    assigned to tab 'Y'. Reassign?" (or swap automatically)
-- [ ] **Missing reference warnings**: On save/export, scan for:
-  - Recipes with `path` pointing to a tab that doesn't exist in the file
-  - Tabs with `parent_tab_path` pointing to a non-existent fabricator or parent tab
-  - Ingredients referencing ItemIDs that don't exist in vanilla or loaded files
-  Show a summary warning dialog listing all issues before writing the file.
-- [ ] **CC3 processing order warnings**: If the serializer detects that the output would
-  have a tab referenced before it's defined (due to ordering), show a warning explaining
-  the issue and offer to auto-fix (reorder blocks).
-- [ ] **Visual indicators on nodes**: Add a warning icon or colored border on nodes that
-  have validation issues (orphan paths, missing references, cycle membership). Could use
-  a unicode warning prefix in the node label or a theme override.
-- [ ] **Tests**: Verify each warning type triggers for the correct condition. Verify toasts
-  auto-dismiss. Verify modal dialogs block appropriately.
+Ordered by effort (smallest first) and independence:
+
+- [x] **Notification system**: Status bar with `_show_error_status()` (red background,
+  5-second auto-dismiss via `QTimer.singleShot`). Used by cycle rejection, block type
+  enforcement, nesting checks, and 70+ status messages throughout the GUI. Sufficient
+  for this application -- floating toasts would be overengineering.
+- [x] **Visual indicators on nodes**: Red borders on empty required fields
+  (`validate_required_fields`), orange borders on incomplete paired fields
+  (`validate_paired_fields`), red 3px cycle edges, distinct node colors per type,
+  grey orphan ingredients. Core validation visuals are complete.
+- [x] **Fabricator nesting blocked**: Port type constraints prevent invalid hierarchy
+  wires. "No fabricator to nest into" and "one block type per file" errors shown.
+- ~~**CC3 processing order warnings**~~: Removed. CC3 does two-pass parsing (parse then
+  resolve) and does not require forward declarations. We already enforce one block type
+  per file. Ordering within a block type is handled by CC3 internally.
+- [x] **Cycle path in rejection message**: Currently shows "Rejected: adding X to Y would
+  create a circular dependency." Add the full cycle path (A -> B -> C -> A) by extracting
+  it from NetworkX. Small, fully independent change in `sync.py` + `qt_gui.py`.
+- [x] **Recipe reassignment warning**: When connecting a recipe that already has a `path`
+  to a different tab, show "Recipe 'X' already assigned to 'Y'. Reassign?" in the status
+  bar. Small check in `_handle_hierarchy_connected`. Fully independent.
+- [x] **Tab-to-tab cycle check**: Detect cycles in the tab parent chain (tab A -> tab B ->
+  tab A). Similar to the ingredient cycle check but for `parent_tab_path` links. Small,
+  fully independent.
+- [x] **Save/export validation summary**: On save/export, scan for broken references:
+  paths pointing to non-existent tabs, `parent_tab_path` targeting missing fabricators,
+  ingredients referencing unknown ItemIDs (not in vanilla or loaded files). Show a summary
+  dialog listing all issues before writing. Medium effort, independent.
+- [x] **Tests**: Add tests alongside each new item above. Existing tests already cover
+  cycle rejection, required/paired borders, port constraints, and block type enforcement.
 
 ---
 
@@ -709,22 +791,15 @@ needs to stay in sync with the others in real time.
 - **Thread safety:** Watchdog file watcher runs its own thread. GUI updates must
   be marshalled into Qt's event loop via signals/slots or QTimer.
 
-- [ ] **Multi-panel layout** -- 1x2 split (or 2x2 grid):
+- [x] **Multi-panel layout** -- 1x2 horizontal split:
   - **Left panel (large):** Node-based editor from Step 11
-  - **Top-right panel:** EasyMarkup code editor (bidirectional)
-  - **Bottom-right panel:** Mini dependency graph overview
-  - Alternative: 1x2 where right side is a vertical split (code on top, mini graph on bottom)
-- [ ] **Bidirectional code editor:**
+  - **Right panel:** EasyMarkup code editor (bidirectional)
+- [x] **Bidirectional code editor:**
   - Editable text area showing live EasyMarkup output
   - Node changes serialize to code in real time (model -> text via serializer)
   - Code changes parse back to nodes in real time (text -> model via parser)
   - Debounced re-parsing (don't parse on every keystroke, wait for pause)
   - Error-tolerant parsing mode: keep last valid state when code is mid-edit, show parse errors inline without breaking the editor
-- [ ] **Mini dependency graph:**
-  - Small auto-updating overview of the full dependency tree
-  - Highlights the currently selected node/recipe
-  - Click-to-navigate: clicking a node in the mini graph selects it in the main editor
-  - Helps orient the user in large mod projects with hundreds of recipes
 
 ---
 
@@ -732,10 +807,11 @@ needs to stay in sync with the others in real time.
 
 > Issues observed during testing that impact core editing usability.
 
-- [ ] **Node click-selection not switching focus:** Single-clicking a different
+- [x] **Node click-selection not switching focus:** Single-clicking a different
   node does not always deselect the previously selected node, requiring 2-3
-  clicks to move selection between nodes. Investigate whether this is a
-  NodeGraphQt quirk or a custom event handler issue. Files: `qt_gui.py`.
+  clicks to move selection between nodes. **Fixed:** `_ViewerModifierSyncFilter`
+  resets stale ALT/CTRL/SHIFT states on every mouse press, preventing
+  NodeGraphQt from misinterpreting clicks as pan gestures.
 
 ---
 
@@ -743,32 +819,211 @@ needs to stay in sync with the others in real time.
 
 > Settings infrastructure and accessibility options.
 
-### Settings Menu
+### Settings Infrastructure
 
-- [ ] **Add a general settings menu** accessible from the GUI menu bar or a gear icon. This is the
-  centralized place for all user preferences (theme, accessibility, editor behavior, etc.).
-- [ ] **Colorblind mode:** Add colorblind-friendly palette options under Settings > Accessibility.
-  At minimum: Deuteranopia (red-green), Protanopia (red-green variant), Tritanopia (blue-yellow).
-  Each mode remaps `_KIND_COLORS` and `_NODE_COLORS` to a distinguishable palette. Consider using
-  established colorblind-safe palettes (e.g., Wong 2011, Okabe-Ito). The active palette should
-  persist across sessions (save to a config file or Qt settings).
-- [ ] **Settings persistence:** Save user settings to a JSON/TOML file (e.g., `~/.craftgraph/settings.toml`
-  or alongside the project). Load on startup, apply before building nodes.
-- [ ] **Custom fields and mod imports (Settings > Custom Data):** Allow users to extend
-  CraftGraph's knowledge beyond vanilla + built-in mod-compat IDs:
-  - **Manual custom fields:** Add custom TechType IDs, custom enum values, or custom
-    block fields via a settings dialog. These appear in autocomplete and are valid
-    targets for ItemID pins.
-  - **Import from recipe file:** Point at an existing CC3 `.txt` file and extract all
-    ItemIDs, tab IDs, fabricator IDs, ingredient references, and enum values found in
-    it. Auto-adds them to the custom data pool.
-  - **Import from mod folder:** Scan an entire mod folder and harvest all referenced
-    IDs across all files. Useful for loading another modder's recipes as a dependency.
-  - **Custom data persistence:** Saved per-project (in `.craftgraph/custom_data.json`)
-    and/or globally (in `~/.craftgraph/custom_data.json`). Project-level overrides
-    global.
-  - **Export custom data:** Share your custom ID lists with other modders as a
-    standalone JSON file they can import.
+- [x] **Settings dialog window:** Proper `QDialog` with title bar, 8 tabs, dark theme.
+  Opened via Help > Settings. Layout-only for now; wiring comes per-feature below.
+- [ ] **Settings persistence:** Save user settings to a JSON/TOML file (e.g.,
+  `~/.craftgraph/settings.toml` or alongside the project). Load on startup, apply
+  before building nodes. All tabs below depend on this.
+
+---
+
+### Tab: General
+
+> Sorted: simple toggles first, then paths (need QFileDialog wiring), then
+> startup behavior (needs recent-files tracking infra).
+
+- [ ] **Check for updates:** Toggle update check on startup *(deferred -- needs GitHub
+  releases / versioning infrastructure first)*
+  `[low complexity | self-contained | just a bool flag]`
+- [x] **Backup on save:** Keep `.bak` copy of previous version
+  `[low complexity | self-contained | copy-before-write in save path]`
+  Implemented: `save_utils.save_with_backup()`, wired into `_on_save` + `_save_all`,
+  toggle in Settings > General > Saving. 6 tests in `test_save_utils.py`.
+- [x] **Auto-save:** Enable toggle + interval (seconds)
+  `[medium complexity | needs QTimer + save-path integration]`
+  Implemented: `_set_auto_save()` + `_auto_save_tick()` on CraftGraphWindow,
+  QTimer-based with silent save (no validation prompt). Settings dialog wired
+  with enable checkbox + interval spinbox. 12 tests in `TestAutoSave`.
+- [x] **Default paths:** Default project folder + Subnautica CC3 folder (Browse)
+  `[medium complexity | QFileDialog + path validation + used by Open/New]`
+  Implemented: `craftgraph/paths.py` with `detect_subnautica_cc3_path()` (walks
+  C:/D: Steam library roots segment-by-segment) and `default_project_folder()`
+  (~/Documents/CraftGraph). Browse buttons open QFileDialog. Settings dialog
+  wired with pass-in/read-back. 9 tests in `test_paths.py`, 6 in `TestDefaultPaths`.
+- [x] **Wire CC3 path into file operations:** Use the detected/configured CC3 path as the
+  default directory for File > Open Folder, File > Open File, New File, and New Project.
+  If CC3 path is empty (no detection, no manual selection), dialogs open without a default
+  and prompt the user to select a folder.
+  `[low-medium complexity | thread CC3 path through existing dialog calls]`
+  - [x] File > Open Folder defaults to `<CC3 path>/WorkingFiles/` (recipe files)
+  - [x] File > Open File defaults to `<CC3 path>/WorkingFiles/`
+  - [x] New File defaults to `<CC3 path>/WorkingFiles/` as save location
+  - [x] New Project defaults to `<CC3 path>/WorkingFiles/` as base location
+  - [x] Sprite/asset lookups default to `<CC3 path>/Assets/` folder
+  - [x] Auto-detect `WorkingFiles/` inside CC3 folder if it exists, fall back to CC3 root
+  - [x] Node editor path lookups (tabs, fabricators) use CC3 path for resolution
+  Implemented: `cc3_working_files()` and `cc3_assets()` in `paths.py`, convenience
+  methods `_cc3_working_dir()` / `_cc3_assets_dir()` on `CraftGraphWindow`. All file
+  dialogs default to `WorkingFiles/`, sprite loading uses `Assets/` as primary source.
+  Silent OS-default fallback when CC3 path is unset. Node editor path resolution works
+  indirectly: the CC3 default paths feed file loading, which populates the nodes that
+  crafting-tree path validation resolves against.
+- [ ] **Project file format (.craftgraph):** Workspace bookmark stored as a single binary
+  file using **MessagePack** serialization (pip: `msgpack`). Lives in the project folder
+  (`~/Documents/CraftGraph/`). Does NOT contain recipe data (recipes stay in CC3 folder).
+  `[high complexity | needs file format design, serialization, restore logic]`
+  **Format decision:** MessagePack chosen over alternatives:
+  - ZIP+JSON: overkill, no binary assets to embed alongside JSON
+  - Custom binary (like VMware .vmdk): too much versioning/struct work
+  - Plain JSON: users would hand-edit and break it
+  - MessagePack: single `msgpack.pack()`/`unpack()` call, binary so not hand-editable,
+    trivially extensible (just a dict), tiny well-maintained dependency, can dump to
+    JSON with a 3-line debug script if needed
+  **Contents of a `.craftgraph` project file:**
+  - `version`: schema version for future migration
+  - `cc3_path`: the Subnautica CC3 folder this project points to
+  - `open_files`: list of recipe `.txt` file paths (relative to cc3_path) that were open
+  - `active_tab`: which tab was focused
+  - `node_positions`: per-file dict of `{node_key: [x, y]}` (replaces sidecar layout.json)
+  - `editor_state`: per-file code editor cursor position, scroll offset, etc.
+  - `settings_overrides`: any per-project settings that differ from global defaults
+  **Behavior:**
+  - File > New Project creates a `.craftgraph` file in `~/Documents/CraftGraph/`
+  - File > Open Project loads a `.craftgraph` file, restores full workspace state
+  - File > Save auto-saves both the recipe `.txt` files (to CC3 folder) and the project
+    file (to project folder) so node positions and editor state persist
+  - If no project file is loaded (user opened raw .txt files), behaves as today
+    (sidecar `.craftgraph/layout.json` for positions, no project-level state)
+  - Double-clicking a `.craftgraph` file in Explorer should open the app (file association,
+    later step)
+- [ ] **Recent files:** Configurable max recent-files count
+  `[medium complexity | needs recent-files list tracking, used by startup]`
+- [ ] **Startup behavior:** On-launch action (open last project / welcome screen / empty)
+  `[high complexity | depends on recent-files + default paths being wired first]`
+
+---
+
+### Tab: Appearance
+
+> Sorted per subtab. Theme basics first (swap a stylesheet), then node colors
+> (remap existing dicts), then code colors (touch highlighter). Colorblind
+> mode and UI scale are the hardest since they touch multiple systems.
+
+*Subtabs: Theme | Node Colors | Code Colors*
+
+**Theme:**
+- [ ] **Application theme:** Dark / Light / System selector
+  `[medium complexity | swap root stylesheet, persist choice]`
+- [ ] **Accent color:** Blue / Teal / Green / Orange / Purple / Red
+  `[medium complexity | parameterize existing accent in stylesheets]`
+- [ ] **High contrast borders:** Accessibility toggle
+  `[low complexity | add/remove a border-width override class]`
+- [ ] **UI scale:** 100% through 200%
+  `[high complexity | QApplication font + widget scaling, affects all layouts]`
+- [ ] **Colorblind mode:** Deuteranopia, Protanopia, Tritanopia palettes.
+  Remaps `_KIND_COLORS` and `_NODE_COLORS` to distinguishable palettes
+  (Wong 2011 or Okabe-Ito). Persists across sessions.
+  `[high complexity | palette dicts + node repaint + visualizer + tests]`
+
+**Node Colors:**
+- [ ] **Highlight colors:** Cycle edges color, selected node border color
+  `[low complexity | two color values fed into existing highlight logic]`
+- [ ] **Per-block-type colors:** Color swatch + picker for each of the 10 CC3 node types
+  `[medium complexity | 10 swatches -> _KIND_COLORS dict + node repaint]`
+
+**Code Colors:**
+- [ ] **Editor background colors:** Background, current line highlight, line number gutter
+  `[low complexity | 3 color values applied to CodeEditor stylesheet]`
+- [ ] **Syntax token colors:** Keywords, field names, strings, numbers, comments, delimiters
+  `[medium complexity | 6 color values -> EasyMarkupHighlighter formats]`
+
+---
+
+### Tab: Node Editor
+
+> Sorted: toggles that flip existing NodeGraphQt properties first, then
+> features needing new rendering logic.
+
+- [ ] **Navigation:** Zoom speed, invert zoom direction, pan-with-MMB toggle, show minimap
+  `[low complexity | NodeGraphQt viewer properties + minimap visibility]`
+- [ ] **Grid:** Show/hide toggle, grid size (px), snap-to-grid, grid style (Dots/Lines/None)
+  `[low complexity | NodeGraphQt has grid_mode / set_grid_size APIs]`
+- [ ] **Nodes:** Show thumbnails toggle, thumbnail size (px), show port labels,
+  warn-before-creating-cycles toggle
+  `[medium complexity | thumbnail size needs sprite reload, cycle warn exists]`
+- [ ] **Connections:** Pipe style (Curved/Straight/Angle), line width, animate toggle
+  `[medium complexity | NodeGraphQt pipe layout enum + custom paint override]`
+
+---
+
+### Tab: Code Editor
+
+> Sorted: font (instant visual feedback, simple) first, display toggles
+> second, editing helpers third, sync tuning last.
+
+- [ ] **Font:** Family (QFontComboBox) + size (pt)
+  `[low complexity | setFont() on CodeEditor, immediate effect]`
+- [ ] **Display:** Show line numbers, highlight current line, word wrap, tab width (spaces)
+  `[low complexity | toggle existing LineNumberArea visibility + QTextOption]`
+- [ ] **Editing:** Auto-indent, auto-close brackets, strip trailing whitespace on save
+  `[medium complexity | keyPressEvent overrides + save-hook logic]`
+- [ ] **Bidirectional sync:** Parse debounce interval (ms), show parse errors inline
+  `[medium complexity | parameterize existing QTimer delay + error display]`
+
+---
+
+### Tab: Autocomplete
+
+> Sorted: behavior tweaks on existing autocomplete first, then new ID
+> sources, then import/export (needs parser integration + file I/O).
+
+- [ ] **Behavior:** Case-insensitive matching toggle, min chars to trigger, max visible suggestions
+  `[low complexity | tweak existing completer config values]`
+- [ ] **ID sources:** Toggles for vanilla IDs (498), mod-compat IDs (120), IDs from open files
+  `[low complexity | filter which ID sets feed into completer word list]`
+- [ ] **Custom TechType IDs:** Add/remove list of user-defined IDs that appear in autocomplete
+  `[medium complexity | list widget + merge into completer on change]`
+- [ ] **Custom data persistence:** Per-project (`.craftgraph/custom_data.json`) and/or
+  global (`~/.craftgraph/custom_data.json`). Project-level overrides global.
+  `[medium complexity | load/save JSON, merge logic, project vs global scope]`
+- [ ] **Import IDs from recipe file:** Browse for a `.txt` file, extract all referenced IDs
+  `[medium complexity | reuse parser to extract IDs + dedup into custom list]`
+- [ ] **Import IDs from mod folder:** Scan entire mod folder, harvest all referenced IDs
+  `[medium complexity | walk directory + parse each file + dedup]`
+- [ ] **Export custom data:** Share custom ID lists as standalone JSON
+  `[low complexity | JSON dump of custom ID list, but depends on persistence]`
+
+---
+
+### Tab: File Watching
+
+> Sorted: parameterize existing watcher constants first, then add new
+> behavior modes.
+
+- [ ] **Debounce interval:** Configurable delay before rebuild (ms)
+  `[low complexity | replace _DEBOUNCE_SECONDS constant with setting]`
+- [ ] **Enable file watching:** Master on/off toggle
+  `[low complexity | start/stop watcher thread based on flag]`
+- [ ] **Notifications:** Status bar message on reload, flash tab, sound on cycle detection
+  `[medium complexity | status bar exists, tab flash + sound are new]`
+- [ ] **On external change:** Auto-reload / Prompt before reloading / Ignore
+  `[medium complexity | new dialog prompt path + ignore mode in watcher callback]`
+
+---
+
+### Tab: Keybindings
+
+> Sorted: shortcut editing first (bulk of the work), reset is trivial once
+> the data model exists.
+
+- [ ] **Customizable shortcuts:** QKeySequenceEdit for: Save, Save All, Undo, Redo,
+  Delete nodes, Select All, Zoom to Fit, Add Recipe, Open Settings, Toggle Code Editor,
+  Find Node by ID
+  `[high complexity | need action registry mapping names->QActions, persist bindings]`
+- [ ] **Reset to defaults:** One-click restore of all default keybindings
+  `[low complexity | clear overrides, re-apply defaults from registry]`
 
 ---
 
@@ -938,7 +1193,7 @@ the unified graph back into per-file format (one block type per file, as CC3 req
   Steps 11f-11i (Qt GUI) ........... DONE (see CHANGELOG.md)
           |
   Step 11h (Recipe-to-Recipe Links) --- Direct DAG wiring
-  Step 11j (Validation Warnings) ------ User-facing error feedback
+  Step 11j (Validation Warnings) ------ DONE (cycle paths, tab cycles, reassignment, export checks)
           |
   Step 12 (Bidirectional Code Editor) - Multi-panel IDE layout
           |
