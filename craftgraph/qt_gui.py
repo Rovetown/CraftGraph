@@ -1415,6 +1415,10 @@ class NewProjectDialog(QtWidgets.QDialog):
         dir_row.addWidget(self._dir_edit)
         dir_row.addWidget(browse_btn)
 
+        # Description (optional)
+        self._desc_edit = QtWidgets.QLineEdit(self)
+        self._desc_edit.setPlaceholderText("Short description of this mod project")
+
         # Checkboxes for optional block types (all checked by default)
         self._type_checks: dict[BlockType, QtWidgets.QCheckBox] = {}
         types_group = QtWidgets.QGroupBox("Starter Files")
@@ -1436,6 +1440,7 @@ class NewProjectDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QFormLayout(self)
         form.addRow("Project Name:", self._name_edit)
+        form.addRow("Description:", self._desc_edit)
         form.addRow("Location:", dir_row)
         form.addRow(types_group)
         form.addRow(buttons)
@@ -1444,6 +1449,16 @@ class NewProjectDialog(QtWidgets.QDialog):
     @property
     def project_path(self) -> Path:
         return Path(self._dir_edit.text().strip()) / self._name_edit.text().strip()
+
+    @property
+    def project_name(self) -> str:
+        """The project name as entered by the user."""
+        return self._name_edit.text().strip()
+
+    @property
+    def description(self) -> str:
+        """Optional project description."""
+        return self._desc_edit.text().strip()
 
     @property
     def selected_block_types(self) -> list[BlockType]:
@@ -1487,6 +1502,61 @@ class NewProjectDialog(QtWidgets.QDialog):
             )
             return
         self.accept()
+
+
+class QuickProjectDialog(QtWidgets.QDialog):
+    """Minimal dialog to collect project name + description when promoting
+    raw files to a project on save."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent, _DIALOG_FLAGS)
+        self.setStyleSheet(_DIALOG_STYLE)
+        self.setWindowTitle("Create CraftGraph Project")
+        self.setMinimumWidth(360)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        name_label = QtWidgets.QLabel("Project name:")
+        self._name_edit = QtWidgets.QLineEdit()
+        self._name_edit.setPlaceholderText("My Mod")
+        layout.addWidget(name_label)
+        layout.addWidget(self._name_edit)
+
+        desc_label = QtWidgets.QLabel("Description (optional):")
+        self._desc_edit = QtWidgets.QLineEdit()
+        self._desc_edit.setPlaceholderText("Short description of this mod project")
+        layout.addWidget(desc_label)
+        layout.addWidget(self._desc_edit)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
+        )
+        buttons.accepted.connect(self._validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.move(QtGui.QCursor.pos())
+
+    def _validate_and_accept(self) -> None:
+        name = self._name_edit.text().strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Missing Name", "Please enter a project name.")
+            return
+        unsafe = set('<>:"/\\|?*')
+        if any(c in unsafe for c in name):
+            QtWidgets.QMessageBox.warning(
+                self, "Invalid Name", "Project name contains invalid characters."
+            )
+            return
+        self.accept()
+
+    @property
+    def project_name(self) -> str:
+        return self._name_edit.text().strip()
+
+    @property
+    def description(self) -> str:
+        return self._desc_edit.text().strip()
 
 
 class NodeCompletionPopup(QtWidgets.QFrame):
@@ -1961,9 +2031,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._editor_stack.setCurrentIndex(index)
 
         tab = self._file_tabs[index]
-        name = "CraftGraph"
-        if tab.parsed_file is not None:
-            name += f" - {tab.parsed_file.source_path.name}"
+        if self._project is not None:
+            name = f"CraftGraph - {self._project.name}"
+            if tab.parsed_file is not None:
+                name += f" [{tab.parsed_file.source_path.name}]"
+        else:
+            name = "CraftGraph"
+            if tab.parsed_file is not None:
+                name += f" - {tab.parsed_file.source_path.name}"
         if hasattr(tab.history, "is_dirty") and tab.history.is_dirty:
             name += " *"
         self.setWindowTitle(name)
@@ -2100,6 +2175,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         """Prompt the user if there are unsaved changes before closing."""
         if not self._has_unsaved_changes():
+            if self._project is not None:
+                self._update_project_state()
+                save_project(self._project)
             self._save_positions()
             event.accept()
             return
@@ -2118,16 +2196,26 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._save_all()
             event.accept()
         elif result == QtWidgets.QMessageBox.StandardButton.Discard:
+            # Still save project state (positions, editor state) even on discard
+            if self._project is not None:
+                self._update_project_state()
+                save_project(self._project)
             self._save_positions()
             event.accept()
         else:
             event.ignore()
 
     def _save_positions(self) -> None:
-        """Persist all user-dragged node positions to the layout sidecar file."""
+        """Persist all user-dragged node positions.
+
+        In project mode, positions are stored in the project file (handled
+        by ``_update_project_state``).  In raw-file mode, uses the sidecar
+        ``layout.json``.
+        """
+        if self._project is not None:
+            return
         if not self._file_tabs:
             return
-        # Find a tab with a real source path to determine the sidecar location
         source_path = None
         for tab in self._file_tabs:
             if tab.parsed_file is not None:
@@ -2144,12 +2232,103 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             tab_key = tab.parsed_file.source_path.stem
             all_positions[tab_key] = {k: [v[0], v[1]] for k, v in tab.user_positions.items()}
 
-        # Only write if at least one tab has user positions
         if any(pos for pos in all_positions.values()):
             save_layout(layout_file, all_positions)
 
+    def _update_project_state(self) -> None:
+        """Sync current workspace state into ``self._project``."""
+        if self._project is None:
+            return
+
+        cc3 = Path(self._project.cc3_path)
+        open_files: list[str] = []
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            try:
+                rel = tab.parsed_file.source_path.relative_to(cc3)
+                open_files.append(str(rel))
+            except ValueError:
+                open_files.append(str(tab.parsed_file.source_path))
+        self._project.open_files = open_files
+
+        idx = self._tab_bar.currentIndex()
+        if 0 <= idx < len(self._file_tabs):
+            tab = self._file_tabs[idx]
+            if tab.parsed_file is not None:
+                self._project.active_tab = tab.parsed_file.source_path.stem
+        else:
+            self._project.active_tab = ""
+
+        positions: dict[str, dict[str, list[float]]] = {}
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            tab_key = tab.parsed_file.source_path.stem
+            positions[tab_key] = {
+                k: [v[0], v[1]] for k, v in tab.user_positions.items()
+            }
+        self._project.node_positions = positions
+
+        editor_state: dict[str, dict[str, object]] = {}
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            tab_key = tab.parsed_file.source_path.stem
+            cursor = tab.editor.textCursor()
+            scroll_bar = tab.editor.verticalScrollBar()
+            editor_state[tab_key] = {
+                "cursor_pos": cursor.position(),
+                "scroll": scroll_bar.value() if scroll_bar is not None else 0,
+            }
+        self._project.editor_state = editor_state  # type: ignore[assignment]
+
+    def _prompt_create_project(self) -> bool:
+        """Ask if user wants to create a project. Returns True if created."""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Save as Project?",
+            "Would you like to save this as a CraftGraph project?\n\n"
+            "A project file remembers your open files, node positions,\n"
+            "and editor state across sessions.",
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+        if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            return False
+
+        dialog = QuickProjectDialog(parent=self)
+        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+            return False
+
+        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        cc3_path = self._source_path
+        if cc3_path.is_file():
+            cc3_path = cc3_path.parent
+
+        project = new_project(
+            dialog.project_name,
+            cc3_path,
+            docs_dir,
+            description=dialog.description,
+        )
+        self._project = project
+        self._update_project_state()
+        save_project(project)
+        self.setWindowTitle(f"CraftGraph - {project.name}")
+        self.statusBar().showMessage(f"Created project '{project.name}'")
+        return True
+
     def _save_all(self) -> None:
         """Save all dirty tabs to disk, showing validation summary first."""
+        # Project-first: save or prompt before recipe files
+        if self._project is not None:
+            self._update_project_state()
+            save_project(self._project)
+        else:
+            self._prompt_create_project()
+
         all_issues: list[str] = []
         dirty_tabs: list[FileTab] = []
         for tab in self._file_tabs:
@@ -2195,6 +2374,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _auto_save_tick(self) -> None:
         """Silently save all dirty tabs (no validation prompt)."""
+        # Save project file silently if loaded (no prompt in auto-save)
+        if self._project is not None:
+            self._update_project_state()
+            save_project(self._project)
+
         for tab in self._file_tabs:
             if tab.parsed_file is None:
                 continue
@@ -2254,6 +2438,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         project_dir = dialog.project_path
         block_types = dialog.selected_block_types
+        project_name = dialog.project_name
+        project_desc = dialog.description
 
         # Create directory structure
         project_dir.mkdir(parents=True)
@@ -2261,11 +2447,25 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         (project_dir / ".craftgraph").mkdir()
 
         # Create one empty .txt file per selected block type
+        created_files: list[str] = []
         for bt in block_types:
             filename = f"{_BLOCK_TYPE_DEFAULT_NAMES[bt]}.txt"
             file_path = project_dir / filename
-            # Write a minimal template: just the block type header with empty body
             file_path.write_text(f"{bt.value}:\n", encoding="utf-8")
+            created_files.append(filename)
+
+        # Create the .craftgraph project file
+        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        project = new_project(
+            project_name,
+            project_dir,
+            docs_dir,
+            description=project_desc,
+        )
+        project.open_files = created_files
+        save_project(project)
+        self._project = project
 
         # Load the newly created project
         self.load_recipes(project_dir)
@@ -2281,8 +2481,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._tab_bar.setCurrentIndex(0)
             self._on_tab_changed(0)
 
+        self.setWindowTitle(f"CraftGraph - {project.name}")
         self.statusBar().showMessage(
-            f"Created project: {project_dir.name} ({len(block_types)} files)"
+            f"Created project '{project.name}' ({len(block_types)} files)"
         )
 
     def _on_open_folder(self) -> None:
@@ -2473,6 +2674,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         tab = self._active_tab
         if tab.parsed_file is None:
             return
+
+        # Project-first: save or prompt before recipe files
+        if self._project is not None:
+            self._update_project_state()
+            save_project(self._project)
+        else:
+            self._prompt_create_project()
+
         issues = self._collect_validation_issues(tab)
         if issues and not self._show_validation_summary(issues):
             self.statusBar().showMessage("Save cancelled")
