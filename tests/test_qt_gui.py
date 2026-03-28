@@ -334,12 +334,16 @@ class TestFileLoading:
         window.load_recipes(recipe_file)
 
         nodes = window.graph.all_nodes()
-        assert len(nodes) == 1
+        # 1 recipe + 1 orphan ingredient (Gold) = 2 nodes
+        assert len(nodes) == 2
 
-        node = nodes[0]
-        assert node.name() == "Titanium"
-        assert node.get_widget("item_id").get_value() == "Titanium"
-        assert node.get_widget("amount_crafted").get_value() == "2"
+        node_names = {n.name() for n in nodes}
+        assert "Titanium" in node_names
+        assert "Gold" in node_names
+
+        recipe_node = next(n for n in nodes if n.name() == "Titanium")
+        assert recipe_node.get_widget("item_id").get_value() == "Titanium"
+        assert recipe_node.get_widget("amount_crafted").get_value() == "2"
 
     def test_load_added_recipe_has_path_widget(self, window, tmp_path):
         """AddedRecipe nodes get a path widget populated."""
@@ -360,8 +364,10 @@ class TestFileLoading:
         window.load_recipes(recipe_file)
 
         nodes = window.graph.all_nodes()
-        assert len(nodes) == 1
-        assert nodes[0].get_widget("path").get_value() == "Fabricator/Resources"
+        # 1 recipe + 1 orphan ingredient (Titanium) = 2 nodes
+        assert len(nodes) == 2
+        recipe_node = next(n for n in nodes if n.name() == "SuperAlloy")
+        assert recipe_node.get_widget("path").get_value() == "Fabricator/Resources"
 
     def test_load_fabricator_creates_fab_node(self, window, tmp_path):
         """CustomFabricators create FabricatorNode with nested tabs/recipes."""
@@ -393,13 +399,14 @@ class TestFileLoading:
         window.load_recipes(recipe_file)
 
         nodes = window.graph.all_nodes()
-        # 1 fabricator + 1 tab + 1 recipe = 3 nodes
-        assert len(nodes) == 3
+        # 1 fabricator + 1 tab + 1 recipe + 1 orphan (Herb) = 4 nodes
+        assert len(nodes) == 4
 
         node_names = {n.name() for n in nodes}
         assert "AlchemyStation" in node_names
         assert "Potions" in node_names
         assert "HealthPotion" in node_names
+        assert "Herb" in node_names
 
     def test_load_sets_model_ref(self, window, tmp_path):
         """Each created node has a model_ref pointing back to the data object."""
@@ -538,6 +545,54 @@ class TestFileLoading:
         window.load_recipes(ref_file)
         nodes = window.graph.all_nodes()
         assert len(nodes) > 0
+
+
+# ---------------------------------------------------------------------------
+# Orphan node tab registration
+# ---------------------------------------------------------------------------
+
+
+class TestOrphanTabRegistration:
+    """Verify orphan nodes are stored on the FileTab after loading."""
+
+    def test_orphan_nodes_stored_on_tab(self, window, tmp_path):
+        """After loading, tab.orphan_nodes contains the orphan mapping."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Gold;\n"
+            "        Required: 3;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        tab = window._active_tab
+        assert hasattr(tab, "orphan_nodes")
+        assert "gold" in tab.orphan_nodes
+        assert tab.orphan_nodes["gold"].name() == "Gold"
+
+    def test_orphan_nodes_empty_when_all_matched(self, window, tmp_path):
+        """When all ingredients match recipe nodes, orphan_nodes is empty."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    AmountCrafted: 1;\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        tab = window._active_tab
+        assert hasattr(tab, "orphan_nodes")
+        assert tab.orphan_nodes == {}
 
 
 # ---------------------------------------------------------------------------
@@ -1016,25 +1071,38 @@ class TestCycleStatusBar:
 
     def test_cycle_rejection_shows_in_status_bar(self, window, tmp_path):
         """Rejecting a cyclic connection shows a warning in the status bar."""
-        window._on_cycle_rejected("RecipeA", "RecipeB")
+        window._on_cycle_rejected("RecipeA", "RecipeB", ["RecipeA", "RecipeB", "RecipeA"])
         msg = window.statusBar().currentMessage()
         assert "RecipeA" in msg
         assert "RecipeB" in msg
         assert "circular" in msg.lower()
 
+    def test_cycle_rejection_shows_cycle_path(self, window, tmp_path):
+        """Cycle rejection message includes the full cycle path."""
+        window._on_cycle_rejected("B", "A", ["A", "B", "C", "A"])
+        msg = window.statusBar().currentMessage()
+        assert "A -> B -> C -> A" in msg
+
     def test_cycle_rejection_shows_red_background(self, window, tmp_path):
         """Cycle rejection status bar message has a red background style."""
-        window._on_cycle_rejected("RecipeA", "RecipeB")
+        window._on_cycle_rejected("RecipeA", "RecipeB", ["RecipeA", "RecipeB", "RecipeA"])
         style = window.statusBar().styleSheet()
         assert "background-color" in style
         assert "#cc3c3c" in style
 
     def test_cycle_rejection_red_background_clears(self, window, tmp_path):
         """Red background auto-clears after the timer fires."""
-        window._on_cycle_rejected("RecipeA", "RecipeB")
+        window._on_cycle_rejected("RecipeA", "RecipeB", ["RecipeA", "RecipeB", "RecipeA"])
         assert window.statusBar().styleSheet() != ""
         window._clear_status_style()
         assert window.statusBar().styleSheet() == ""
+
+    def test_reassignment_warning_shows_in_status_bar(self, window, tmp_path):
+        """Recipe reassignment warning shows item_id and old path."""
+        window._on_reassignment_warning("BigWater", "OldFab/Potions")
+        msg = window.statusBar().currentMessage()
+        assert "BigWater" in msg
+        assert "OldFab/Potions" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -1594,6 +1662,157 @@ class TestCopyPasteDuplicate:
         action_names = [a.text() for a in qmenu.actions()]
         assert any("Paste" in name for name in action_names)
 
+    def test_duplicate_nested_tab_appears_in_code(self, window, tmp_path):
+        """Duplicating a CraftingTab inside a CustomFabricators file adds it to the code."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "CustomFabricators:\n(\n"
+            "    ItemID: TestFab;\n"
+            "    CustomCraftingTabs:\n"
+            "    (\n        TabID: MyTab;\n    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        from craftgraph.qt_nodes import CraftingTabNode
+
+        tab_nodes = [n for n in window.graph.all_nodes() if isinstance(n, CraftingTabNode)]
+        assert len(tab_nodes) == 1, f"Expected 1 tab node, got {len(tab_nodes)}"
+        tab_nodes[0].set_selected(True)
+        window._duplicate_selected_nodes()
+
+        # The fabricator's internal tabs list should have the duplicate
+        fab = window._active_tab.parsed_file.custom_fabricators[0]
+        assert len(fab.tabs) == 2, (
+            f"Expected 2 tabs in fabricator, got {len(fab.tabs)}"
+        )
+
+        # Code editor should contain both tabs
+        text = window.code_editor.toPlainText()
+        assert text.count("TabID") == 2, (
+            f"Expected 2 TabID entries in code, got {text.count('TabID')}"
+        )
+
+    def test_duplicate_nested_recipe_appears_in_code(self, window, tmp_path):
+        """Duplicating an AddedRecipe inside a CustomFabricators file adds it to the code."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "CustomFabricators:\n(\n"
+            "    ItemID: TestFab;\n"
+            "    AddedRecipes:\n"
+            "    (\n        ItemID: Gadget;\n    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        from craftgraph.qt_nodes import AddedRecipeNode
+
+        recipe_nodes = [n for n in window.graph.all_nodes() if isinstance(n, AddedRecipeNode)]
+        assert len(recipe_nodes) == 1
+        recipe_nodes[0].set_selected(True)
+        window._duplicate_selected_nodes()
+
+        fab = window._active_tab.parsed_file.custom_fabricators[0]
+        assert len(fab.added_recipes) == 2, (
+            f"Expected 2 added recipes in fabricator, got {len(fab.added_recipes)}"
+        )
+
+    def test_duplicated_node_has_edit_history(self, window, tmp_path):
+        """Duplicated nodes must have _edit_history set for field changes to work."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Iron;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = window.graph.all_nodes()[0]
+        node.set_selected(True)
+        window._duplicate_selected_nodes()
+
+        for n in window.graph.all_nodes():
+            assert n._edit_history is not None, (
+                "Duplicated node missing _edit_history -- field changes will be ignored"
+            )
+
+    def test_duplicated_node_field_change_updates_model(self, window, tmp_path):
+        """Changing a field on a duplicated node must update its model and code editor."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Iron;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        orig = window.graph.all_nodes()[0]
+        orig.set_selected(True)
+        window._duplicate_selected_nodes()
+
+        # Find the duplicate (node whose model has item_id "Iron" but is not orig)
+        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+
+        # Simulate user changing ItemID on the duplicate
+        duped.set_property("item_id", "Steel")
+
+        # Model should reflect the change
+        assert duped.model_ref.item_id == "Steel"
+
+        # Code editor should contain both "Iron" and "Steel"
+        text = window.code_editor.toPlainText()
+        assert "Iron" in text
+        assert "Steel" in text
+
+    def test_duplicated_node_clears_red_frame_on_edit(self, window, tmp_path):
+        """Red validation border should clear when a required field gets a value."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Iron;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        orig = window.graph.all_nodes()[0]
+        orig.set_selected(True)
+        window._duplicate_selected_nodes()
+
+        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+
+        # Change ItemID to something unique
+        duped.set_property("item_id", "Steel")
+
+        # The item_id widget should NOT have the error style
+        widget_item = duped.get_widget("item_id")
+        qt_widget = widget_item.get_custom_widget()
+        style = qt_widget.styleSheet()
+        assert "200, 60, 60" not in style, (
+            f"Red border still present after setting valid ItemID: {style}"
+        )
+
+    def test_duplicated_display_name_gets_suffix(self, window, tmp_path):
+        """Duplicating a node with a display_name appends the title suffix to it."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "AliasRecipes:\n(\n"
+            '    ItemID: MyAlias;\n'
+            '    DisplayName: "Cool Alias";\n'
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        orig = window.graph.all_nodes()[0]
+        orig.set_selected(True)
+        window._duplicate_selected_nodes()
+
+        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+        # NodeGraphQt appends a suffix like " 1" to the title.
+        # The display_name on the model should carry the same suffix.
+        suffix = duped.name()[len("MyAlias"):]
+        assert suffix, "Expected a duplication suffix on the node title"
+        assert duped.model_ref.display_name == f"Cool Alias{suffix}"
+
 
 # ---------------------------------------------------------------------------
 # Toggle selection (Step M7.8)
@@ -2089,7 +2308,11 @@ class TestNodeAutocomplete:
         assert widget.type_ != "LineEditNodeWidget"
 
     def test_popup_items_have_tooltips(self, window, tmp_path):
-        """Autocomplete popup items show the full text as a tooltip."""
+        """Autocomplete popup items show the full text as a tooltip.
+
+        The 'New item: ...' entry has a distinct tooltip, so it is checked
+        separately from real word-list matches.
+        """
         node = self._load_modified_recipe(window, tmp_path)
         line_edit = node.get_widget("item_id").get_custom_widget()
         popup = window._node_popup
@@ -2097,9 +2320,12 @@ class TestNodeAutocomplete:
         assert popup._list.count() > 0
         for i in range(popup._list.count()):
             item = popup._list.item(i)
-            assert item.toolTip() == item.text(), (
-                f"Item '{item.text()}' should have its full text as tooltip"
-            )
+            if item.text().startswith("New item: "):
+                assert "custom item" in item.toolTip().lower()
+            else:
+                assert item.toolTip() == item.text(), (
+                    f"Item '{item.text()}' should have its full text as tooltip"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -2584,6 +2810,19 @@ class TestValidationSummary:
         issues = window._collect_validation_issues()
         assert any("both be set or both be empty" in i for i in issues)
 
+    def test_unknown_ingredient_reported(self, window, tmp_path, qapp):
+        """An ingredient referencing an unknown ID is reported."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: titanium;\n"
+            "    Ingredients:\n    (\n        ItemID: unobtainium;\n"
+            "        Required: 1;\n    );\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        issues = window._collect_validation_issues()
+        assert any("unobtainium" in i.lower() for i in issues)
+
 
 # ---------------------------------------------------------------------------
 # Node header tooltips
@@ -2809,6 +3048,106 @@ class TestCaseInsensitiveAutocomplete:
 
 
 # ---------------------------------------------------------------------------
+# "New item" autocomplete entry
+# ---------------------------------------------------------------------------
+
+
+class TestNewItemAutocompleteEntry:
+    """The popup always shows a 'New item: ...' entry at the bottom so users
+    can keep their exact typed text instead of being forced to accept a
+    suggestion from the word list."""
+
+    @pytest.fixture
+    def popup_env(self, window):
+        """A popup + line edit wired with a small word list."""
+        popup = window._node_popup
+        le = QtWidgets.QLineEdit()
+        le.show()
+        words = ["Titanium", "TitaniumIngot", "Gold", "GoldIngot"]
+        popup.attach(le, words)
+        return popup, le, words
+
+    def _items(self, popup):
+        """Return all item texts currently in the popup list widget."""
+        return [popup._list.item(i).text() for i in range(popup._list.count())]
+
+    def test_new_item_entry_appears_as_last(self, popup_env):
+        """Typing text that partially matches shows 'New item: ...' as the last entry."""
+        popup, le, words = popup_env
+        le.textEdited.emit("tit")
+        items = self._items(popup)
+        assert len(items) >= 2  # at least one real match + new item entry
+        assert items[-1] == "New item: tit"
+
+    def test_new_item_entry_with_zero_matches(self, popup_env):
+        """Typing text with no word-list matches still shows the new item entry."""
+        popup, le, words = popup_env
+        le.textEdited.emit("zzzzunknown")
+        assert popup.isVisible()
+        items = self._items(popup)
+        assert len(items) == 1
+        assert items[0] == "New item: zzzzunknown"
+
+    def test_new_item_entry_updates_on_each_keystroke(self, popup_env):
+        """The new item entry text updates as the user types more characters."""
+        popup, le, words = popup_env
+        le.textEdited.emit("te")
+        items_1 = self._items(popup)
+        assert items_1[-1] == "New item: te"
+
+        le.textEdited.emit("tes")
+        items_2 = self._items(popup)
+        assert items_2[-1] == "New item: tes"
+
+        le.textEdited.emit("test")
+        items_3 = self._items(popup)
+        assert items_3[-1] == "New item: test"
+
+    def test_accepting_new_item_keeps_typed_text(self, popup_env):
+        """Selecting the 'New item' entry writes only the raw text, not the prefix."""
+        popup, le, words = popup_env
+        le.textEdited.emit("myCustomItem")
+        # Navigate to last item (the new item entry)
+        popup._list.setCurrentRow(popup._list.count() - 1)
+        popup._accept_current()
+        assert le.text() == "myCustomItem"
+
+    def test_clicking_new_item_keeps_typed_text(self, popup_env):
+        """Clicking the 'New item' entry writes the raw typed text."""
+        popup, le, words = popup_env
+        le.textEdited.emit("myMod")
+        last_item = popup._list.item(popup._list.count() - 1)
+        popup._on_item_clicked(last_item)
+        assert le.text() == "myMod"
+
+    def test_empty_text_hides_popup_no_new_item(self, popup_env):
+        """Empty input hides the popup entirely -- no 'New item' entry for blank."""
+        popup, le, words = popup_env
+        le.textEdited.emit("tit")
+        assert popup.isVisible()
+        le.textEdited.emit("")
+        assert not popup.isVisible()
+
+    def test_new_item_present_alongside_real_matches(self, popup_env):
+        """Even with real matches, the 'New item' entry is always the last item."""
+        popup, le, words = popup_env
+        le.textEdited.emit("Gold")
+        items = self._items(popup)
+        # Should have real matches (Gold, GoldIngot) plus the new item entry
+        assert any(it == "Gold" for it in items)
+        assert items[-1] == "New item: Gold"
+
+    def test_accepting_real_match_still_works(self, popup_env):
+        """Selecting a real match (not the new item entry) still sets the full word."""
+        popup, le, words = popup_env
+        le.textEdited.emit("Gold")
+        popup._list.setCurrentRow(0)  # first item = real match
+        popup._accept_current()
+        # Should be a real word, not "New item: Gold"
+        assert le.text() in words
+
+
+# ---------------------------------------------------------------------------
 # Tab bar tooltips
 # ---------------------------------------------------------------------------
 
@@ -2883,3 +3222,226 @@ class TestModifierStateSync:
         QtCore.QCoreApplication.sendEvent(viewer, press)
 
         assert viewer.ALT_state, "ALT_state should be True when ALT is held"
+
+
+# ---------------------------------------------------------------------------
+# Auto-save
+# ---------------------------------------------------------------------------
+
+
+class TestAutoSave:
+    """Auto-save timer saves dirty tabs silently at a configurable interval."""
+
+    def test_auto_save_timer_exists(self, window):
+        from PySide6 import QtCore
+
+        assert hasattr(window, "_auto_save_timer")
+        assert isinstance(window._auto_save_timer, QtCore.QTimer)
+
+    def test_auto_save_disabled_by_default(self, window):
+        assert not window._auto_save_timer.isActive()
+
+    def test_auto_save_default_interval(self, window):
+        assert window._auto_save_interval == 60
+
+    def test_enable_auto_save_starts_timer(self, window):
+        window._set_auto_save(enabled=True, interval=30)
+        assert window._auto_save_timer.isActive()
+        assert window._auto_save_timer.interval() == 30_000
+
+    def test_disable_auto_save_stops_timer(self, window):
+        window._set_auto_save(enabled=True, interval=30)
+        window._set_auto_save(enabled=False)
+        assert not window._auto_save_timer.isActive()
+
+    def test_auto_save_changes_interval(self, window):
+        window._set_auto_save(enabled=True, interval=120)
+        assert window._auto_save_timer.interval() == 120_000
+
+    def test_auto_save_calls_silent_save(self, window, tmp_path, monkeypatch):
+        """Firing the timer should save dirty tabs without a validation prompt."""
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n", encoding="utf-8")
+        window.load_recipes(recipe)
+        tab = window._file_tabs[0]
+        tab.history._undo_stack.append(None)  # make dirty
+
+        saved_paths: list[str] = []
+        monkeypatch.setattr(
+            "craftgraph.qt_gui.save_with_backup",
+            lambda path, text, backup=False: saved_paths.append(str(path)),
+        )
+
+        window._auto_save_tick()
+
+        assert len(saved_paths) == 1
+        assert "test.txt" in saved_paths[0]
+
+    def test_auto_save_skips_clean_tabs(self, window, tmp_path, monkeypatch):
+        """Auto-save should not write tabs that are not dirty."""
+        recipe = tmp_path / "clean.txt"
+        recipe.write_text("ModifiedRecipes:\n", encoding="utf-8")
+        window.load_recipes(recipe)
+
+        saved_paths: list[str] = []
+        monkeypatch.setattr(
+            "craftgraph.qt_gui.save_with_backup",
+            lambda path, text, backup=False: saved_paths.append(str(path)),
+        )
+
+        window._auto_save_tick()
+
+        assert len(saved_paths) == 0
+
+    def test_auto_save_does_not_show_validation_dialog(self, window, tmp_path, monkeypatch):
+        """Auto-save must be silent -- no validation summary popup."""
+        recipe = tmp_path / "r.txt"
+        recipe.write_text("ModifiedRecipes:\n", encoding="utf-8")
+        window.load_recipes(recipe)
+        tab = window._file_tabs[0]
+        tab.history._undo_stack.append(None)  # make dirty
+
+        monkeypatch.setattr(
+            "craftgraph.qt_gui.save_with_backup",
+            lambda path, text, backup=False: None,
+        )
+        shown: list[bool] = []
+        monkeypatch.setattr(window, "_show_validation_summary", lambda issues: shown.append(True) or True)
+
+        window._auto_save_tick()
+
+        assert len(shown) == 0, "Auto-save should not show validation dialog"
+
+    def test_settings_dialog_auto_save_defaults(self, window, monkeypatch):
+        """Settings dialog should reflect current auto-save state."""
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(
+            window,
+            auto_save_enabled=False,
+            auto_save_interval=60,
+        )
+        assert dialog.auto_save_enabled is False
+        assert dialog.auto_save_interval == 60
+
+    def test_settings_dialog_auto_save_custom_values(self, window, monkeypatch):
+        """Settings dialog should accept and expose custom auto-save values."""
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(
+            window,
+            auto_save_enabled=True,
+            auto_save_interval=120,
+        )
+        assert dialog.auto_save_enabled is True
+        assert dialog.auto_save_interval == 120
+
+    def test_on_settings_wires_auto_save(self, window, monkeypatch):
+        """Closing Settings should apply auto-save toggle and interval."""
+        from craftgraph.qt_gui import _SettingsDialog
+
+        # Capture _set_auto_save calls
+        calls: list[dict] = []
+        original_set = window._set_auto_save
+
+        def tracking_set(*, enabled=False, interval=None):
+            calls.append({"enabled": enabled, "interval": interval})
+            original_set(enabled=enabled, interval=interval)
+
+        monkeypatch.setattr(window, "_set_auto_save", tracking_set)
+
+        # Make the dialog return immediately, with auto-save enabled at 45s
+        def fake_exec(self_dialog):
+            self_dialog._auto_save_cb.setChecked(True)
+            self_dialog._auto_save_interval_spin.setValue(45)
+            return True
+
+        monkeypatch.setattr(_SettingsDialog, "exec_", fake_exec)
+        window._on_settings()
+
+        assert len(calls) == 1
+        assert calls[0]["enabled"] is True
+        assert calls[0]["interval"] == 45
+
+
+class TestDefaultPaths:
+    """Settings dialog exposes default project folder and Subnautica CC3 path."""
+
+    def test_window_has_path_attrs(self, window):
+        """Window stores project_folder and cc3_path as strings."""
+        assert hasattr(window, "_default_project_folder")
+        assert hasattr(window, "_subnautica_cc3_path")
+        assert isinstance(window._default_project_folder, str)
+        assert isinstance(window._subnautica_cc3_path, str)
+
+    def test_project_folder_defaults_to_documents(self, window):
+        from pathlib import Path
+
+        expected = str(Path.home() / "Documents" / "CraftGraph")
+        assert window._default_project_folder == expected
+
+    def test_cc3_path_defaults_to_detected_or_empty(self, window):
+        """CC3 path is auto-detected if found, otherwise empty string."""
+        # On CI or machines without Subnautica, this is "".
+        # On a dev machine with Subnautica, it's the detected path.
+        assert isinstance(window._subnautica_cc3_path, str)
+
+    def test_settings_dialog_accepts_path_values(self, window):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(
+            window,
+            default_project_folder="/some/project",
+            subnautica_cc3_path="/some/cc3",
+        )
+        assert dialog.default_project_folder == "/some/project"
+        assert dialog.subnautica_cc3_path == "/some/cc3"
+
+    def test_settings_dialog_empty_paths(self, window):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(window)
+        assert dialog.default_project_folder == ""
+        assert dialog.subnautica_cc3_path == ""
+
+    def test_on_settings_reads_back_paths(self, window, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        def fake_exec(self_dialog):
+            self_dialog._project_folder_edit.setText("/edited/project")
+            self_dialog._cc3_path_edit.setText("/edited/cc3")
+            return True
+
+        monkeypatch.setattr(_SettingsDialog, "exec_", fake_exec)
+        window._on_settings()
+
+        assert window._default_project_folder == "/edited/project"
+        assert window._subnautica_cc3_path == "/edited/cc3"
+
+
+class TestCc3PathConvenience:
+    """CraftGraphWindow._cc3_working_dir / _cc3_assets_dir delegate to path helpers."""
+
+    def test_working_dir_returns_subfolder_when_set(self, window: CraftGraphWindow) -> None:
+        from pathlib import Path
+
+        window._subnautica_cc3_path = str(Path("/fake/CC3"))
+        result = window._cc3_working_dir()
+        assert "WorkingFiles" in result
+        assert result.startswith(str(Path("/fake/CC3")))
+
+    def test_working_dir_returns_empty_when_unset(self, window: CraftGraphWindow) -> None:
+        window._subnautica_cc3_path = ""
+        assert window._cc3_working_dir() == ""
+
+    def test_assets_dir_returns_subfolder_when_set(self, window: CraftGraphWindow) -> None:
+        from pathlib import Path
+
+        window._subnautica_cc3_path = str(Path("/fake/CC3"))
+        result = window._cc3_assets_dir()
+        assert "Assets" in result
+        assert result.startswith(str(Path("/fake/CC3")))
+
+    def test_assets_dir_returns_empty_when_unset(self, window: CraftGraphWindow) -> None:
+        window._subnautica_cc3_path = ""
+        assert window._cc3_assets_dir() == ""
