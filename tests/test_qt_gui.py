@@ -3445,3 +3445,40 @@ class TestCc3PathConvenience:
     def test_assets_dir_returns_empty_when_unset(self, window: CraftGraphWindow) -> None:
         window._subnautica_cc3_path = ""
         assert window._cc3_assets_dir() == ""
+
+
+# ---------------------------------------------------------------------------
+# Open Folder / Open File dialog defaults
+# ---------------------------------------------------------------------------
+
+
+class TestOpenFolderDefault:
+    """_on_open_folder passes CC3 WorkingFiles as default directory."""
+
+    def test_open_folder_uses_cc3_working_dir(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        window._subnautica_cc3_path = "/fake/CC3"
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+            return_value="",
+        ) as mock_dialog:
+            window._on_open_folder()
+            args = mock_dialog.call_args
+            dir_arg = args[0][2] if len(args[0]) > 2 else ""
+            assert "WorkingFiles" in dir_arg
+
+    def test_open_folder_falls_back_when_cc3_unset(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        window._subnautica_cc3_path = ""
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+            return_value="",
+        ) as mock_dialog:
+            window._on_open_folder()
+            args = mock_dialog.call_args
+            dir_arg = args[0][2] if len(args[0]) > 2 else ""
+            assert dir_arg == ""
+
+

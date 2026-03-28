@@ -2273,6 +2273,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         directory = QtWidgets.QFileDialog.getExistingDirectory(
             self,
             "Open Recipe Directory",
+            self._cc3_working_dir(),
         )
         if directory:
             self.load_recipes(Path(directory))
