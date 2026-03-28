@@ -4041,9 +4041,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._tear_down_tabs()
         self._source_path = path
 
-        # Scan for sprite assets
-        recipe_dir = path.parent if path.is_file() else path
-        self._sprite_lookup = scan_assets_dir(recipe_dir)
+        # Scan for sprite assets -- CC3 Assets/ is the primary source
+        if self._subnautica_cc3_path:
+            self._sprite_lookup = scan_assets_dir(Path(self._subnautica_cc3_path))
+        else:
+            recipe_dir = path.parent if path.is_file() else path
+            self._sprite_lookup = scan_assets_dir(recipe_dir)
 
         # Load persisted node positions from sidecar file
         layout_file = layout_path_for(path)

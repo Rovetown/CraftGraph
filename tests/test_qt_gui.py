@@ -3555,3 +3555,47 @@ class TestNewProjectDefault:
 
         dialog = NewProjectDialog(parent=window)
         assert dialog._dir_edit.text() == str(Path.cwd())
+
+
+class TestSpriteLoadingCc3Assets:
+    """Sprite loading uses CC3 Assets/ as primary source when configured."""
+
+    def test_sprite_scan_uses_cc3_assets_when_set(
+        self, window: CraftGraphWindow, tmp_path: Path,
+    ) -> None:
+        # Set up a fake CC3 directory with an Assets/ folder containing a sprite
+        cc3_dir = tmp_path / "CC3"
+        assets_dir = cc3_dir / "Assets"
+        assets_dir.mkdir(parents=True)
+        (assets_dir / "titanium.png").write_bytes(b"fake-png")
+
+        window._subnautica_cc3_path = str(cc3_dir)
+
+        # Create a recipe dir without its own Assets/
+        recipe_dir = tmp_path / "recipes"
+        recipe_dir.mkdir()
+        recipe_file = recipe_dir / "ModifiedRecipes.txt"
+        recipe_file.write_text("ModifiedRecipes:\n", encoding="utf-8")
+
+        window.load_recipes(recipe_dir)
+
+        # The sprite lookup should contain the titanium sprite from CC3/Assets
+        assert "titanium" in window._sprite_lookup
+
+    def test_sprite_scan_falls_back_to_recipe_dir_when_cc3_unset(
+        self, window: CraftGraphWindow, tmp_path: Path,
+    ) -> None:
+        window._subnautica_cc3_path = ""
+
+        # Create a recipe dir with its own Assets/
+        recipe_dir = tmp_path / "recipes"
+        recipe_dir.mkdir()
+        local_assets = recipe_dir / "Assets"
+        local_assets.mkdir()
+        (local_assets / "copper.png").write_bytes(b"fake-png")
+        recipe_file = recipe_dir / "ModifiedRecipes.txt"
+        recipe_file.write_text("ModifiedRecipes:\n", encoding="utf-8")
+
+        window.load_recipes(recipe_dir)
+
+        assert "copper" in window._sprite_lookup
