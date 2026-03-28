@@ -59,7 +59,7 @@ ignore_missing_imports = true
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
-module = "craftgraph.project"
+module = ["craftgraph.project", "tests.test_project"]
 disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]

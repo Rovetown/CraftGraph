@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import msgpack
+import pytest
+
 from craftgraph.project import (
     CURRENT_VERSION,
     ProjectFile,
+    ProjectLoadError,
     load_project,
     save_project,
 )
@@ -124,3 +128,68 @@ class TestSaveAndLoadRoundTrip:
         project.project_path = str(tmp_path / "nested" / "deep" / "test.craftgraph")
         save_project(project)
         assert Path(project.project_path).exists()
+
+
+class TestLoadProjectErrors:
+    """load_project error handling."""
+
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(ProjectLoadError, match="Failed to load"):
+            load_project(tmp_path / "nonexistent.craftgraph")
+
+    def test_corrupt_file_raises(self, tmp_path: Path) -> None:
+        bad_file = tmp_path / "corrupt.craftgraph"
+        bad_file.write_bytes(b"this is not msgpack")
+        with pytest.raises(ProjectLoadError, match="Failed to load"):
+            load_project(bad_file)
+
+    def test_non_dict_raises(self, tmp_path: Path) -> None:
+        bad_file = tmp_path / "list.craftgraph"
+        with open(bad_file, "wb") as fh:
+            msgpack.pack([1, 2, 3], fh)
+        with pytest.raises(ProjectLoadError, match="expected dict"):
+            load_project(bad_file)
+
+    def test_future_version_raises(self, tmp_path: Path) -> None:
+        future_file = tmp_path / "future.craftgraph"
+        with open(future_file, "wb") as fh:
+            msgpack.pack(
+                {"version": 999, "name": "X", "cc3_path": "/x", "project_path": "/x"}, fh
+            )
+        with pytest.raises(ProjectLoadError, match="newer than supported"):
+            load_project(future_file)
+
+    def test_current_version_loads(self, tmp_path: Path) -> None:
+        valid_file = tmp_path / "valid.craftgraph"
+        with open(valid_file, "wb") as fh:
+            msgpack.pack(
+                {
+                    "version": CURRENT_VERSION,
+                    "name": "OK",
+                    "cc3_path": "/cc3",
+                    "project_path": str(valid_file),
+                },
+                fh,
+            )
+        project = load_project(valid_file)
+        assert project.name == "OK"
+
+    def test_missing_optional_fields_get_defaults(self, tmp_path: Path) -> None:
+        minimal_file = tmp_path / "minimal.craftgraph"
+        with open(minimal_file, "wb") as fh:
+            msgpack.pack(
+                {
+                    "version": CURRENT_VERSION,
+                    "name": "Minimal",
+                    "cc3_path": "/cc3",
+                    "project_path": str(minimal_file),
+                },
+                fh,
+            )
+        project = load_project(minimal_file)
+        assert project.description == ""
+        assert project.open_files == []
+        assert project.active_tab == ""
+        assert project.node_positions == {}
+        assert project.editor_state == {}
+        assert project.settings_overrides == {}

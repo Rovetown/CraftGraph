@@ -86,7 +86,7 @@ def load_project(path: Path) -> ProjectFile:
     try:
         with open(path, "rb") as fh:
             data = msgpack.unpack(fh, raw=False)
-    except (UnpackException, FileNotFoundError, OSError) as exc:
+    except (UnpackException, ValueError, FileNotFoundError, OSError) as exc:
         msg = f"Failed to load project file: {path}: {exc}"
         raise ProjectLoadError(msg) from exc
 
