@@ -12,6 +12,7 @@ from craftgraph.project import (
     ProjectFile,
     ProjectLoadError,
     load_project,
+    new_project,
     save_project,
 )
 
@@ -193,3 +194,39 @@ class TestLoadProjectErrors:
         assert project.node_positions == {}
         assert project.editor_state == {}
         assert project.settings_overrides == {}
+
+
+class TestNewProject:
+    """new_project() creates a ProjectFile and writes it to disk."""
+
+    def test_creates_file_on_disk(self, tmp_path: Path) -> None:
+        project = new_project("MyMod", Path("/fake/cc3"), tmp_path)
+        expected_path = tmp_path / "MyMod.craftgraph"
+        assert expected_path.exists()
+        assert project.project_path == str(expected_path)
+
+    def test_returns_valid_project(self, tmp_path: Path) -> None:
+        cc3 = Path("/fake/cc3")
+        project = new_project("MyMod", cc3, tmp_path, description="A mod")
+        assert project.version == CURRENT_VERSION
+        assert project.name == "MyMod"
+        assert project.description == "A mod"
+        assert project.cc3_path == str(cc3)
+        assert project.open_files == []
+        assert project.active_tab == ""
+
+    def test_default_description_is_empty(self, tmp_path: Path) -> None:
+        project = new_project("Test", Path("/cc3"), tmp_path)
+        assert project.description == ""
+
+    def test_created_file_round_trips(self, tmp_path: Path) -> None:
+        project = new_project("RT", Path("/cc3"), tmp_path, description="round trip")
+        loaded = load_project(Path(project.project_path))
+        assert loaded.name == project.name
+        assert loaded.description == project.description
+        assert loaded.cc3_path == project.cc3_path
+
+    def test_creates_parent_dirs(self, tmp_path: Path) -> None:
+        nested = tmp_path / "deep" / "nested"
+        project = new_project("Deep", Path("/cc3"), nested)
+        assert Path(project.project_path).exists()

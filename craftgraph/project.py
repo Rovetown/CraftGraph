@@ -105,3 +105,31 @@ def load_project(path: Path) -> ProjectFile:
     # Store the actual path we loaded from (overrides whatever was serialized)
     data["project_path"] = str(path)
     return _dict_to_project(data)
+
+
+def new_project(
+    name: str,
+    cc3_path: Path,
+    project_dir: Path,
+    *,
+    description: str = "",
+) -> ProjectFile:
+    """Create a new ProjectFile with defaults and write it to disk.
+
+    The file is saved as ``project_dir / name.craftgraph``.
+    """
+    project_path = project_dir / f"{name}.craftgraph"
+    project = ProjectFile(
+        version=CURRENT_VERSION,
+        name=name,
+        description=description,
+        cc3_path=str(cc3_path),
+        project_path=str(project_path),
+        open_files=[],
+        active_tab="",
+        node_positions={},
+        editor_state={},
+        settings_overrides={},
+    )
+    save_project(project)
+    return project
