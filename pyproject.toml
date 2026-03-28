@@ -54,6 +54,15 @@ ignore_missing_imports = true
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
+module = ["msgpack", "msgpack.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = "craftgraph.project"
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
 module = "craftgraph.visualizer"
 disallow_untyped_calls = false
 
