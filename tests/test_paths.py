@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from craftgraph.paths import cc3_assets, cc3_working_files, default_project_folder, detect_subnautica_cc3_path
+from craftgraph.paths import (
+    cc3_assets,
+    cc3_working_files,
+    default_project_folder,
+    detect_subnautica_cc3_path,
+)
 
 # The segment chain that detect_subnautica_cc3_path walks for each root.
 _TAIL = Path("steamapps/common/Subnautica/BepInEx/plugins/CustomCraft3")
