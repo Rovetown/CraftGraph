@@ -1390,10 +1390,16 @@ class NewProjectDialog(QtWidgets.QDialog):
     an Assets/ directory for sprites, and a .craftgraph/ directory for layout data.
     """
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        default_dir: Path | None = None,
+    ) -> None:
         super().__init__(parent, _DIALOG_FLAGS)
         self.setStyleSheet(_DIALOG_STYLE)
         self.setMinimumWidth(420)
+
+        self._default_dir = default_dir or Path.cwd()
 
         # Project name
         self._name_edit = QtWidgets.QLineEdit(self)
@@ -1402,7 +1408,7 @@ class NewProjectDialog(QtWidgets.QDialog):
         # Parent directory
         dir_row = QtWidgets.QHBoxLayout()
         self._dir_edit = QtWidgets.QLineEdit(self)
-        self._dir_edit.setText(str(Path.cwd()))
+        self._dir_edit.setText(str(self._default_dir))
         browse_btn = QtWidgets.QPushButton("Browse...", self)
         browse_btn.clicked.connect(self._browse_dir)
         dir_row.addWidget(self._dir_edit)
@@ -2232,7 +2238,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_new_project(self) -> None:
         """Open the New Project dialog and scaffold a CC3 mod directory."""
-        dialog = NewProjectDialog(parent=self)
+        cc3_dir = self._cc3_working_dir()
+        default_dir = Path(cc3_dir) if cc3_dir else None
+        dialog = NewProjectDialog(parent=self, default_dir=default_dir)
         if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 

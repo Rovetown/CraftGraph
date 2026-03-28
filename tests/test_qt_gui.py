@@ -3535,3 +3535,23 @@ class TestNewFileDefault:
         # Source path is a real directory, so it takes precedence
         assert window._source_path.is_dir()
         assert window._source_path == recipe_dir
+
+
+class TestNewProjectDefault:
+    """NewProjectDialog accepts a default_dir; _on_new_project passes CC3 WorkingFiles."""
+
+    def test_new_project_dialog_uses_default_dir(self, window: CraftGraphWindow, tmp_path) -> None:
+        from pathlib import Path
+
+        from craftgraph.qt_gui import NewProjectDialog
+
+        dialog = NewProjectDialog(parent=window, default_dir=tmp_path)
+        assert dialog._dir_edit.text() == str(tmp_path)
+
+    def test_new_project_dialog_falls_back_to_cwd(self, window: CraftGraphWindow) -> None:
+        from pathlib import Path
+
+        from craftgraph.qt_gui import NewProjectDialog
+
+        dialog = NewProjectDialog(parent=window)
+        assert dialog._dir_edit.text() == str(Path.cwd())
