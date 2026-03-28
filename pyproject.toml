@@ -5,15 +5,17 @@ description = "CraftGraph - A Node based Editor for CustomCraft3 (and CustomBatt
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "networkx>=3.0",
-    "watchdog>=4.0",
-    "pyvis>=0.3",
     "click>=8.0",
+    "msgpack>=1.0",
+    "networkx>=3.0",
+    "pyvis>=0.3",
+    "watchdog>=4.0",
 ]
 
 [project.optional-dependencies]
-gui = [
-    "dearpygui>=1.10",
+qt = [
+    "nodegraphqt>=0.6.44",
+    "pyside6>=6.10.2",
 ]
 
 [dependency-groups]
@@ -53,4 +55,13 @@ follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
 module = "craftgraph.visualizer"
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["NodeGraphQt", "NodeGraphQt.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
+
+[[tool.mypy.overrides]]
+module = ["craftgraph.qt_nodes", "craftgraph.qt_gui"]
 disallow_untyped_calls = false
