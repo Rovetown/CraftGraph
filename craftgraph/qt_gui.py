@@ -2196,13 +2196,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_new_file(self) -> None:
         """Open the New File dialog and create an empty tab for the chosen block type."""
-        default_dir = (
-            self._source_path.parent
-            if self._source_path.is_file()
-            else self._source_path
-            if self._source_path.is_dir()
-            else Path.cwd()
-        )
+        if self._source_path.is_file():
+            default_dir = self._source_path.parent
+        elif self._source_path.is_dir():
+            default_dir = self._source_path
+        else:
+            cc3_dir = self._cc3_working_dir()
+            default_dir = Path(cc3_dir) if cc3_dir else Path.cwd()
         dialog = NewFileDialog(parent=self, default_dir=default_dir)
         if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
             return

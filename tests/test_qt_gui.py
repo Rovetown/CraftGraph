@@ -3510,3 +3510,28 @@ class TestOpenFileDefault:
             args = mock_dialog.call_args
             dir_arg = args[0][2] if len(args[0]) > 2 else ""
             assert dir_arg == ""
+
+
+class TestNewFileDefault:
+    """_on_new_file uses CC3 WorkingFiles as cold-start default."""
+
+    def test_new_file_default_uses_cc3_when_no_source(self, window: CraftGraphWindow) -> None:
+        from pathlib import Path
+
+        window._subnautica_cc3_path = "/fake/CC3"
+        # Default _source_path is Path("untitled.txt") -- not a real file or dir
+        assert not window._source_path.is_file()
+        assert not window._source_path.is_dir()
+        # Verify the CC3 working dir would be used
+        assert "WorkingFiles" in window._cc3_working_dir()
+
+    def test_new_file_default_uses_source_when_loaded(self, window: CraftGraphWindow, tmp_path) -> None:
+        from pathlib import Path
+
+        window._subnautica_cc3_path = "/fake/CC3"
+        recipe_dir = tmp_path / "recipes"
+        recipe_dir.mkdir()
+        window._source_path = recipe_dir
+        # Source path is a real directory, so it takes precedence
+        assert window._source_path.is_dir()
+        assert window._source_path == recipe_dir
