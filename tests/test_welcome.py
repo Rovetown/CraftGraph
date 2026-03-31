@@ -93,3 +93,102 @@ class TestWelcomeConstruction:
         widget = _make_widget(qapp, show_on_startup=False)
         cb = widget.findChildren(QtWidgets.QCheckBox)[0]
         assert cb.isChecked()  # "Don't show" checked means DON'T show
+
+
+from craftgraph.recent import RecentEntry
+
+
+def _make_entries(*paths_and_types: tuple[str, str]) -> list[RecentEntry]:
+    """Helper: list of RecentEntry from (path, type) tuples."""
+    return [
+        RecentEntry(path=p, entry_type=t, timestamp="2026-03-31T12:00:00")
+        for p, t in paths_and_types
+    ]
+
+
+class TestRecentEntries:
+    def test_entries_shown_as_labels(self, qapp: QtWidgets.QApplication, tmp_path: object) -> None:
+        d = tmp_path / "MyMod"
+        d.mkdir()
+        entries = _make_entries((str(d), "folder"))
+        widget = _make_widget(qapp, recent_entries=entries)
+        labels = widget.findChildren(QtWidgets.QLabel)
+        texts = [lb.text() for lb in labels]
+        assert any("MyMod" in t for t in texts)
+
+    def test_empty_state_message(self, qapp: QtWidgets.QApplication) -> None:
+        widget = _make_widget(qapp, recent_entries=[])
+        labels = widget.findChildren(QtWidgets.QLabel)
+        texts = [lb.text() for lb in labels]
+        assert any("No recent" in t for t in texts)
+
+    def test_stale_entry_has_strikethrough(self, qapp: QtWidgets.QApplication) -> None:
+        entries = _make_entries(("/nonexistent/path/FakeProject", "folder"))
+        widget = _make_widget(qapp, recent_entries=entries)
+        from craftgraph.welcome import _RecentEntryItem
+
+        items = widget.findChildren(_RecentEntryItem)
+        assert len(items) == 1
+        assert items[0]._stale is True
+
+
+class TestCallbacks:
+    def test_new_project_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
+        fired: list[str] = []
+        widget = _make_widget(qapp, on_new_project=lambda: fired.append("new"))
+        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "New Project"][0]
+        btn.click()
+        assert fired == ["new"]
+
+    def test_open_folder_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
+        fired: list[str] = []
+        widget = _make_widget(qapp, on_open_folder=lambda: fired.append("folder"))
+        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Folder"][0]
+        btn.click()
+        assert fired == ["folder"]
+
+    def test_open_project_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
+        fired: list[str] = []
+        widget = _make_widget(qapp, on_open_project=lambda: fired.append("proj"))
+        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Project"][0]
+        btn.click()
+        assert fired == ["proj"]
+
+    def test_recent_entry_click_fires_callback(self, qapp: QtWidgets.QApplication, tmp_path: object) -> None:
+        d = tmp_path / "TestMod"
+        d.mkdir()
+        fired: list[tuple[str, str]] = []
+        entries = _make_entries((str(d), "folder"))
+        widget = _make_widget(
+            qapp,
+            recent_entries=entries,
+            on_open_recent=lambda path, etype: fired.append((path, etype)),
+        )
+        from craftgraph.welcome import _RecentEntryItem
+
+        items = widget.findChildren(_RecentEntryItem)
+        assert len(items) == 1
+        # Simulate mouse press
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QMouseEvent, Qt
+
+        event = QMouseEvent(
+            QMouseEvent.Type.MouseButtonPress,
+            QPoint(5, 5),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        items[0].mousePressEvent(event)
+        assert fired == [(str(d), "folder")]
+
+    def test_startup_checkbox_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
+        toggled: list[bool] = []
+        widget = _make_widget(
+            qapp,
+            on_startup_toggle=lambda checked: toggled.append(checked),
+            show_on_startup=True,
+        )
+        cb = widget.findChildren(QtWidgets.QCheckBox)[0]
+        cb.setChecked(True)  # "Don't show" = checked
+        assert toggled == [True]
