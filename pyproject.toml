@@ -8,6 +8,7 @@ dependencies = [
     "click>=8.0",
     "msgpack>=1.0",
     "networkx>=3.0",
+    "platformdirs>=4.9.4",
     "pyvis>=0.3",
     "watchdog>=4.0",
 ]
@@ -72,5 +73,5 @@ ignore_missing_imports = true
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
-module = ["craftgraph.qt_nodes", "craftgraph.qt_gui"]
+module = ["craftgraph.qt_nodes", "craftgraph.qt_gui", "craftgraph.welcome"]
 disallow_untyped_calls = false
