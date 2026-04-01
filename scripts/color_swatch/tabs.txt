@@ -1,0 +1,6 @@
+CustomCraftingTabs:
+(
+    TabID: SwatchTab;
+    DisplayName: "Swatch Tab";
+    ParentTabPath: SwatchFab;
+);

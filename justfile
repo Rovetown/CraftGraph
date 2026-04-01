@@ -30,6 +30,14 @@ view PATH:
 watch PATH:
     uv run craftgraph watch {{PATH}}
 
+# Export parsed recipes back to EasyMarkup text
+export PATH *ARGS:
+    uv run craftgraph export {{PATH}} {{ARGS}}
+
+# Open the graphical recipe editor (PySide6 + NodeGraphQt)
+gui *PATH:
+    uv run --extra qt craftgraph gui {{ if PATH == "" { "" } else { PATH } }}
+
 # ---------------------------------------------------------------------------
 # Development
 # ---------------------------------------------------------------------------
@@ -84,6 +92,18 @@ typecheck:
 
 # Run all quality checks (lint + format check + typecheck)
 qa: lint fmt-check typecheck
+
+# ---------------------------------------------------------------------------
+# File Association
+# ---------------------------------------------------------------------------
+
+# Register .craftgraph file association for the current user
+register:
+    uv run craftgraph register
+
+# Remove .craftgraph file association
+unregister:
+    uv run craftgraph unregister
 
 # ---------------------------------------------------------------------------
 # Build & Distribution

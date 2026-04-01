@@ -1,0 +1,6 @@
+CustomSizes:
+(
+    ItemID: SuperKnife;
+    Width: 2;
+    Height: 3;
+);

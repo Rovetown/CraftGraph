@@ -2167,7 +2167,7 @@ class TestIntegrationAlchCustomFab:
     def test_tab_count(self) -> None:
         result = parse_file(self._FILE)
         fab = result.custom_fabricators[0]
-        assert len(fab.tabs) == 30
+        assert len(fab.tabs) == 31
 
     def test_first_tab(self) -> None:
         result = parse_file(self._FILE)
@@ -2180,14 +2180,14 @@ class TestIntegrationAlchCustomFab:
         """Sub-tabs reference their parent via slash-separated paths."""
         result = parse_file(self._FILE)
         tabs = result.custom_fabricators[0].tabs
-        enzymes = tabs[1]
+        enzymes = tabs[2]
         assert enzymes.tab_id == "Alch_Enzymes"
         assert enzymes.parent_tab_path == "Alch_Fab/Alch_ComplexCompounds"
 
     def test_tab_with_sprite(self) -> None:
         result = parse_file(self._FILE)
         tabs = result.custom_fabricators[0].tabs
-        lab_eq = tabs[3]
+        lab_eq = tabs[4]
         assert lab_eq.tab_id == "Alch_LabEquipment"
         assert lab_eq.sprite_item_id == "LabEquipment1"
 
@@ -2362,13 +2362,7 @@ class TestParseText:
     """Tests for parse_text() -- string-based parsing entry point."""
 
     def test_parse_modified_recipe_from_text(self) -> None:
-        text = (
-            "ModifiedRecipes:\n"
-            "(\n"
-            "    ItemID: Titanium;\n"
-            "    AmountCrafted: 2;\n"
-            ");\n"
-        )
+        text = "ModifiedRecipes:\n(\n    ItemID: Titanium;\n    AmountCrafted: 2;\n);\n"
         pf = parse_text(text, source_path=Path("test.txt"))
         assert pf.block_type == BlockType.MODIFIED_RECIPES
         assert len(pf.modified_recipes) == 1
@@ -2382,13 +2376,7 @@ class TestParseText:
 
     def test_parse_text_round_trip_with_serializer(self) -> None:
         """parse -> serialize -> parse_text must yield identical data."""
-        text = (
-            "AddedRecipes:\n"
-            "(\n"
-            "    ItemID: MyItem;\n"
-            "    Path: Fabricator/Resources;\n"
-            ");\n"
-        )
+        text = "AddedRecipes:\n(\n    ItemID: MyItem;\n    Path: Fabricator/Resources;\n);\n"
         pf1 = parse_text(text, source_path=Path("test.txt"))
         serialized = serialize_file(pf1)
         pf2 = parse_text(serialized, source_path=Path("test.txt"))

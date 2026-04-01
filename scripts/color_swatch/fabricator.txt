@@ -1,0 +1,7 @@
+CustomFabricators:
+(
+    ItemID: SwatchFab;
+    DisplayName: "Swatch Fabricator";
+    Tooltip: "Color swatch test fabricator";
+    Model: Fabricator;
+);

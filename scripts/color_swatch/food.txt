@@ -1,0 +1,18 @@
+CustomFoods:
+(
+    ItemID: SpicyMeal;
+    DisplayName: "Spicy Meal";
+    Tooltip: "A spicy meal that warms you up";
+    FoodValue: 40;
+    WaterValue: 15;
+    Ingredients:
+    (
+        ItemID: PurpleVegetable;
+        Required: 2;
+    ),
+    (
+        ItemID: Salt;
+        Required: 1;
+    );
+    Path: Fabricator/Survival/CookedFood;
+);

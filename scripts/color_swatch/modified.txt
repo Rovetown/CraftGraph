@@ -1,0 +1,32 @@
+ModifiedRecipes:
+(
+    ItemID: Knife;
+    Ingredients:
+    (
+        ItemID: Titanium;
+        Required: 2;
+    ),
+    (
+        ItemID: Silicone;
+        Required: 1;
+    );
+),
+(
+    ItemID: CycleA;
+    Ingredients:
+    (
+        ItemID: CycleB;
+        Required: 1;
+    );
+),
+(
+    ItemID: CycleB;
+    Ingredients:
+    (
+        ItemID: CycleA;
+        Required: 1;
+    );
+),
+(
+    ItemID: OrphanItem;
+);

@@ -1,5 +1,6 @@
 """CLI entry points for CraftGraph."""
 
+import sys
 from pathlib import Path
 
 import click
@@ -8,7 +9,14 @@ import networkx
 from craftgraph import __version__
 from craftgraph.graph import NodeType, build_graph, classify_nodes, find_cycles
 from craftgraph.models import ParsedFile
-from craftgraph.parser import MappingError, ParseError, parse_directory, parse_file
+from craftgraph.parser import (
+    MappingError,
+    ParseError,
+    parse_directory,
+    parse_file,
+    validate_parsed_file,
+)
+from craftgraph.serializer import serialize_file
 from craftgraph.visualizer import generate_html
 
 
@@ -81,6 +89,13 @@ def _report_cycles(cycles: list[list[str]]) -> None:
         click.echo(f"  {i}. {path_str}")
 
 
+def _report_warnings(parsed_files: list[ParsedFile]) -> None:
+    """Print ingredient validation warnings (if any) to stderr."""
+    for pf in parsed_files:
+        for warning in validate_parsed_file(pf):
+            click.echo(click.style(f"  Warning: {warning}", fg="yellow"), err=True)
+
+
 # -- Commands ------------------------------------------------------------------
 
 
@@ -95,6 +110,7 @@ def check(path: str, *, verbose: bool) -> None:
         click.echo("No recipe files found.")
         return
 
+    _report_warnings(parsed_files)
     graph = build_graph(parsed_files)
 
     if verbose:
@@ -116,6 +132,7 @@ def view(path: str, output: str | None, *, verbose: bool) -> None:
         click.echo("No recipe files found.")
         return
 
+    _report_warnings(parsed_files)
     graph = build_graph(parsed_files)
 
     if verbose:
@@ -150,6 +167,8 @@ def watch(path: str, output: str | None, *, verbose: bool) -> None:
     ) -> None:
         nonlocal is_first_build
 
+        _report_warnings(parsed_files)
+
         if verbose:
             _report_verbose_stats(parsed_files, graph)
 
@@ -165,6 +184,110 @@ def watch(path: str, output: str | None, *, verbose: bool) -> None:
     from craftgraph.watcher import watch_directory
 
     watch_directory(directory, on_rebuild)
+
+
+@main.command()
+@click.argument("path", type=click.Path())
+@click.option("-o", "--output", type=click.Path(), default=None, help="Output file or directory.")
+@click.option("-v", "--verbose", is_flag=True, help="Show detailed output.")
+def export(path: str, output: str | None, *, verbose: bool) -> None:
+    """Export parsed recipes back to EasyMarkup text files."""
+    parsed_files = _parse_path(path)
+
+    if not parsed_files:
+        click.echo("No recipe files found.")
+        return
+
+    _report_warnings(parsed_files)
+
+    if verbose:
+        total_recipes = sum(len(list(pf.all_recipes)) for pf in parsed_files)
+        click.echo(f"  Files parsed: {len(parsed_files)}")
+        click.echo(f"  Total recipes: {total_recipes}")
+
+    input_path = Path(path)
+
+    if input_path.is_file():
+        # Single file: serialize to -o file or stdout
+        text = serialize_file(parsed_files[0])
+        if output:
+            out_path = Path(output)
+            out_path.write_text(text, encoding="utf-8")
+            click.echo(f"Exported to {out_path}")
+        else:
+            # Write as UTF-8 bytes to avoid Windows cp1252 encoding errors
+            sys.stdout.buffer.write(text.encode("utf-8"))
+    else:
+        # Directory: serialize each file
+        if output:
+            out_dir = Path(output)
+            if not out_dir.exists():
+                out_dir.mkdir(parents=True)
+            for pf in parsed_files:
+                text = serialize_file(pf)
+                if not text:
+                    continue
+                out_file = out_dir / pf.source_path.name
+                out_file.write_text(text, encoding="utf-8")
+            click.echo(f"Exported {len(parsed_files)} files to {out_dir}")
+        else:
+            for pf in parsed_files:
+                text = serialize_file(pf)
+                if text:
+                    header = f"# {pf.source_path.name}\n"
+                    sys.stdout.buffer.write(header.encode("utf-8"))
+                    sys.stdout.buffer.write(text.encode("utf-8"))
+                    sys.stdout.buffer.write(b"\n")
+
+
+@main.command()
+@click.argument("path", type=click.Path(), required=False, default=None)
+def gui(path: str | None) -> None:
+    """Open the graphical recipe editor (PySide6 + NodeGraphQt)."""
+    try:
+        from craftgraph.qt_gui import launch_qt_gui
+    except ImportError as exc:
+        click.echo(
+            "Error: PySide6 or NodeGraphQt is not installed. "
+            'Install with: uv sync --extra qt (or pip install "craftgraph[qt]")',
+            err=True,
+        )
+        raise SystemExit(1) from exc
+
+    recipe_path = Path(path) if path else None
+    if recipe_path is not None and not recipe_path.exists():
+        click.echo(f"Error: path not found: {recipe_path}", err=True)
+        raise SystemExit(1)
+
+    launch_qt_gui(recipe_path)
+
+
+@main.command("register")
+def register_file_assoc() -> None:
+    """Register .craftgraph file association for the current user."""
+    from craftgraph.file_assoc import is_registered, register
+
+    if is_registered():
+        click.echo("File association is already registered.")
+        return
+
+    result = register()
+    click.echo(result)
+    click.echo(click.style("Done.", fg="green"))
+
+
+@main.command("unregister")
+def unregister_file_assoc() -> None:
+    """Remove the .craftgraph file association."""
+    from craftgraph.file_assoc import is_registered, unregister
+
+    if not is_registered():
+        click.echo("File association is not registered. Nothing to do.")
+        return
+
+    result = unregister()
+    click.echo(result)
+    click.echo(click.style("Done.", fg="green"))
 
 
 if __name__ == "__main__":

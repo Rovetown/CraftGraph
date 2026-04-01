@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from functools import cache
 from pathlib import Path
 
+from craftgraph import app_dirs
+
 # Segments appended to each Steam library root to reach the CC3 plugin folder.
 _CC3_SEGMENTS = ("steamapps", "common", "Subnautica", "BepInEx", "plugins", "CustomCraft3")
 
@@ -55,8 +57,8 @@ def detect_subnautica_cc3_path(
 
 
 def default_project_folder() -> Path:
-    """Return the default project folder (~/Documents/CraftGraph)."""
-    return Path.home() / "Documents" / "CraftGraph"
+    """Return the default project folder (platform-specific Documents/CraftGraph)."""
+    return app_dirs.documents_dir()
 
 
 def cc3_working_files(cc3_path: str) -> str:

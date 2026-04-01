@@ -1,0 +1,14 @@
+AddedRecipes:
+(
+    ItemID: SuperKnife;
+    Ingredients:
+    (
+        ItemID: Knife;
+        Required: 1;
+    ),
+    (
+        ItemID: Diamond;
+        Required: 2;
+    );
+    Path: Fabricator/Personal/Tools;
+);

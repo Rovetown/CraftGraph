@@ -26,6 +26,7 @@ from craftgraph.qt_nodes import CraftGraphBaseNode
 
 NODE_COLOR_VARIABLE = (100, 70, 130)
 PORT_COLOR_VAR_OUT = (100, 70, 130)
+_REF_COMBO_MAX_W = 160
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +210,9 @@ class GetFabricatorNode(VariableNode):
             if combo is not None:
                 combo.clear()
                 combo.addItems(choices)
+                combo.setMaximumWidth(_REF_COMBO_MAX_W)
+        # Recalculate node size after items change
+        self.view.draw_node()
 
 
 class GetTabNode(VariableNode):
@@ -236,6 +240,9 @@ class GetTabNode(VariableNode):
             if combo is not None:
                 combo.clear()
                 combo.addItems(choices)
+                combo.setMaximumWidth(_REF_COMBO_MAX_W)
+        # Recalculate node size after items change
+        self.view.draw_node()
 
 
 # ---------------------------------------------------------------------------

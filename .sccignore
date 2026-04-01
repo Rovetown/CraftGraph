@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+.mypy_cache
+.ruff_cache
+.venv
+docs
+dist
+__pycache__
+original-source
+cc3-mods-subnautica

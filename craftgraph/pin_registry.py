@@ -62,6 +62,7 @@ class FieldPin:
     pin_color: tuple[int, int, int] = (180, 180, 180)
     preferred_var_kind: str | None = None
     widget_override: str | None = None
+    help_text: str = ""
 
     @property
     def resolved_model_field(self) -> str:

@@ -44,6 +44,72 @@ if TYPE_CHECKING:
     from craftgraph.commands import EditHistory
 
 # ---------------------------------------------------------------------------
+# Monkey-patch: prevent _NodeGroupBox HWND leak on Windows
+# ---------------------------------------------------------------------------
+# NodeGraphQt creates every _NodeGroupBox without a parent, which allocates a
+# native window handle (HWND) on Windows.  With 894+ nodes and ~8 widgets
+# each, this exhausts the per-process USER object limit (~10,000).
+#
+# Fix: create _NodeGroupBox with a shared hidden parent widget so it never
+# gets its own HWND.  QGraphicsProxyWidget.setWidget() reparents it anyway.
+
+_GROUPBOX_PARENT: QWidget | None = None
+
+
+def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
+    """Replacement for NodeBaseWidget.set_custom_widget that parents the group box.
+
+    Upstream creates ``_NodeGroupBox(label)`` with no parent, which on Windows
+    may allocate a native window handle (HWND) for each instance.  With large
+    graphs (~894 nodes x ~8 widgets), this exhausts the per-process USER object
+    limit (~10,000 handles).
+
+    Fix: construct with a shared hidden parent (prevents HWND allocation), then
+    call ``setParent(None)`` before ``setWidget()`` (which requires an unparented
+    widget).  Since the group box was never shown, removing the parent does not
+    trigger HWND creation.
+    """
+    global _GROUPBOX_PARENT
+    if self.widget():
+        from NodeGraphQt.errors import NodeWidgetError
+
+        msg = "Custom node widget already set."
+        raise NodeWidgetError(msg)
+    if _GROUPBOX_PARENT is None:
+        _GROUPBOX_PARENT = QWidget()
+        _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+    group = _NodeGroupBox(self._label, parent=_GROUPBOX_PARENT)
+    group.add_node_widget(widget)
+    group.setParent(None)  # setWidget() requires an unparented widget
+    self.setWidget(group)
+
+
+NodeBaseWidget.set_custom_widget = _patched_set_custom_widget  # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
+# Monkey-patch: guard auto_switch_mode against missing viewer
+# ---------------------------------------------------------------------------
+# NodeGraphQt's NodeItem.auto_switch_mode() calls self.viewer() without a
+# null check.  When nodes live in a QStackedWidget (tab switching) or during
+# clear_session(), the QGraphicsScene may have no attached QGraphicsView,
+# so viewer() returns None and the subsequent mapToGlobal() crashes.
+#
+# Fix: bail out early when viewer() is None.
+
+from NodeGraphQt.qgraphics.node_base import NodeItem as _NodeItem
+
+_original_auto_switch_mode = _NodeItem.auto_switch_mode
+
+
+def _safe_auto_switch_mode(self: _NodeItem) -> None:  # type: ignore[override]
+    if self.viewer() is None:
+        return
+    _original_auto_switch_mode(self)
+
+
+_NodeItem.auto_switch_mode = _safe_auto_switch_mode  # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -399,7 +465,7 @@ class CraftGraphBaseNode(BaseNode):
     FIELD_REGISTRY: list[FieldPin] = []
     OUTPUT_PINS: list[OutputPin] = []
     SPLIT_OUTPUTS: bool = False
-    HAS_SPRITE_PORT: bool = True
+    HAS_SPRITE_PORT: bool = False
     IS_VARIABLE: bool = False
     # Pairs of boolean fields where at most one can be True.
     MUTUAL_EXCLUSIONS: list[tuple[str, str]] = []
@@ -880,6 +946,7 @@ class AliasRecipeNode(AddedRecipeNode):
 
     NODE_NAME = "Alias Recipe"
     NODE_COLOR = NODE_COLOR_ALIAS_RECIPE
+    HAS_SPRITE_PORT = True
 
     FIELD_REGISTRY = AddedRecipeNode.FIELD_REGISTRY + [
         FieldPin("display_name", PinType.STRING, label="Display Name",
@@ -1010,6 +1077,9 @@ class FabricatorNode(CraftGraphBaseNode):
     def __init__(self) -> None:
         super().__init__()
 
+        # Ingredient input port (fabricators can require ingredients to build)
+        self.add_input("ingredient_0", multi_input=False, color=PORT_COLOR_INGREDIENT)
+
         if self.SPLIT_OUTPUTS:
             # Set accept constraints so typed outputs only connect to correct child types
             tabs_port = self.get_output("tabs_out")
@@ -1049,12 +1119,37 @@ class FabricatorNode(CraftGraphBaseNode):
                     node_type="com.craftgraph.MovedRecipeNode",
                 )
 
+    # -- dynamic ingredient slots ----------------------------------------------
+
+    def _ingredient_port_count(self) -> int:
+        """Count current ingredient input ports."""
+        return len([p for p in self.input_ports() if p.name().startswith("ingredient_")])
+
+    def on_input_connected(self, in_port, out_port) -> None:  # type: ignore[override]
+        """Spawn a new empty ingredient slot when one is filled."""
+        if in_port.name().startswith("ingredient_"):
+            idx = self._ingredient_port_count()
+            self.add_input(
+                f"ingredient_{idx}",
+                multi_input=False,
+                color=PORT_COLOR_INGREDIENT,
+            )
+
+    def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
+        """Remove trailing empty ingredient slots on disconnect."""
+        if not in_port.name().startswith("ingredient_"):
+            return
+        ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
+        while len(ing_ports) > 1 and not ing_ports[-1].connected_ports():
+            self.delete_input(ing_ports.pop())
+
 
 class CraftingTabNode(CraftGraphBaseNode):
     """Visual node for a CraftingTab."""
 
     NODE_NAME = "Crafting Tab"
     NODE_COLOR = NODE_COLOR_CRAFTING_TAB
+    HAS_SPRITE_PORT = True
 
     FIELD_REGISTRY = [
         FieldPin("tab_id", PinType.STRING, label="TabID", required=True,
@@ -1192,6 +1287,7 @@ class OrphanIngredientNode(CraftGraphBaseNode):
 
     NODE_NAME = "Orphan Ingredient"
     NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
+    IS_ORPHAN: bool = True
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID"),
@@ -1204,6 +1300,56 @@ class OrphanIngredientNode(CraftGraphBaseNode):
     def __init__(self) -> None:
         super().__init__()
         self._node_uuid: str = uuid.uuid4().hex[:8]
+
+
+class _BrowseButtonWidget(NodeBaseWidget):
+    """A "Browse..." button that opens a file dialog for PNG selection.
+
+    Remembers the last-used directory across clicks for convenience.
+    """
+
+    _last_dir: str = ""
+
+    def __init__(
+        self,
+        parent: object = None,
+        name: str = "",
+        label: str = "",
+    ) -> None:
+        super().__init__(parent, name, label)
+        self.setZValue(Z_VAL_NODE_WIDGET + 1)
+        btn = QPushButton("Browse...")
+        btn.setMaximumWidth(140)
+        btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        btn.clicked.connect(self._open_dialog)
+        self.set_custom_widget(btn)
+
+    @property
+    def type_(self) -> str:  # type: ignore[override]
+        return "BrowseButtonNodeWidget"
+
+    def get_value(self) -> str:
+        return ""
+
+    def set_value(self, value: str = "") -> None:
+        pass  # Read-only button, no stored value
+
+    def _open_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Select Sprite Image",
+            _BrowseButtonWidget._last_dir,
+            "PNG Files (*.png)",
+        )
+        if not file_path:
+            return
+        _BrowseButtonWidget._last_dir = str(Path(file_path).parent)
+        # Walk up to the owning node and set its file_path property
+        node = self.node
+        if node is not None:
+            node.set_property("file_path", file_path)
 
 
 class SpriteNode(CraftGraphBaseNode):
@@ -1223,6 +1369,50 @@ class SpriteNode(CraftGraphBaseNode):
     def __init__(self) -> None:
         super().__init__()
         self._node_uuid: str = uuid.uuid4().hex[:8]
+
+        # Self-preview: update header icon when file_path changes
+        widget_item = self.get_widget("file_path")
+        if widget_item is not None:
+            qt_widget = widget_item.get_custom_widget()
+            if isinstance(qt_widget, QLineEdit):
+                qt_widget.textChanged.connect(self._on_file_path_changed)
+
+        # Browse button for file picker
+        browse = _BrowseButtonWidget(
+            parent=self.view,
+            name="browse_file",
+            label="",
+        )
+        self.add_custom_widget(browse)
+        self._fix_widget_z_order()
+
+    def _on_file_path_changed(self, text: str) -> None:
+        """React to file_path text changes by updating the header icon."""
+        if not text.strip():
+            self.clear_sprite()
+            self._propagate_sprite(None)
+            return
+        path = Path(text)
+        self.set_sprite(path)
+        self._propagate_sprite(path)
+
+    def _propagate_sprite(self, path: Path | None) -> None:
+        """Push the current sprite to all nodes connected via sprite_out."""
+        out_port = self.get_output("sprite_out")
+        if out_port is None:
+            return
+        for connected_port in out_port.connected_ports():
+            target = connected_port.node()
+            if path is not None and path.exists():
+                target.set_sprite(path)
+                # Update the sprite_item_id model field (e.g. for CraftingTab,
+                # AliasRecipe) so the value gets serialized to the .txt file.
+                if target.get_widget("sprite_item_id") is not None:
+                    target.set_property("sprite_item_id", path.stem)
+            else:
+                target.clear_sprite()
+                if target.get_widget("sprite_item_id") is not None:
+                    target.set_property("sprite_item_id", "")
 
 
 # ---------------------------------------------------------------------------

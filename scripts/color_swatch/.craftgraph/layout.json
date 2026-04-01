@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "tabs": {
+    "added": {
+      "SuperKnife": [
+        387.0,
+        261.0
+      ],
+      "SuperKnife::Knife": [
+        50.0,
+        50.0
+      ],
+      "SuperKnife::Diamond": [
+        50.0,
+        473.0
+      ]
+    },
+    "alias": {
+      "ReinforcedSuit": [
+        402.0,
+        265.0
+      ],
+      "ReinforcedSuit::Aerogel": [
+        71.0,
+        208.0
+      ],
+      "ReinforcedSuit::AramidFibers": [
+        67.0,
+        283.0
+      ]
+    },
+    "biofuel": {
+      "custom_bio_fuel::PurpleVegetable": [
+        600.0,
+        50.0
+      ]
+    },
+    "fabricator": {
+      "custom_fabricator::SwatchFab": [
+        548.0,
+        95.0
+      ]
+    },
+    "food": {
+      "SpicyMeal": [
+        290.0,
+        282.0
+      ],
+      "SpicyMeal::PurpleVegetable": [
+        50.0,
+        50.0
+      ],
+      "SpicyMeal::Salt": [
+        50.0,
+        473.0
+      ]
+    },
+    "fragments": {
+      "custom_fragment_count::Seaglide": [
+        599.0,
+        51.0
+      ]
+    },
+    "modified": {
+      "Knife": [
+        387.0,
+        261.0
+      ],
+      "CycleA": [
+        1073.0,
+        50.0
+      ],
+      "CycleB": [
+        1759.0,
+        50.0
+      ],
+      "OrphanItem": [
+        2079.0,
+        50.0
+      ],
+      "Knife::Titanium": [
+        50.0,
+        473.0
+      ],
+      "Knife::Silicone": [
+        50.0,
+        50.0
+      ],
+      "CycleA::CycleB": [
+        707.0,
+        50.0
+      ],
+      "CycleB::CycleA": [
+        1393.0,
+        50.0
+      ]
+    },
+    "moved": {
+      "sss": [
+        400.0,
+        268.0
+      ],
+      "orphan::sss::0": [
+        401.0,
+        357.0
+      ],
+      "custom_crafting_tab::sss": [
+        410.0,
+        442.0
+      ],
+      "moved_recipe::Knife": [
+        594.0,
+        82.0
+      ]
+    },
+    "sizes": {
+      "custom_size::SuperKnife": [
+        600.0,
+        50.0
+      ]
+    },
+    "tabs": {
+      "custom_crafting_tab::SwatchTab": [
+        600.0,
+        50.0
+      ]
+    }
+  }
+}

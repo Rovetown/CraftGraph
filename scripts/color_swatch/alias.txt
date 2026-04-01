@@ -1,0 +1,16 @@
+AliasRecipes:
+(
+    ItemID: ReinforcedSuit;
+    DisplayName: "Reinforced Dive Suit";
+    Tooltip: "Enhanced protection suit";
+    Ingredients:
+    (
+        ItemID: Aerogel;
+        Required: 1;
+    ),
+    (
+        ItemID: AramidFibers;
+        Required: 1;
+    );
+    Path: Fabricator/Personal/Equipment;
+);

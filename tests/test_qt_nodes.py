@@ -75,20 +75,23 @@ class TestCraftGraphBaseNode:
         # port_deletion_allowed is set in __init__
         assert node.port_deletion_allowed()
 
-    def test_has_sprite_port_flag_default_true(self, graph):
+    def test_has_sprite_port_flag_default_false(self, graph):
         from craftgraph.qt_nodes import CraftGraphBaseNode
 
-        assert CraftGraphBaseNode.HAS_SPRITE_PORT is True
+        assert CraftGraphBaseNode.HAS_SPRITE_PORT is False
 
     def test_is_variable_flag_default_false(self, graph):
         from craftgraph.qt_nodes import CraftGraphBaseNode
 
         assert CraftGraphBaseNode.IS_VARIABLE is False
 
-    def test_sprite_in_port_exists_on_recipe_node(self, graph):
-        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
-        port = node.get_input("sprite_in")
-        assert port is not None
+    def test_sprite_in_port_only_on_alias_and_tab_nodes(self, graph):
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode", name="A")
+        assert alias.get_input("sprite_in") is not None
+        tab = graph.create_node("com.craftgraph.CraftingTabNode", name="T")
+        assert tab.get_input("sprite_in") is not None
+        mod = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="M")
+        assert mod.get_input("sprite_in") is None
 
 
 class TestFieldInputPorts:
@@ -508,15 +511,43 @@ class TestFabricatorNode:
         # SPLIT_OUTPUTS: typed output ports instead of single "children"
         for name in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
             assert node.get_output(name) is not None, f"Missing output: {name}"
-        # Fabricator has sprite_in + 11 field_* ports (12 fields minus ingredients)
-        assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1 + 11
+        # Fabricator has 11 field_* ports + ingredient_0 = 12 (no sprite_in)
+        assert node.get_input("sprite_in") is None
+        assert node.get_input("ingredient_0") is not None
+        assert len(node.input_ports()) == 12
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
         assert node.get_widget("item_id") is not None
         assert node.get_widget("display_name") is not None
         assert node.get_widget("model") is not None
+
+    def test_dynamic_ingredient_slot_on_connect(self, graph):
+        """Connecting to ingredient_0 should spawn ingredient_1."""
+        fab = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+
+        ing_ports = [p for p in fab.input_ports() if p.name().startswith("ingredient_")]
+        assert len(ing_ports) == 1
+
+        src.output(0).connect_to(fab.get_input("ingredient_0"))
+
+        after_ports = [p for p in fab.input_ports() if p.name().startswith("ingredient_")]
+        assert len(after_ports) == 2
+        assert fab.get_input("ingredient_1") is not None
+
+    def test_dynamic_ingredient_slot_cleanup_on_disconnect(self, graph):
+        """Disconnecting should remove trailing empty ingredient slots."""
+        fab = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+
+        src.output(0).connect_to(fab.get_input("ingredient_0"))
+        assert fab.get_input("ingredient_1") is not None
+
+        src.output(0).disconnect_from(fab.get_input("ingredient_0"))
+
+        ing_ports = [p for p in fab.input_ports() if p.name().startswith("ingredient_")]
+        assert len(ing_ports) == 1
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_FABRICATOR
@@ -604,9 +635,9 @@ class TestCraftingTabNode:
 class TestMovedRecipeNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
-        # sprite_in + 5 field_* ports
-        assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1 + 5
+        # 5 field_* ports (no sprite_in)
+        assert node.get_input("sprite_in") is None
+        assert len(node.input_ports()) == 5
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
@@ -627,8 +658,9 @@ class TestMovedRecipeNode:
 class TestCustomBioFuelNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
-        assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1 + 2  # sprite_in + 2 field ports
+        # 2 field_* ports (no sprite_in)
+        assert node.get_input("sprite_in") is None
+        assert len(node.input_ports()) == 2
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
@@ -651,8 +683,9 @@ class TestCustomBioFuelNode:
 class TestCustomFragmentCountNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
-        assert node.get_input("sprite_in") is not None
-        assert len(node.input_ports()) == 1 + 2  # sprite_in + 2 field ports
+        # 2 field_* ports (no sprite_in)
+        assert node.get_input("sprite_in") is None
+        assert len(node.input_ports()) == 2
         assert node.output_ports() == []
 
     def test_widgets(self, graph):
@@ -817,15 +850,15 @@ class TestSpriteNode:
         node = graph.create_node("com.craftgraph.SpriteNode", name="Sprite1")
         assert node.model_ref is None
 
-    def test_sprite_connects_to_recipe_sprite_in(self, graph):
-        """SpriteNode sprite_out can connect to a recipe's sprite_in port."""
+    def test_sprite_connects_to_alias_recipe_sprite_in(self, graph):
+        """SpriteNode sprite_out can connect to an AliasRecipe's sprite_in port."""
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="Sprite1")
-        recipe = graph.create_node(
-            "com.craftgraph.ModifiedRecipeNode",
+        alias = graph.create_node(
+            "com.craftgraph.AliasRecipeNode",
             name="Recipe",
         )
         out_port = sprite.get_output("sprite_out")
-        in_port = recipe.get_input("sprite_in")
+        in_port = alias.get_input("sprite_in")
         out_port.connect_to(in_port)
         assert in_port.connected_ports()
 
@@ -1155,3 +1188,277 @@ class TestOverflowTooltips:
         if qt_widget.count() > 0:
             qt_widget.setCurrentIndex(0)
             assert qt_widget.toolTip() == qt_widget.currentText()
+
+
+# ---------------------------------------------------------------------------
+# Step 11g.2: Enhanced SpriteNode -- file picker, preview, drag-drop
+# ---------------------------------------------------------------------------
+
+
+class TestSpriteNodeSelfPreview:
+    """Setting file_path on a SpriteNode updates its header icon."""
+
+    def test_setting_file_path_triggers_self_preview(self, graph):
+        """Setting file_path to a valid PNG sets the sprite on itself."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        node.set_property("file_path", str(_SPRITE_PATH))
+        assert node.sprite_path == _SPRITE_PATH
+        pixmap = node.view._icon_item.pixmap()
+        assert not pixmap.isNull()
+
+    def test_clearing_file_path_clears_preview(self, graph):
+        """Clearing file_path removes the self-preview sprite."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        node.set_property("file_path", str(_SPRITE_PATH))
+        assert node.sprite_path is not None
+        node.set_property("file_path", "")
+        assert node.sprite_path is None
+
+    def test_invalid_path_clears_preview(self, graph):
+        """Setting a nonexistent path clears the sprite."""
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        node.set_property("file_path", "/nonexistent/fake.png")
+        assert node.sprite_path is None
+
+
+class TestSpriteNodeBrowseButton:
+    """SpriteNode has a Browse button widget."""
+
+    def test_browse_button_exists(self, graph):
+        """SpriteNode has a browse_file widget."""
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        widget_item = node.get_widget("browse_file")
+        assert widget_item is not None
+
+    def test_browse_button_is_pushbutton(self, graph):
+        """The browse widget contains a QPushButton."""
+        from PySide6.QtWidgets import QPushButton
+
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        widget_item = node.get_widget("browse_file")
+        inner = widget_item.get_custom_widget()
+        # The custom widget itself or a child should be a QPushButton
+        found = inner.findChild(QPushButton) if not isinstance(inner, QPushButton) else inner
+        assert found is not None
+
+
+    def test_browse_widget_can_access_parent_node(self, graph):
+        """The browse widget's .node property returns the SpriteNode."""
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        browse_widget = node.get_widget("browse_file")
+        # NodeBaseWidget.node should point back to the owning SpriteNode
+        assert browse_widget.node is node
+
+    def test_open_dialog_sets_file_path_on_node(self, graph, tmp_path):
+        """Selecting a file in the browse dialog sets the node's file_path."""
+        from unittest.mock import patch
+
+        node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        browse_widget = node.get_widget("browse_file")
+
+        fake_png = tmp_path / "sprite.png"
+        fake_png.write_bytes(b"fake")
+
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getOpenFileName",
+            return_value=(str(fake_png), "PNG Files (*.png)"),
+        ):
+            browse_widget._open_dialog()
+
+        assert node.get_property("file_path") == str(fake_png)
+
+
+class TestSpriteNodePropagation:
+    """SpriteNode file_path changes propagate to connected target nodes."""
+
+    def test_file_path_change_propagates_to_connected_node(self, graph):
+        """Changing file_path on SpriteNode sets sprite on connected node."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        out_port = sprite.get_output("sprite_out")
+        in_port = alias.get_input("sprite_in")
+        out_port.connect_to(in_port)
+
+        # Simulate browsing: set file_path after connection
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+
+        assert alias.sprite_path == _SPRITE_PATH
+
+    def test_clearing_file_path_clears_connected_node(self, graph):
+        """Clearing file_path on SpriteNode clears sprite on connected node."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        out_port = sprite.get_output("sprite_out")
+        in_port = alias.get_input("sprite_in")
+        out_port.connect_to(in_port)
+
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+        assert alias.sprite_path is not None
+
+        sprite.set_property("file_path", "")
+        assert alias.sprite_path is None
+
+    def test_file_path_propagates_to_multiple_nodes(self, graph):
+        """SpriteNode propagates to all connected nodes (multi-output)."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        tab = graph.create_node("com.craftgraph.CraftingTabNode")
+        out_port = sprite.get_output("sprite_out")
+        out_port.connect_to(alias.get_input("sprite_in"))
+        out_port.connect_to(tab.get_input("sprite_in"))
+
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+
+        assert alias.sprite_path == _SPRITE_PATH
+        assert tab.sprite_path == _SPRITE_PATH
+
+    def test_no_propagation_when_no_connections(self, graph):
+        """Changing file_path with no connections does not raise."""
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        # Should not raise even with no connections
+        sprite.set_property("file_path", "/some/path.png")
+        sprite.set_property("file_path", "")
+
+    def test_sprite_item_id_set_on_alias_recipe(self, graph):
+        """SpriteNode sets sprite_item_id on AliasRecipe from PNG filename stem."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        out_port = sprite.get_output("sprite_out")
+        out_port.connect_to(alias.get_input("sprite_in"))
+
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+
+        assert alias.get_property("sprite_item_id") == _SPRITE_PATH.stem
+
+    def test_sprite_item_id_set_on_crafting_tab(self, graph):
+        """SpriteNode sets sprite_item_id on CraftingTab from PNG filename stem."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        tab = graph.create_node("com.craftgraph.CraftingTabNode")
+        out_port = sprite.get_output("sprite_out")
+        out_port.connect_to(tab.get_input("sprite_in"))
+
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+
+        assert tab.get_property("sprite_item_id") == _SPRITE_PATH.stem
+
+    def test_clearing_sprite_clears_sprite_item_id(self, graph):
+        """Clearing file_path resets sprite_item_id to empty string."""
+        if not _SPRITE_PATH.exists():
+            pytest.skip("Reference sprite not found")
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        out_port = sprite.get_output("sprite_out")
+        out_port.connect_to(alias.get_input("sprite_in"))
+
+        sprite.set_property("file_path", str(_SPRITE_PATH))
+        assert alias.get_property("sprite_item_id") == _SPRITE_PATH.stem
+
+        sprite.set_property("file_path", "")
+        assert alias.get_property("sprite_item_id") == ""
+
+
+class TestViewerDragDropFilter:
+    """Drag-drop event filter for the NodeGraphQt viewer."""
+
+    def _make_drag_enter(self, urls):
+        """Create a (QDragEnterEvent, QMimeData) for the given file URLs.
+
+        Returns a tuple so the caller keeps a reference to the QMimeData,
+        preventing premature GC of the underlying C++ object.
+        """
+        from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
+        from PySide6.QtGui import QDragEnterEvent
+
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(u)) for u in urls])
+        event = QDragEnterEvent(
+            QPoint(100, 100),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        return event, mime
+
+    def _make_drop(self, urls, pos=None):
+        """Create a (QDropEvent, QMimeData) for the given file URLs."""
+        from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+        from PySide6.QtGui import QDropEvent
+
+        if pos is None:
+            pos = QPointF(100.0, 100.0)
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(u)) for u in urls])
+        event = QDropEvent(
+            pos,
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        return event, mime
+
+    def test_accepts_png_drag(self, graph):
+        """Drag with a .png URL is accepted (eventFilter returns True)."""
+        from craftgraph.qt_gui import _ViewerDropFilter
+
+        viewer = graph.viewer()
+        filt = _ViewerDropFilter(viewer, window=None)
+        event, _mime = self._make_drag_enter(["/some/image.png"])
+        result = filt.eventFilter(viewer, event)
+        assert result is True
+
+    def test_rejects_non_png_drag(self, graph):
+        """Drag with a non-.png URL is not handled by the filter."""
+        from craftgraph.qt_gui import _ViewerDropFilter
+
+        viewer = graph.viewer()
+        filt = _ViewerDropFilter(viewer, window=None)
+        event, _mime = self._make_drag_enter(["/some/file.txt"])
+        result = filt.eventFilter(viewer, event)
+        assert result is False
+
+    def test_rejects_drag_with_no_urls(self, graph):
+        """Drag with no file URLs is not intercepted."""
+        from PySide6.QtCore import QMimeData, QPoint, Qt
+        from PySide6.QtGui import QDragEnterEvent
+
+        from craftgraph.qt_gui import _ViewerDropFilter
+
+        viewer = graph.viewer()
+        filt = _ViewerDropFilter(viewer, window=None)
+        mime = QMimeData()
+        mime.setText("just text")
+        event = QDragEnterEvent(
+            QPoint(100, 100),
+            Qt.DropAction.CopyAction,
+            mime,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        result = filt.eventFilter(viewer, event)
+        assert result is False
+
+    def test_accepts_png_case_insensitive(self, graph):
+        """Drag with .PNG (uppercase) is also accepted."""
+        from craftgraph.qt_gui import _ViewerDropFilter
+
+        viewer = graph.viewer()
+        filt = _ViewerDropFilter(viewer, window=None)
+        event, _mime = self._make_drag_enter(["/some/IMAGE.PNG"])
+        result = filt.eventFilter(viewer, event)
+        assert result is True

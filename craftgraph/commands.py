@@ -155,9 +155,9 @@ class EditHistory:
 
 @dataclass
 class AddIngredientCommand(EditCommand):
-    """Append an ingredient to a recipe's ingredient list."""
+    """Append an ingredient to a recipe's or fabricator's ingredient list."""
 
-    recipe: ModifiedRecipe
+    recipe: ModifiedRecipe | CustomFabricator
     ingredient: Ingredient
 
     def execute(self) -> None:
@@ -173,12 +173,12 @@ class AddIngredientCommand(EditCommand):
 
 @dataclass
 class RemoveIngredientCommand(EditCommand):
-    """Remove an ingredient from a recipe by index.
+    """Remove an ingredient from a recipe or fabricator by index.
 
     Captures the removed ingredient and its index for undo.
     """
 
-    recipe: ModifiedRecipe
+    recipe: ModifiedRecipe | CustomFabricator
     index: int
     _captured: Ingredient | None = None
 

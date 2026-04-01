@@ -243,10 +243,10 @@ class TestGetFabricatorNode:
         inner = widget.get_custom_widget()
         assert isinstance(inner, QComboBox)
 
-    def test_default_value_none_when_empty(self, graph):
-        """Combo with no items yields None from get_property()."""
+    def test_default_value_placeholder_when_empty(self, graph):
+        """Combo with no real items shows '(none)' placeholder."""
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
-        assert node.get_property("value") is None
+        assert node.get_property("value") == "(none)"
 
     def test_refresh_fab_tab_choices(self, graph):
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
@@ -566,6 +566,7 @@ class TestGetFabConnection:
 
         get_fab = s["graph"].create_node("com.craftgraph.GetFabricatorNode", name="GetFab")
         get_fab.set_edit_history(s["history"])
+        get_fab.refresh_fab_tab_choices(["MyFab", "OtherFab"])
         get_fab.set_property("value", "MyFab")
 
         var_out = get_fab.get_output("value_out")

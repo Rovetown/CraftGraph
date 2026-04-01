@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -320,7 +321,6 @@ def populate_graph(
 _LAYOUT_X_FAB = -400.0
 _LAYOUT_X_TAB = -100.0
 _LAYOUT_X_RECIPE = 250.0
-_LAYOUT_X_OTHER = -400.0
 
 # Horizontal step per nesting level (matches gap between tab and recipe columns).
 # Depth-0 tabs stay at _LAYOUT_X_TAB, depth-1 child tabs shift right by this
@@ -330,6 +330,41 @@ _LAYOUT_X_CHILD_OFFSET = _LAYOUT_X_RECIPE - _LAYOUT_X_TAB  # 350.0
 # Vertical spacing
 _LAYOUT_Y_STEP = 120.0
 _LAYOUT_Y_GROUP_GAP = 80.0
+
+# Height estimation for dynamic vertical spacing
+_NODE_V_PAD = 30.0  # vertical gap between adjacent nodes
+
+
+def _node_step(model_id: int, model_to_node: ModelNodeMap) -> float:
+    """Return the vertical advance for a node: actual height + padding.
+
+    Queries the node's QGraphicsItem bounding rect for the real rendered
+    height.  Falls back to ``_LAYOUT_Y_STEP`` when the node is not found
+    or has no view geometry yet.
+    """
+    node = model_to_node.get(model_id)
+    if node is None:
+        return _LAYOUT_Y_STEP
+    view = getattr(node, "view", None)
+    if view is not None:
+        height = view.boundingRect().height()
+        if height > 0:
+            return height + _NODE_V_PAD
+    return _LAYOUT_Y_STEP
+
+# Processing order for non-fabricator block types.  Each type with entries
+# gets its own column, arranged left-to-right in this order.
+_TOPLEVEL_COLUMN_ORDER: list[str] = [
+    "crafting_tabs",
+    "modified_recipes",
+    "added_recipes",
+    "alias_recipes",
+    "custom_foods",
+    "moved_recipes",
+    "custom_sizes",
+    "custom_bio_fuels",
+    "custom_fragment_counts",
+]
 
 
 def _compute_tab_depths(tabs: list[object]) -> dict[str, int]:
@@ -441,13 +476,13 @@ def _layout_fab_children_dfs(
             return
         x = _LAYOUT_X_TAB + depth * _LAYOUT_X_CHILD_OFFSET
         positions[id(tab)] = (x, y)
-        y += _LAYOUT_Y_STEP
+        y += _node_step(id(tab), model_to_node)
 
         # Place recipes belonging to this tab (one depth level right)
         for recipe in recipes_of_tab.get(tid, []):
             rx = _LAYOUT_X_TAB + (depth + 1) * _LAYOUT_X_CHILD_OFFSET
             positions[id(recipe)] = (rx, y)
-            y += _LAYOUT_Y_STEP
+            y += _node_step(id(recipe), model_to_node)
 
         # Recurse into child tabs
         for child in children_of_tab.get(tid, []):
@@ -462,9 +497,9 @@ def _layout_fab_children_dfs(
     for recipe in fab_direct_recipes:
         rx = _LAYOUT_X_TAB + _LAYOUT_X_CHILD_OFFSET
         positions[id(recipe)] = (rx, y)
-        y += _LAYOUT_Y_STEP
+        y += _node_step(id(recipe), model_to_node)
 
-    return max(y, y_start + _LAYOUT_Y_STEP)
+    return max(y, y_start + _node_step(id(fab), model_to_node))
 
 
 def compute_hierarchy_layout(
@@ -475,18 +510,18 @@ def compute_hierarchy_layout(
 
     Returns a mapping from ``id(model_object)`` to ``(x, y)`` positions.
 
-    Layout strategy (children right of parent):
+    Layout strategy:
 
-    - Fabricators at X=-400
-    - Root tabs at X=-100, child tabs shift right by ``_LAYOUT_X_CHILD_OFFSET``
-      per nesting level
-    - Recipes placed one step right of their parent tab, directly below
-      the tab they belong to (DFS order)
-    - Standalone entries (sizes, bio fuels, etc.) at X=-400, below groups
+    **Phase 1 -- Fabricator groups (DFS tree):**
+    Fabricators at X=-400, root tabs at X=-100, child tabs shift right by
+    ``_LAYOUT_X_CHILD_OFFSET`` per nesting level.  Recipes placed one step
+    right of their parent tab (DFS order).
 
-    Within a fabricator group, a DFS walk places each tab, then its
-    recipes, then recurses into child tabs.  This produces a left-to-right
-    Fabricator -> Tab -> Recipe visual flow.
+    **Phase 2 -- Column-per-block-type:**
+    After fabricator groups, each remaining block type with entries gets
+    its own column, arranged left-to-right in processing order
+    (Tabs -> Modified -> Added -> ... -> FragmentCounts).  All columns
+    start at the same Y so related types sit side by side.
     """
     positions: dict[int, tuple[float, float]] = {}
     y = 0.0
@@ -510,36 +545,33 @@ def compute_hierarchy_layout(
             )
             y += _LAYOUT_Y_GROUP_GAP
 
-        # Phase 2: top-level tabs
-        for tab in pf.crafting_tabs:
-            if id(tab) not in model_to_node:
+        # Phase 2: column-per-block-type for all non-fabricator items.
+        # Each block type with entries gets its own column, arranged
+        # left-to-right in processing order.  All columns start at the
+        # same Y so related types sit side by side.
+        section_y = y
+        col_index = 0
+        max_col_y = y
+
+        for attr in _TOPLEVEL_COLUMN_ORDER:
+            items = [
+                item for item in getattr(pf, attr)
+                if id(item) in model_to_node
+            ]
+            if not items:
                 continue
-            positions[id(tab)] = (_LAYOUT_X_TAB, y)
-            y += _LAYOUT_Y_STEP
 
-        # Phase 3: top-level recipes
-        for attr in ("modified_recipes", "added_recipes", "alias_recipes", "custom_foods"):
-            for recipe in getattr(pf, attr):
-                if id(recipe) not in model_to_node:
-                    continue
-                positions[id(recipe)] = (_LAYOUT_X_RECIPE, y)
-                y += _LAYOUT_Y_STEP
+            col_x = _LAYOUT_X_TAB + col_index * _LAYOUT_X_CHILD_OFFSET
+            col_y = section_y
 
-        # Phase 4: standalone entries (below everything else)
-        if pf.custom_sizes or pf.moved_recipes or pf.custom_bio_fuels or pf.custom_fragment_counts:
-            y += _LAYOUT_Y_GROUP_GAP
+            for item in items:
+                positions[id(item)] = (col_x, col_y)
+                col_y += _node_step(id(item), model_to_node)
 
-        for entries_attr in (
-            "custom_sizes",
-            "moved_recipes",
-            "custom_bio_fuels",
-            "custom_fragment_counts",
-        ):
-            for entry in getattr(pf, entries_attr):
-                if id(entry) not in model_to_node:
-                    continue
-                positions[id(entry)] = (_LAYOUT_X_OTHER, y)
-                y += _LAYOUT_Y_STEP
+            max_col_y = max(max_col_y, col_y)
+            col_index += 1
+
+        y = max_col_y
 
     return positions
 
@@ -557,6 +589,77 @@ def apply_layout(
         node = model_to_node.get(model_id)
         if node is not None:
             node.set_pos(x, y)
+
+
+_VAR_X_OFFSET = 200.0
+
+
+def place_variable_nodes(graph: NodeGraph) -> None:
+    """Place variable nodes at smart positions based on their connections.
+
+    For each variable node with connected consumers, positions it at:
+
+    - **X:** one offset left of the leftmost consumer
+    - **Y:** centroid (mean) of all consumer Y positions
+
+    Variable nodes without connections are left at their current position.
+    """
+    for node in graph.all_nodes():
+        if not getattr(node, "IS_VARIABLE", False):
+            continue
+
+        out_port = node.get_output("value_out")
+        if out_port is None:
+            continue
+
+        connected = out_port.connected_ports()
+        if not connected:
+            continue
+
+        consumer_xs: list[float] = []
+        consumer_ys: list[float] = []
+        for port in connected:
+            cx, cy = port.node().pos()
+            consumer_xs.append(cx)
+            consumer_ys.append(cy)
+
+        target_x = min(consumer_xs) - _VAR_X_OFFSET
+        target_y = sum(consumer_ys) / len(consumer_ys)
+        node.set_pos(target_x, target_y)
+
+
+_ORPHAN_X_OFFSET = 200.0
+
+
+def place_orphan_nodes(graph: NodeGraph) -> None:
+    """Place orphan ingredient nodes left of their connected consumers.
+
+    Mirrors ``place_variable_nodes``: for each orphan with connections,
+    positions at X = leftmost consumer X - offset, Y = centroid of
+    consumer Y positions.  Orphans without connections are left as-is.
+    """
+    for node in graph.all_nodes():
+        if not getattr(node, "IS_ORPHAN", False):
+            continue
+
+        out_port = node.get_output("output")
+        if out_port is None:
+            continue
+
+        connected = out_port.connected_ports()
+        if not connected:
+            continue
+
+        consumer_xs: list[float] = []
+        consumer_ys: list[float] = []
+        for port in connected:
+            cx, cy = port.node().pos()
+            consumer_xs.append(cx)
+            consumer_ys.append(cy)
+
+        target_x = min(consumer_xs) - _ORPHAN_X_OFFSET
+        target_y = sum(consumer_ys) / len(consumer_ys)
+        node.set_pos(target_x, target_y)
 
 
 def model_position_key(model: object) -> str:
@@ -847,17 +950,37 @@ def _resolve_parent_output(
     return fab_node.get_output(port_name)
 
 
+@dataclass
+class ConnectResult:
+    """Result of ``connect_ingredients()``.
+
+    Attributes:
+        count: Total connections made (recipe-to-recipe + orphan-to-recipe).
+        orphan_nodes: Mapping of lowercase item_id to the created
+            OrphanIngredientNode for raw materials (no recipe on canvas).
+    """
+
+    count: int = 0
+    orphan_nodes: dict[str, CraftGraphBaseNode] = field(default_factory=dict)
+
+
 def connect_ingredients(
     graph: NodeGraph,
     parsed_files: list[ParsedFile],
     model_to_node: ModelNodeMap,
-) -> int:
+) -> ConnectResult:
     """Wire recipe output -> ingredient input connections.
 
-    Matches ingredient ItemIDs to recipe output ports across all loaded
-    files. Returns the number of connections made.
+    **Phase 1 -- Recipe-to-recipe:** If an ingredient ItemID matches another
+    recipe node on the canvas, a direct link is created.
+
+    **Phase 2 -- Orphan creation:** Remaining unmatched ingredients get an
+    ``OrphanIngredientNode`` (one per unique ItemID, case-insensitive).
+    The orphan's ``output`` port connects to every consuming recipe slot.
     """
-    # Build item_id -> node lookup from nodes that have an output port
+    from craftgraph.qt_nodes import IDENTIFIER
+
+    # Build item_id -> node lookup from recipe nodes (those with ingredients)
     item_id_to_node: dict[str, CraftGraphBaseNode] = {}
     for node in model_to_node.values():
         ref = node.model_ref
@@ -865,7 +988,12 @@ def connect_ingredients(
         if item_id and hasattr(ref, "ingredients"):
             item_id_to_node[item_id.lower()] = node
 
-    count = 0
+    result = ConnectResult()
+
+    # Collect unmatched ingredients: key -> list of consuming nodes
+    unmatched: dict[str, list[tuple[str, CraftGraphBaseNode]]] = {}
+
+    # Phase 1: recipe-to-recipe connections
     for node in model_to_node.values():
         ref = node.model_ref
         ingredients = getattr(ref, "ingredients", None)
@@ -873,28 +1001,156 @@ def connect_ingredients(
             continue
 
         for ing in ingredients:
-            source_node = item_id_to_node.get(ing.item_id.lower())
-            if source_node is None:
-                continue
+            key = ing.item_id.lower()
+            source_node = item_id_to_node.get(key)
 
-            source_out = source_node.get_output("output")
-            if source_out is None:
-                continue
+            if source_node is not None:
+                source_out = source_node.get_output("output")
+                if source_out is None:
+                    continue
+                ing_ports = [
+                    p
+                    for p in node.input_ports()
+                    if p.name().startswith("ingredient_")
+                    and not p.connected_ports()
+                ]
+                if not ing_ports:
+                    continue
+                source_out.connect_to(ing_ports[0])
+                result.count += 1
+            else:
+                # Track for orphan creation in phase 2
+                unmatched.setdefault(key, []).append((ing.item_id, node))
 
-            # Find the first unconnected ingredient port.
-            # on_input_connected() auto-spawns new slots as we fill them.
+    # Phase 2: create OrphanIngredientNodes for unmatched ingredients
+    for key, consumers in unmatched.items():
+        # Use the original-case item_id from the first occurrence
+        original_id = consumers[0][0]
+
+        orphan = graph.create_node(
+            f"{IDENTIFIER}.OrphanIngredientNode",
+            name=original_id,
+        )
+        orphan.set_property("item_id", original_id)
+        result.orphan_nodes[key] = orphan
+
+        orphan_out = orphan.get_output("output")
+        if orphan_out is None:
+            continue
+
+        for _id, consumer_node in consumers:
             ing_ports = [
                 p
-                for p in node.input_ports()
-                if p.name().startswith("ingredient_") and not p.connected_ports()
+                for p in consumer_node.input_ports()
+                if p.name().startswith("ingredient_")
+                and not p.connected_ports()
             ]
             if not ing_ports:
                 continue
+            orphan_out.connect_to(ing_ports[0])
+            result.count += 1
 
-            source_out.connect_to(ing_ports[0])
-            count += 1
+    return result
 
-    return count
+
+# ---------------------------------------------------------------------------
+# Pre-save validation
+# ---------------------------------------------------------------------------
+
+
+def validate_parsed_files(
+    parsed_files: list[ParsedFile],
+    known_ids: frozenset[str],
+) -> list[str]:
+    """Scan parsed files for broken references before saving.
+
+    Returns a list of human-readable issue strings (empty if all valid).
+    Checks:
+    - Ingredient IDs not in *known_ids*
+    - ``parent_tab_path`` referencing a non-existent tab or fabricator
+    - Recipe ``path`` pointing to a non-existent tab
+    """
+    from craftgraph.models import (
+        AddedRecipe,
+        CustomFabricator,
+        ModifiedRecipe,
+    )
+
+    issues: list[str] = []
+
+    for pf in parsed_files:
+        # Collect all item_ids defined in this set of files (recipes define IDs)
+        defined_ids: set[str] = set()
+        all_recipes: list[ModifiedRecipe] = []
+        for r in pf.modified_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.added_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.alias_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.custom_foods:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+
+        for fab in pf.custom_fabricators:
+            # Collect all recipes nested in fabricators too
+            for r in fab.added_recipes:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+            for r in fab.alias_recipes:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+            for r in fab.custom_foods:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+
+        all_known = known_ids | defined_ids
+
+        # Check ingredient IDs
+        for recipe in all_recipes:
+            for ing in recipe.ingredients:
+                if ing.item_id.lower() not in all_known:
+                    issues.append(
+                        f"Unknown ingredient '{ing.item_id}' in recipe "
+                        f"'{recipe.item_id}' ({pf.source_path.name})"
+                    )
+
+        # Check tab parent_tab_path and recipe paths within fabricators
+        for fab in pf.custom_fabricators:
+            tab_ids = {t.tab_id.lower() for t in fab.tabs}
+
+            for tab in fab.tabs:
+                if not tab.parent_tab_path:
+                    continue
+                last_seg = tab.parent_tab_path.rsplit("/", 1)[-1]
+                if (
+                    last_seg.lower() != fab.item_id.lower()
+                    and last_seg.lower() not in tab_ids
+                ):
+                    issues.append(
+                        f"Tab '{tab.tab_id}' references missing parent "
+                        f"'{tab.parent_tab_path}' ({pf.source_path.name})"
+                    )
+
+            for recipe_list in (fab.added_recipes, fab.alias_recipes, fab.custom_foods):
+                for recipe in recipe_list:
+                    path = getattr(recipe, "path", "") or ""
+                    if not path:
+                        continue
+                    last_seg = path.rsplit("/", 1)[-1]
+                    if (
+                        last_seg.lower() != fab.item_id.lower()
+                        and last_seg.lower() not in tab_ids
+                    ):
+                        issues.append(
+                            f"Recipe '{recipe.item_id}' path references "
+                            f"missing tab '{last_seg}' ({pf.source_path.name})"
+                        )
+
+    return issues
 
 
 # ---------------------------------------------------------------------------
@@ -927,13 +1183,15 @@ class UIToModelHandler:
         guard: SyncGuard,
         parsed_files: list[ParsedFile],
         model_to_node: ModelNodeMap | None = None,
-        on_cycle_rejected: "Callable[[str, str], None] | None" = None,
+        on_cycle_rejected: "Callable[[str, str, list[str]], None] | None" = None,
+        on_reassignment_warning: "Callable[[str, str], None] | None" = None,
     ) -> None:
         self._graph = graph
         self._history = history
         self._guard = guard
         self._parsed_files = parsed_files
         self._on_cycle_rejected = on_cycle_rejected
+        self._on_reassignment_warning = on_reassignment_warning
         # Reverse map: NodeGraphQt node ID -> model object, used to look
         # up models after nodes have been deleted from the graph.
         self._node_id_to_model: dict[str, object] = {}
@@ -1062,7 +1320,7 @@ class UIToModelHandler:
                 if fab is model:
                     pf.custom_fabricators.remove(fab)
                     return
-                for attr in ("tabs", "added_recipes", "alias_recipes", "custom_foods"):
+                for attr in ("tabs", "added_recipes", "alias_recipes", "moved_recipes", "custom_foods"):
                     entries = getattr(fab, attr)
                     if model in entries:
                         entries.remove(model)
@@ -1091,17 +1349,28 @@ class UIToModelHandler:
                             g.add_edge(recipe.item_id, ing.item_id)
         return g
 
-    def would_create_cycle(self, consumer_id: str, ingredient_id: str) -> bool:
-        """Test whether adding an ingredient edge would create a cycle."""
+    def find_cycle_path(self, consumer_id: str, ingredient_id: str) -> list[str] | None:
+        """Return the cycle path if adding an edge would create a cycle, else None.
+
+        The returned list is the node sequence forming the cycle,
+        e.g. ``["A", "B", "C", "A"]``.
+        """
         import networkx as nx
 
         test_graph = self._build_ingredient_graph()
         test_graph.add_edge(consumer_id, ingredient_id)
         try:
-            nx.find_cycle(test_graph)
+            edges = nx.find_cycle(test_graph)
         except nx.NetworkXNoCycle:
-            return False
-        return True
+            return None
+        # edges is a list of (u, v) tuples; build the node path
+        path = [e[0] for e in edges]
+        path.append(edges[-1][1])
+        return path
+
+    def would_create_cycle(self, consumer_id: str, ingredient_id: str) -> bool:
+        """Test whether adding an ingredient edge would create a cycle."""
+        return self.find_cycle_path(consumer_id, ingredient_id) is not None
 
     # -- Ingredient connections -----------------------------------------------
 
@@ -1122,11 +1391,12 @@ class UIToModelHandler:
             return
 
         # Pre-link cycle check: reject connections that would create cycles
-        if self.would_create_cycle(consumer_id, source_id):
+        cycle_path = self.find_cycle_path(consumer_id, source_id)
+        if cycle_path is not None:
             with self._guard():
                 in_port.disconnect_from(out_port)  # type: ignore[attr-defined]
             if self._on_cycle_rejected is not None:
-                self._on_cycle_rejected(consumer_id, source_id)
+                self._on_cycle_rejected(consumer_id, source_id, cycle_path)
             return
 
         from craftgraph.commands import AddIngredientCommand
@@ -1181,6 +1451,11 @@ class UIToModelHandler:
 
         from craftgraph.models import AddedRecipe, CraftingTab, CustomFabricator
 
+        # Tab-to-tab connection (parent is a CraftingTab)
+        if isinstance(parent_model, CraftingTab) and isinstance(child_model, CraftingTab):
+            self._handle_tab_to_tab_connected(child_model, parent_model, in_port, out_port)
+            return
+
         if not isinstance(parent_model, CustomFabricator):
             return
 
@@ -1197,6 +1472,13 @@ class UIToModelHandler:
                 tab=child_model,
             )
         elif isinstance(child_model, AddedRecipe):
+            if (
+                child_model.path
+                and self._on_reassignment_warning is not None
+            ):
+                self._on_reassignment_warning(
+                    child_model.item_id, child_model.path
+                )
             cmd = NestRecipeInFabricatorCommand(
                 parsed_file=pf,
                 fabricator=parent_model,
@@ -1208,6 +1490,74 @@ class UIToModelHandler:
 
         with self._guard():
             self._history.execute(cmd)
+
+    def _handle_tab_to_tab_connected(
+        self,
+        child: "CraftingTab",
+        parent: "CraftingTab",
+        in_port: object,
+        out_port: object,
+    ) -> None:
+        """Handle connecting a tab under another tab's children port."""
+        from craftgraph.models import CraftingTab
+
+        if self._would_create_tab_cycle(child, parent):
+            cycle_path = [child.tab_id, parent.tab_id, child.tab_id]
+            if self._on_cycle_rejected is not None:
+                self._on_cycle_rejected(child.tab_id, parent.tab_id, cycle_path)
+            with self._guard():
+                out_port.disconnect_from(in_port)  # type: ignore[attr-defined]
+            return
+
+        with self._guard():
+            child.parent_tab_path = parent.tab_id
+
+    def _would_create_tab_cycle(
+        self,
+        child: "CraftingTab",
+        proposed_parent: "CraftingTab",
+    ) -> bool:
+        """Check if setting child's parent to proposed_parent creates a cycle."""
+        from craftgraph.models import CraftingTab
+
+        # Build a tab_id -> CraftingTab lookup from all known tabs.
+        # Include both fabricator-nested tabs AND top-level crafting_tabs,
+        # since auto-disconnect may have moved a tab out of a fabricator
+        # before this check runs.
+        tab_lookup: dict[str, CraftingTab] = {}
+        for pf in self._parsed_files:
+            for tab in pf.crafting_tabs:
+                tab_lookup[tab.tab_id.lower()] = tab
+            for fab in pf.custom_fabricators:
+                for tab in fab.tabs:
+                    tab_lookup[tab.tab_id.lower()] = tab
+        # Ensure both participants are in the lookup
+        tab_lookup[child.tab_id.lower()] = child
+        tab_lookup[proposed_parent.tab_id.lower()] = proposed_parent
+
+        # Walk the parent chain from proposed_parent upward.
+        # If we reach the child, there's a cycle.
+        visited: set[str] = set()
+        current_tab_id = proposed_parent.tab_id
+
+        while current_tab_id:
+            if current_tab_id.lower() == child.tab_id.lower():
+                return True
+            if current_tab_id.lower() in visited:
+                break
+            visited.add(current_tab_id.lower())
+            current_tab = tab_lookup.get(current_tab_id.lower())
+            if current_tab is None:
+                break
+            parent_path = current_tab.parent_tab_path
+            if not parent_path:
+                break
+            last_segment = parent_path.rsplit("/", 1)[-1]
+            if last_segment.lower() not in tab_lookup:
+                break
+            current_tab_id = last_segment
+
+        return False
 
     def _handle_hierarchy_disconnected(
         self,
@@ -1267,13 +1617,19 @@ class UIToModelHandler:
         source = out_port.node()  # type: ignore[attr-defined]
         file_path = source.get_property("file_path")  # type: ignore[attr-defined]
         if file_path:
-            target.set_sprite(Path(file_path))  # type: ignore[attr-defined]
+            path = Path(file_path)
+            target.set_sprite(path)  # type: ignore[attr-defined]
+            # Also set the sprite_item_id model field when available
+            if target.get_widget("sprite_item_id") is not None:  # type: ignore[attr-defined]
+                target.set_property("sprite_item_id", path.stem)  # type: ignore[attr-defined]
 
     @staticmethod
     def _handle_sprite_disconnected(in_port: object) -> None:
         """Clear the sprite when a SpriteNode is disconnected."""
         target = in_port.node()  # type: ignore[attr-defined]
         target.clear_sprite()  # type: ignore[attr-defined]
+        if target.get_widget("sprite_item_id") is not None:  # type: ignore[attr-defined]
+            target.set_property("sprite_item_id", "")  # type: ignore[attr-defined]
 
     # -- Variable node handlers -----------------------------------------------
 

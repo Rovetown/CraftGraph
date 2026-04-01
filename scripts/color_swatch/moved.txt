@@ -1,0 +1,6 @@
+MovedRecipes:
+(
+    ItemID: Knife;
+    OldPath: Fabricator/Personal/Tools;
+    NewPath: Fabricator/Personal/Tools/Blades;
+);

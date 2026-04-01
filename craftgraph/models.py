@@ -31,6 +31,143 @@ class BlockType(Enum):
 
 
 # ---------------------------------------------------------------------------
+# CraftTree.Type (vanilla crafting station identifiers)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CraftTreeEntry:
+    """A vanilla crafting station from Subnautica's ``CraftTree.Type`` enum.
+
+    Attributes:
+        value: The ``CraftTree.Type`` enum member name (e.g. ``"MapRoom"``).
+        label: Human-readable in-game name (e.g. ``"Scanner Room"``).
+        tree_root: The actual crafting tree root path name used as a Path
+            prefix in CC3 files.  Usually identical to *value*, except for
+            ``MapRoom`` whose tree root is ``MapRoomFunctionality``.
+        below_zero_only: ``True`` if this station exists only in Below Zero
+            and is unavailable / cut content in Subnautica 1.
+    """
+
+    value: str
+    label: str
+    tree_root: str
+    below_zero_only: bool = False
+
+
+CRAFT_TREE_TYPES: tuple[CraftTreeEntry, ...] = (
+    CraftTreeEntry("Fabricator", "Standard Fabricator", "Fabricator"),
+    CraftTreeEntry("Workbench", "Modification Station", "Workbench"),
+    CraftTreeEntry("Constructor", "Mobile Vehicle Bay", "Constructor"),
+    CraftTreeEntry("CyclopsFabricator", "Cyclops Fabricator", "CyclopsFabricator"),
+    CraftTreeEntry("SeamothUpgrades", "Vehicle Upgrade Console", "SeamothUpgrades"),
+    CraftTreeEntry("MapRoom", "Scanner Room", "MapRoomFunctionality"),
+    CraftTreeEntry("Rocket", "Neptune Launch Platform", "Rocket"),
+    CraftTreeEntry(
+        "Centrifuge", "Centrifuge", "Centrifuge", below_zero_only=True,
+    ),
+)
+
+SN1_CRAFT_TREE_PATH_ROOTS: frozenset[str] = frozenset(
+    ct.tree_root for ct in CRAFT_TREE_TYPES if not ct.below_zero_only
+)
+
+
+# ---------------------------------------------------------------------------
+# CC3 enum value lists (authoritative, from C# source)
+# ---------------------------------------------------------------------------
+
+FABRICATOR_MODELS: tuple[str, ...] = ("Fabricator", "Workbench", "MoonPool")
+
+TECH_GROUPS: tuple[str, ...] = (
+    "Uncategorized",
+    "Resources",
+    "Survival",
+    "Personal",
+    "Machines",
+    "InteriorModules",
+    "InteriorPieces",
+    "ExteriorModules",
+    "BasePieces",
+    "Cyclops",
+    "Constructor",
+    "Miscellaneous",
+    "VehicleUpgrades",
+    "MapRoomUpgrades",
+)
+
+TECH_CATEGORIES: tuple[str, ...] = (
+    "Misc",
+    "BasicMaterials",
+    "AdvancedMaterials",
+    "Electronics",
+    "Water",
+    "CookedFood",
+    "CuredFood",
+    "FoodAndDrinks",
+    "Equipment",
+    "Tools",
+    "Machines",
+    "InteriorModule",
+    "InteriorPiece",
+    "ExteriorModule",
+    "BasePiece",
+    "BaseRoom",
+    "BaseWall",
+    "CyclopsUpgrades",
+    "Constructor",
+    "VehicleUpgrades",
+    "MapRoomUpgrades",
+    "Rocket",
+    "Workbench",
+)
+
+FOOD_MODELS: tuple[str, ...] = (
+    "None",
+    "BigFilteredWater",
+    "DisinfectedWater",
+    "FilteredWater",
+    "WaterFiltrationSuitWater",
+    "BulboTreePiece",
+    "PurpleVegetable",
+    "CreepvinePiece",
+    "JellyPlant",
+    "KooshChunk",
+    "HangingFruit",
+    "Melon",
+    "NutrientBlock",
+    "CookedPeeper",
+    "CookedHoleFish",
+    "CookedGarryFish",
+    "CookedReginald",
+    "CookedBladderfish",
+    "CookedHoverfish",
+    "CookedSpadefish",
+    "CookedBoomerang",
+    "CookedEyeye",
+    "CookedOculus",
+    "CookedHoopfish",
+    "CookedSpinefish",
+    "CookedLavaEyeye",
+    "CookedLavaBoomerang",
+    "CuredPeeper",
+    "CuredHoleFish",
+    "CuredGarryFish",
+    "CuredReginald",
+    "CuredBladderfish",
+    "CuredHoverfish",
+    "CuredSpadefish",
+    "CuredBoomerang",
+    "CuredEyeye",
+    "CuredOculus",
+    "CuredHoopfish",
+    "CuredSpinefish",
+    "CuredLavaEyeye",
+    "CuredLavaBoomerang",
+)
+
+
+# ---------------------------------------------------------------------------
 # Value objects
 # ---------------------------------------------------------------------------
 
@@ -187,6 +324,12 @@ class CustomFragmentCount:
 # ---------------------------------------------------------------------------
 # File-level container
 # ---------------------------------------------------------------------------
+
+
+# Type alias for non-recipe entry types (used in commands and GUI layers)
+NonRecipeEntry = (
+    CraftingTab | CustomFabricator | MovedRecipe | CustomSize | CustomBioFuel | CustomFragmentCount
+)
 
 
 @dataclass

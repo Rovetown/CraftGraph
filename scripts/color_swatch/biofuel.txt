@@ -1,0 +1,5 @@
+CustomBioFuels:
+(
+    ItemID: PurpleVegetable;
+    Energy: 200.0;
+);
