@@ -209,25 +209,28 @@ class TestMenuBar:
 
     def test_settings_dialog_opens(self, window, monkeypatch):
         """Verify _on_settings creates a QDialog with placeholder text."""
-        monkeypatch.setattr(QtWidgets.QDialog, "exec", lambda self: QtWidgets.QDialog.Accepted)
+        monkeypatch.setattr(QtWidgets.QDialog, "exec_", lambda self: QtWidgets.QDialog.Accepted)
         window._on_settings()
         # If we got here without error, the dialog was created successfully.
 
-    def test_settings_dialog_has_label(self, window, monkeypatch):
-        """Verify the Settings dialog contains 'coming soon' text."""
-        created_dialogs: list[QtWidgets.QDialog] = []
-        orig_init = QtWidgets.QDialog.__init__
+    def test_settings_dialog_has_tabs(self, window, monkeypatch):
+        """Verify the Settings dialog contains tabbed settings panes."""
+        from craftgraph.qt_gui import _SettingsDialog
+
+        created_dialogs: list[_SettingsDialog] = []
+        orig_init = _SettingsDialog.__init__
 
         def tracking_init(self_dialog, *args, **kwargs):
             orig_init(self_dialog, *args, **kwargs)
             created_dialogs.append(self_dialog)
 
-        monkeypatch.setattr(QtWidgets.QDialog, "__init__", tracking_init)
-        monkeypatch.setattr(QtWidgets.QDialog, "exec", lambda self: QtWidgets.QDialog.Accepted)
+        monkeypatch.setattr(_SettingsDialog, "__init__", tracking_init)
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: QtWidgets.QDialog.Accepted)
         window._on_settings()
         assert len(created_dialogs) == 1
-        labels = created_dialogs[0].findChildren(QtWidgets.QLabel)
-        assert any("coming soon" in lbl.text().lower() for lbl in labels)
+        tab_widget = created_dialogs[0].findChild(QtWidgets.QTabWidget)
+        assert tab_widget is not None
+        assert tab_widget.count() >= 3
 
 
 # ---------------------------------------------------------------------------
@@ -581,11 +584,7 @@ class TestOrphanTabRegistration:
         """When all ingredients match recipe nodes, orphan_nodes is empty."""
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n"
-            "(\n"
-            "    ItemID: Titanium;\n"
-            "    AmountCrafted: 1;\n"
-            ");\n",
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n    AmountCrafted: 1;\n);\n",
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
@@ -820,7 +819,7 @@ class TestUserPositionPreservation:
 class TestPositionPersistence:
     """Verify that node positions are saved to and loaded from disk."""
 
-    def test_save_writes_layout_sidecar(self, window, tmp_path):
+    def test_save_writes_layout_sidecar(self, window, tmp_path, monkeypatch):
         """Saving a file also writes position data to the sidecar file."""
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
@@ -833,6 +832,8 @@ class TestPositionPersistence:
         # Simulate a drag
         tab.user_positions["ModifiedRecipe:Titanium"] = (123.0, 456.0)
 
+        # Bypass the project-creation prompt (no project loaded)
+        monkeypatch.setattr(window, "_prompt_create_project", lambda: False)
         window._on_save()
 
         sidecar = tmp_path / ".craftgraph" / "layout.json"
@@ -1123,6 +1124,11 @@ def _create_test_png(path: "Path") -> None:
 class TestSpriteAutoAssign:
     """Verify that sprites from Assets/ are auto-assigned to nodes on load."""
 
+    @pytest.fixture(autouse=True)
+    def _clear_cc3_path(self, window):
+        """Ensure sprite scanning uses the test's tmp_path, not real CC3."""
+        window._subnautica_cc3_path = ""
+
     def test_load_assigns_sprite_from_assets_dir(self, window, tmp_path):
         """Node whose ItemID matches an Assets/ PNG gets a sprite."""
         recipe_file = tmp_path / "test.txt"
@@ -1249,6 +1255,11 @@ class TestSpriteAutoAssign:
 
 class TestSpriteContextMenu:
     """Verify sprite handling (Sprite node replaces old context menu entries)."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cc3_path(self, window):
+        """Ensure sprite scanning uses the test's tmp_path, not real CC3."""
+        window._subnautica_cc3_path = ""
 
     def test_set_sprite_action_removed(self, window):
         """Old 'Set Sprite...' context menu entry is no longer present."""
@@ -1490,6 +1501,7 @@ class TestNodeDeletion:
         # Selection must be empty after context-menu delete
         assert window.graph.selected_nodes() == []
 
+
 class TestNodeCreation:
     """Verify that creating new nodes clears prior selection."""
 
@@ -1684,9 +1696,7 @@ class TestCopyPasteDuplicate:
 
         # The fabricator's internal tabs list should have the duplicate
         fab = window._active_tab.parsed_file.custom_fabricators[0]
-        assert len(fab.tabs) == 2, (
-            f"Expected 2 tabs in fabricator, got {len(fab.tabs)}"
-        )
+        assert len(fab.tabs) == 2, f"Expected 2 tabs in fabricator, got {len(fab.tabs)}"
 
         # Code editor should contain both tabs
         text = window.code_editor.toPlainText()
@@ -1794,10 +1804,7 @@ class TestCopyPasteDuplicate:
         """Duplicating a node with a display_name appends the title suffix to it."""
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
-            "AliasRecipes:\n(\n"
-            '    ItemID: MyAlias;\n'
-            '    DisplayName: "Cool Alias";\n'
-            ");\n",
+            'AliasRecipes:\n(\n    ItemID: MyAlias;\n    DisplayName: "Cool Alias";\n);\n',
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
@@ -1809,7 +1816,7 @@ class TestCopyPasteDuplicate:
         duped = [n for n in window.graph.all_nodes() if n is not orig][0]
         # NodeGraphQt appends a suffix like " 1" to the title.
         # The display_name on the model should carry the same suffix.
-        suffix = duped.name()[len("MyAlias"):]
+        suffix = duped.name()[len("MyAlias") :]
         assert suffix, "Expected a duplication suffix on the node title"
         assert duped.model_ref.display_name == f"Cool Alias{suffix}"
 
@@ -2542,6 +2549,7 @@ class TestSmartPlacement:
         alpha.set_pos(0.0, 0.0)
 
         from craftgraph.qt_nodes import NodeKind
+
         window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="Beta")
         window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="Gamma")
 
@@ -3306,7 +3314,9 @@ class TestAutoSave:
             lambda path, text, backup=False: None,
         )
         shown: list[bool] = []
-        monkeypatch.setattr(window, "_show_validation_summary", lambda issues: shown.append(True) or True)
+        monkeypatch.setattr(
+            window, "_show_validation_summary", lambda issues: shown.append(True) or True
+        )
 
         window._auto_save_tick()
 
@@ -3525,7 +3535,9 @@ class TestNewFileDefault:
         # Verify the CC3 working dir would be used
         assert "WorkingFiles" in window._cc3_working_dir()
 
-    def test_new_file_default_uses_source_when_loaded(self, window: CraftGraphWindow, tmp_path) -> None:
+    def test_new_file_default_uses_source_when_loaded(
+        self, window: CraftGraphWindow, tmp_path
+    ) -> None:
         from pathlib import Path
 
         window._subnautica_cc3_path = "/fake/CC3"
@@ -3561,7 +3573,9 @@ class TestSpriteLoadingCc3Assets:
     """Sprite loading uses CC3 Assets/ as primary source when configured."""
 
     def test_sprite_scan_uses_cc3_assets_when_set(
-        self, window: CraftGraphWindow, tmp_path: Path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path: Path,
     ) -> None:
         # Set up a fake CC3 directory with an Assets/ folder containing a sprite
         cc3_dir = tmp_path / "CC3"
@@ -3583,7 +3597,9 @@ class TestSpriteLoadingCc3Assets:
         assert "titanium" in window._sprite_lookup
 
     def test_sprite_scan_falls_back_to_recipe_dir_when_cc3_unset(
-        self, window: CraftGraphWindow, tmp_path: Path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path: Path,
     ) -> None:
         window._subnautica_cc3_path = ""
 
@@ -3599,3 +3615,78 @@ class TestSpriteLoadingCc3Assets:
         window.load_recipes(recipe_dir)
 
         assert "copper" in window._sprite_lookup
+
+
+# ---------------------------------------------------------------------------
+# Welcome screen integration
+# ---------------------------------------------------------------------------
+
+
+class TestWelcomeScreen:
+    def test_main_stack_exists(self, window):
+        assert hasattr(window, "_main_stack")
+        from PySide6 import QtWidgets
+
+        assert isinstance(window._main_stack, QtWidgets.QStackedWidget)
+
+    def test_welcome_shown_by_default(self, window):
+        """With no file arg and default settings, welcome screen is index 0."""
+        assert window._main_stack.currentIndex() == 0
+
+    def test_show_editor_switches_to_index_1(self, window):
+        window._show_editor()
+        assert window._main_stack.currentIndex() == 1
+
+    def test_welcome_widget_is_index_0(self, window):
+        from craftgraph.welcome import WelcomeWidget
+
+        widget = window._main_stack.widget(0)
+        assert isinstance(widget, WelcomeWidget)
+
+
+class TestLaunchFlow:
+    def test_welcome_shown_when_setting_is_welcome(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("on_launch", "welcome")
+        win = CraftGraphWindow()
+        assert win._main_stack.currentIndex() == 0
+
+    def test_editor_shown_when_setting_is_empty(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("on_launch", "empty")
+        win = CraftGraphWindow()
+        assert win._main_stack.currentIndex() == 1
+
+    def test_missing_settings_defaults_to_welcome(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        win = CraftGraphWindow()
+        assert win._main_stack.currentIndex() == 0
+
+
+class TestSettingsDialogOnLaunch:
+    def test_dialog_has_on_launch_property(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        assert hasattr(dialog, "on_launch")
+
+    def test_on_launch_default_is_welcome(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, on_launch="welcome")
+        assert dialog.on_launch == "welcome"
+
+    def test_on_launch_reads_combo_selection(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, on_launch="empty")
+        assert dialog.on_launch == "empty"

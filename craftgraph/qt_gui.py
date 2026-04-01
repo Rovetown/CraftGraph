@@ -21,16 +21,30 @@ import types
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from craftgraph import app_dirs
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
 from craftgraph.minimap import MinimapWidget
 from craftgraph.models import SN1_CRAFT_TREE_PATH_ROOTS, BlockType, ParsedFile
+from craftgraph.paths import (
+    cc3_assets,
+    cc3_working_files,
+    default_project_folder,
+    detect_subnautica_cc3_path,
+)
+from craftgraph.project import (
+    ProjectFile,
+    ProjectLoadError,
+    load_project,
+    new_project,
+    save_project,
+)
 from craftgraph.qt_nodes import (
     IDENTIFIER,
     NODE_REGISTRY,
@@ -40,8 +54,7 @@ from craftgraph.qt_nodes import (
     OrphanIngredientNode,
     all_node_classes,
 )
-from craftgraph.paths import cc3_assets, cc3_working_files, default_project_folder, detect_subnautica_cc3_path
-from craftgraph.project import ProjectFile, ProjectLoadError, load_project, new_project, save_project
+from craftgraph.recent import RecentFiles
 from craftgraph.save_utils import save_with_backup
 from craftgraph.serializer import serialize_file
 from craftgraph.sprite_loader import resolve_sprite, scan_assets_dir
@@ -72,7 +85,7 @@ if TYPE_CHECKING:
     from craftgraph.pin_registry import FieldPin
     from craftgraph.qt_variable_nodes import VariableNodeKind
 
-_DIALOG_FLAGS = QtCore.Qt.WindowType.Popup
+_DIALOG_FLAGS = QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.FramelessWindowHint
 
 _DIALOG_STYLE = (
     "QDialog {"
@@ -105,6 +118,7 @@ def _pick_from_list(
     dlg.move(QtGui.QCursor.pos())
     ok = dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted
     return dlg.textValue(), ok
+
 
 _POPUP_MAX_VISIBLE = 12
 _NEW_ITEM_PREFIX = "New item: "
@@ -263,16 +277,16 @@ class _ViewerDropFilter(QtCore.QObject):
                 item_id = getattr(node.model_ref, "tab_id", None)
             if item_id:
                 self._window._manual_sprites[item_id.lower()] = png_path
-            self._window.statusBar().showMessage(
-                f"Set sprite on {node.name()}: {png_path.name}"
-            )
+            self._window.statusBar().showMessage(f"Set sprite on {node.name()}: {png_path.name}")
         else:
             # Drop on empty canvas: create a SpriteNode
             tab = self._window._active_tab
             node_cls = NODE_REGISTRY[NodeKind.SPRITE]
             type_ = f"{IDENTIFIER}.{node_cls.__name__}"
             sx, sy = self._window._find_free_position(
-                tab.graph, scene_pos.x(), scene_pos.y(),
+                tab.graph,
+                scene_pos.x(),
+                scene_pos.y(),
             )
             tab.graph.clear_selection()
             new_node = tab.graph.create_node(
@@ -282,12 +296,11 @@ class _ViewerDropFilter(QtCore.QObject):
             )
             new_node.set_property("file_path", str(png_path))
             self._window._attach_node_completers(new_node)
-            self._window.statusBar().showMessage(
-                f"Created Sprite node: {png_path.name}"
-            )
+            self._window.statusBar().showMessage(f"Created Sprite node: {png_path.name}")
 
     def _node_from_item(
-        self, item: object,
+        self,
+        item: object,
     ) -> CraftGraphBaseNode | None:
         """Walk up the QGraphicsItem hierarchy to find a CraftGraphBaseNode."""
         from NodeGraphQt.qgraphics.node_abstract import AbstractNodeItem
@@ -362,6 +375,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         "  border: 1px solid rgb(80, 80, 80); }"
     )
 
+    _ON_LAUNCH_VALUES: ClassVar[list[str]] = ["last_project", "welcome", "empty"]
+
     def __init__(
         self,
         parent: QtWidgets.QWidget | None = None,
@@ -371,6 +386,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         auto_save_interval: int = 60,
         default_project_folder: str = "",
         subnautica_cc3_path: str = "",
+        recent_max_entries: int = 10,
+        on_launch: str = "welcome",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -387,6 +404,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._auto_save_interval_spin: QtWidgets.QSpinBox | None = None
         self._project_folder_edit: QtWidgets.QLineEdit | None = None
         self._cc3_path_edit: QtWidgets.QLineEdit | None = None
+        self._recent_spin: QtWidgets.QSpinBox | None = None
+        self._on_launch_combo: QtWidgets.QComboBox | None = None
         tabs.addTab(
             self._build_general_tab(
                 backup_on_save,
@@ -394,6 +413,8 @@ class _SettingsDialog(QtWidgets.QDialog):
                 auto_save_interval=auto_save_interval,
                 default_project_folder=default_project_folder,
                 subnautica_cc3_path=subnautica_cc3_path,
+                recent_max_entries=recent_max_entries,
+                on_launch=on_launch,
             ),
             "General",
         )
@@ -441,6 +462,19 @@ class _SettingsDialog(QtWidgets.QDialog):
             return self._cc3_path_edit.text()
         return ""
 
+    @property
+    def recent_max_entries(self) -> int:
+        if self._recent_spin is not None:
+            return self._recent_spin.value()
+        return 10
+
+    @property
+    def on_launch(self) -> str:
+        if self._on_launch_combo is not None:
+            idx = self._on_launch_combo.currentIndex()
+            return self._ON_LAUNCH_VALUES[idx]
+        return "welcome"
+
     # -- Helpers --------------------------------------------------------------
 
     @staticmethod
@@ -462,8 +496,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         btn = QtWidgets.QPushButton("")
         btn.setFixedSize(size, size)
         btn.setStyleSheet(
-            f"background: {color};"
-            " border: 1px solid rgb(120,120,120); border-radius: 3px;"
+            f"background: {color}; border: 1px solid rgb(120,120,120); border-radius: 3px;"
         )
         return btn
 
@@ -477,7 +510,9 @@ class _SettingsDialog(QtWidgets.QDialog):
     def _browse_cc3_path(self) -> None:
         """Open a directory picker for the Subnautica CC3 plugin folder."""
         start = self._cc3_path_edit.text() if self._cc3_path_edit else ""
-        chosen = QtWidgets.QFileDialog.getExistingDirectory(self, "Select CustomCraft3 Folder", start)
+        chosen = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Select CustomCraft3 Folder", start
+        )
         if chosen and self._cc3_path_edit is not None:
             self._cc3_path_edit.setText(chosen)
 
@@ -493,6 +528,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         auto_save_interval: int = 60,
         default_project_folder: str = "",
         subnautica_cc3_path: str = "",
+        recent_max_entries: int = 10,
+        on_launch: str = "welcome",
     ) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
@@ -503,11 +540,17 @@ class _SettingsDialog(QtWidgets.QDialog):
         sl = QtWidgets.QFormLayout(startup)
         on_open = QtWidgets.QComboBox()
         on_open.addItems(["Open last project", "Show welcome screen", "Start empty"])
+        try:
+            idx = self._ON_LAUNCH_VALUES.index(on_launch)
+        except ValueError:
+            idx = 1  # default to "welcome"
+        on_open.setCurrentIndex(idx)
+        self._on_launch_combo = on_open
         sl.addRow("On launch:", on_open)
-        recent_spin = QtWidgets.QSpinBox()
-        recent_spin.setRange(1, 25)
-        recent_spin.setValue(10)
-        sl.addRow("Recent files to remember:", recent_spin)
+        self._recent_spin = QtWidgets.QSpinBox()
+        self._recent_spin.setRange(1, 25)
+        self._recent_spin.setValue(recent_max_entries)
+        sl.addRow("Recent files to remember:", self._recent_spin)
         col.addWidget(startup)
 
         # Saving
@@ -613,12 +656,14 @@ class _SettingsDialog(QtWidgets.QDialog):
         access = QtWidgets.QGroupBox("Accessibility")
         al = QtWidgets.QFormLayout(access)
         cb_mode = QtWidgets.QComboBox()
-        cb_mode.addItems([
-            "None (default)",
-            "Deuteranopia (red-green)",
-            "Protanopia (red-green variant)",
-            "Tritanopia (blue-yellow)",
-        ])
+        cb_mode.addItems(
+            [
+                "None (default)",
+                "Deuteranopia (red-green)",
+                "Protanopia (red-green variant)",
+                "Tritanopia (blue-yellow)",
+            ]
+        )
         al.addRow("Colorblind mode:", cb_mode)
         ui_scale = QtWidgets.QComboBox()
         ui_scale.addItems(["100%", "110%", "125%", "150%", "175%", "200%"])
@@ -854,9 +899,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         # Custom IDs
         custom = QtWidgets.QGroupBox("Custom TechType IDs")
         cl = QtWidgets.QVBoxLayout(custom)
-        desc = QtWidgets.QLabel(
-            "Add custom IDs that appear in autocomplete across all files."
-        )
+        desc = QtWidgets.QLabel("Add custom IDs that appear in autocomplete across all files.")
         desc.setWordWrap(True)
         desc.setStyleSheet("color: rgb(160, 160, 160); font-size: 9pt;")
         cl.addWidget(desc)
@@ -975,9 +1018,7 @@ class _SettingsDialog(QtWidgets.QDialog):
             ("Find node by ID", "Ctrl+F"),
         ]
         for label, default in bindings:
-            key_edit = QtWidgets.QKeySequenceEdit(
-                QtGui.QKeySequence(default)
-            )
+            key_edit = QtWidgets.QKeySequenceEdit(QtGui.QKeySequence(default))
             sl.addRow(f"{label}:", key_edit)
         col.addWidget(shortcuts)
 
@@ -1797,6 +1838,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._auto_save_timer = QtCore.QTimer(self)
         self._auto_save_timer.timeout.connect(self._auto_save_tick)
         self._project: ProjectFile | None = None
+        app_dirs.migrate_legacy_config()
+        self._recent = RecentFiles(app_dirs.recent_files_path())
 
         # -- Build UI ---------------------------------------------------------
         self._setup_menu_bar()
@@ -1814,6 +1857,21 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             "  border: 1px solid rgb(80, 80, 80);"
             "}"
         )
+
+        # -- Launch flow: decide what to show on startup --
+        on_launch = app_dirs.load_setting("on_launch", "welcome")
+        if on_launch == "empty":
+            self._show_editor()
+        elif on_launch == "last_project":
+            entries = self._recent.entries
+            if entries and Path(entries[0].path).exists():
+                first = entries[0]
+                if first.entry_type == "project":
+                    self.open_project_file(Path(first.path))
+                else:
+                    self.load_recipes(Path(first.path))
+                    self._recent.add(Path(first.path), "folder")
+                    self._rebuild_recent_menu()
 
     # -- Properties -----------------------------------------------------------
 
@@ -1880,6 +1938,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         open_project_action = QtGui.QAction("Open Pro&ject...", self)
         open_project_action.triggered.connect(self._on_open_project)
         file_menu.addAction(open_project_action)
+
+        self._recent_menu = file_menu.addMenu("Open &Recent")
+        self._rebuild_recent_menu()
 
         file_menu.addSeparator()
 
@@ -1949,17 +2010,38 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_central_widget(self) -> None:
         central = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(central)
+        root_layout = QtWidgets.QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        self._main_stack = QtWidgets.QStackedWidget()
+
+        # -- Index 0: Welcome screen --
+        from craftgraph.welcome import WelcomeWidget
+
+        on_launch = app_dirs.load_setting("on_launch", "welcome")
+        self._welcome = WelcomeWidget(
+            self._recent.entries,
+            on_open_recent=self._welcome_open_recent,
+            on_new_project=self._on_new_project,
+            on_open_folder=self._on_open_folder,
+            on_open_project=self._on_open_project,
+            on_startup_toggle=self._on_startup_toggle,
+            show_on_startup=(on_launch == "welcome"),
+        )
+        self._main_stack.addWidget(self._welcome)
+
+        # -- Index 1: Editor (tab bar + splitter) --
+        editor_container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(editor_container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Tab bar (file tabs across the top)
         self._tab_bar = QtWidgets.QTabBar()
         self._tab_bar.setTabsClosable(False)
         self._tab_bar.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self._tab_bar)
 
-        # Splitter with two stacked widgets
         self._splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
 
         # Wrap graph_stack in a plain container so the minimap can overlay
@@ -1977,11 +2059,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._splitter.setSizes([980, 420])
         layout.addWidget(self._splitter)
 
+        self._main_stack.addWidget(editor_container)
+
         # Minimap overlay (anchored to bottom-right of graph container)
         self._minimap = MinimapWidget(parent=self._graph_container)
         self._minimap.raise_()
         self._graph_container.installEventFilter(self)
 
+        root_layout.addWidget(self._main_stack)
         self.setCentralWidget(central)
 
         # Create placeholder tab (shown before files are loaded)
@@ -2265,9 +2350,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if tab.parsed_file is None:
                 continue
             tab_key = tab.parsed_file.source_path.stem
-            positions[tab_key] = {
-                k: [v[0], v[1]] for k, v in tab.user_positions.items()
-            }
+            positions[tab_key] = {k: [v[0], v[1]] for k, v in tab.user_positions.items()}
         self._project.node_positions = positions
 
         editor_state: dict[str, dict[str, object]] = {}
@@ -2291,8 +2374,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             "Would you like to save this as a CraftGraph project?\n\n"
             "A project file remembers your open files, node positions,\n"
             "and editor state across sessions.",
-            QtWidgets.QMessageBox.StandardButton.Yes
-            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
             QtWidgets.QMessageBox.StandardButton.Yes,
         )
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
@@ -2302,7 +2384,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
             return False
 
-        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        docs_dir = app_dirs.documents_dir()
         cc3_path = self._source_path
         if cc3_path.is_file():
             cc3_path = cc3_path.parent
@@ -2413,7 +2495,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._editor_stack.addWidget(tab.editor)
         self._tab_bar.addTab(pf.source_path.stem)
         self._tab_bar.setTabToolTip(
-            self._tab_bar.count() - 1, str(pf.source_path),
+            self._tab_bar.count() - 1,
+            str(pf.source_path),
         )
 
         # Switch to the new tab
@@ -2424,9 +2507,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Spawn a starter node for the block type
         self._spawn_starter_node(pf.block_type)
 
-        self.statusBar().showMessage(
-            f"New file: {pf.source_path.name} ({pf.block_type.value})"
-        )
+        self.statusBar().showMessage(f"New file: {pf.source_path.name} ({pf.block_type.value})")
+        self._show_editor()
 
     def _on_new_project(self) -> None:
         """Open the New Project dialog and scaffold a CC3 mod directory."""
@@ -2455,7 +2537,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             created_files.append(filename)
 
         # Create the .craftgraph project file
-        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        docs_dir = app_dirs.documents_dir()
         docs_dir.mkdir(parents=True, exist_ok=True)
         project = new_project(
             project_name,
@@ -2481,10 +2563,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._tab_bar.setCurrentIndex(0)
             self._on_tab_changed(0)
 
+        self._recent.add(Path(project.project_path), "project")
+        self._rebuild_recent_menu()
         self.setWindowTitle(f"CraftGraph - {project.name}")
         self.statusBar().showMessage(
             f"Created project '{project.name}' ({len(block_types)} files)"
         )
+        self._show_editor()
 
     def _on_open_folder(self) -> None:
         directory = QtWidgets.QFileDialog.getExistingDirectory(
@@ -2494,6 +2579,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         if directory:
             self.load_recipes(Path(directory))
+            self._recent.add(Path(directory), "folder")
+            self._rebuild_recent_menu()
+            self._show_editor()
 
     def _on_open_file(self) -> None:
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -2504,10 +2592,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         if file_path:
             self.load_recipes(Path(file_path))
+            self._recent.add(Path(file_path).parent, "folder")
+            self._rebuild_recent_menu()
+            self._show_editor()
 
     def _on_open_project(self) -> None:
-        """Open a .craftgraph project file and restore workspace state."""
-        docs_dir = Path.home() / "Documents" / "CraftGraph"
+        """Show a file dialog and open the selected .craftgraph project."""
+        docs_dir = app_dirs.documents_dir()
         docs_dir.mkdir(parents=True, exist_ok=True)
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
@@ -2517,8 +2608,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         if not file_path:
             return
+        self.open_project_file(Path(file_path))
+
+    def open_project_file(self, path: Path) -> None:
+        """Load a .craftgraph project file and restore workspace state.
+
+        Called from the menu dialog, from recent-files clicks, and from
+        ``launch_qt_gui`` when a ``.craftgraph`` file is passed on the
+        command line (e.g. double-click file association).
+        """
         try:
-            project = load_project(Path(file_path))
+            project = load_project(path)
         except ProjectLoadError as exc:
             QtWidgets.QMessageBox.critical(self, "Project Load Error", str(exc))
             return
@@ -2537,6 +2637,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             save_project(project)
 
         self._project = project
+        self._recent.add(path, "project")
+        self._rebuild_recent_menu()
 
         # Load recipes from CC3 path
         self.load_recipes(cc3_path)
@@ -2590,6 +2692,96 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             )
         else:
             self.statusBar().showMessage(f"Opened project '{project.name}'")
+        self._show_editor()
+
+    # -- Welcome screen -------------------------------------------------------
+
+    def _show_editor(self) -> None:
+        """Switch from welcome screen to the editor view."""
+        self._main_stack.setCurrentIndex(1)
+
+    def _welcome_open_recent(self, path: str, entry_type: str) -> None:
+        """Handle a click on a recent entry in the welcome screen."""
+        target = Path(path)
+        if not target.exists():
+            self.statusBar().showMessage("Path no longer exists")
+            self._recent.remove(target)
+            self._rebuild_recent_menu()
+            return
+        if entry_type == "project":
+            self.open_project_file(target)
+        else:
+            self.load_recipes(target)
+            self._recent.add(target, "folder")
+            self._rebuild_recent_menu()
+
+    def _on_startup_toggle(self, checked: bool) -> None:
+        """Handle the 'Don't show on startup' checkbox toggle."""
+        value = "empty" if checked else "welcome"
+        app_dirs.save_setting("on_launch", value)
+
+    # -- Recent files ---------------------------------------------------------
+
+    def _rebuild_recent_menu(self) -> None:
+        """Repopulate the Open Recent submenu from the RecentFiles store."""
+        menu = self._recent_menu
+        menu.clear()
+
+        entries = self._recent.entries
+        if not entries:
+            no_recent = menu.addAction("(No recent files)")
+            no_recent.setEnabled(False)
+            return
+
+        for entry in entries:
+            path = Path(entry.path)
+            label = path.stem if entry.entry_type == "project" else path.name
+            action = menu.addAction(label)
+            action.setToolTip(str(path))
+            if not path.exists():
+                action.setEnabled(False)
+            action.setData(entry)
+            action.triggered.connect(lambda checked=False, e=entry: self._on_recent_entry(e))
+
+        menu.addSeparator()
+        clear_action = menu.addAction("Clear Recent")
+        clear_action.triggered.connect(self._on_clear_recent)
+
+    def _on_recent_entry(self, entry: object) -> None:
+        """Handle clicking a recent-files entry."""
+        from craftgraph.recent import RecentEntry
+
+        if not isinstance(entry, RecentEntry):
+            return
+        path = Path(entry.path)
+        if not path.exists():
+            self._recent.remove(path)
+            self._rebuild_recent_menu()
+            self.statusBar().showMessage(f"Path not found, removed from recent files: {path}")
+            return
+
+        if entry.entry_type == "project":
+            try:
+                project = load_project(path)
+            except ProjectLoadError as exc:
+                QtWidgets.QMessageBox.critical(self, "Project Load Error", str(exc))
+                self._recent.remove(path)
+                self._rebuild_recent_menu()
+                return
+            self._project = project
+            self.load_recipes(Path(project.cc3_path))
+            self.setWindowTitle(f"CraftGraph - {project.name}")
+            self.statusBar().showMessage(f"Opened project '{project.name}'")
+        else:
+            self.load_recipes(path)
+
+        self._recent.add(path, entry.entry_type)
+        self._rebuild_recent_menu()
+
+    def _on_clear_recent(self) -> None:
+        """Clear the recent-files list."""
+        self._recent.clear()
+        self._rebuild_recent_menu()
 
     def _collect_validation_issues(self, tab: FileTab | None = None) -> list[str]:
         """Collect all validation issues for the given tab (or active tab)."""
@@ -2602,7 +2794,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for node in tab.graph.all_nodes():
             if not isinstance(node, CraftGraphBaseNode):
                 continue
-            node_label = node.get_property("item_id") or node.get_property("tab_id") or node.NODE_NAME
+            node_label = (
+                node.get_property("item_id") or node.get_property("tab_id") or node.NODE_NAME
+            )
             for fp in node.FIELD_REGISTRY:
                 if fp.pin_type == PinType.INGREDIENT_LIST:
                     continue
@@ -2612,7 +2806,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     issues.append(f"{node_label}: {fp.label} is required but empty")
                 if fp.name in self._PATH_WIDGET_NAMES and not empty and isinstance(value, str):
                     if value.strip() not in valid_paths:
-                        issues.append(f"{node_label}: Path '{value}' does not match any known fabricator or tab")
+                        issues.append(
+                            f"{node_label}: Path '{value}' does not match any known fabricator or tab"
+                        )
             for a, b in node.PAIRED_FIELDS:
                 va = node.get_property(a)
                 vb = node.get_property(b)
@@ -2623,15 +2819,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     fp_b = node._get_field_pin(b)
                     la = fp_a.label if fp_a else a
                     lb = fp_b.label if fp_b else b
-                    issues.append(f"{node_label}: {la} and {lb} should both be set or both be empty")
+                    issues.append(
+                        f"{node_label}: {la} and {lb} should both be set or both be empty"
+                    )
 
         # Model-level checks (unknown ingredients, broken parent_tab_path, etc.)
         if tab.parsed_file is not None:
             from craftgraph.sync import validate_parsed_files
 
-            known_ids = frozenset(
-                i.lower() for i in self._get_id_words()
-            )
+            known_ids = frozenset(i.lower() for i in self._get_id_words())
             issues.extend(validate_parsed_files([tab.parsed_file], known_ids))
 
         return issues
@@ -2744,6 +2940,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             auto_save_interval=self._auto_save_interval,
             default_project_folder=self._default_project_folder,
             subnautica_cc3_path=self._subnautica_cc3_path,
+            recent_max_entries=self._recent.max_entries,
+            on_launch=app_dirs.load_setting("on_launch", "welcome"),
         )
         dialog.exec_()
         self._backup_on_save = dialog.backup_on_save
@@ -2753,6 +2951,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         self._default_project_folder = dialog.default_project_folder
         self._subnautica_cc3_path = dialog.subnautica_cc3_path
+        self._recent.max_entries = dialog.recent_max_entries
+        self._rebuild_recent_menu()
+        app_dirs.save_setting("on_launch", dialog.on_launch)
 
     def _cc3_working_dir(self) -> str:
         """CC3 WorkingFiles/ path if configured, else empty string."""
@@ -2784,19 +2985,18 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(duration_ms, self._clear_status_style)
 
     def _on_cycle_rejected(
-        self, consumer_id: str, ingredient_id: str, cycle_path: list[str],
+        self,
+        consumer_id: str,
+        ingredient_id: str,
+        cycle_path: list[str],
     ) -> None:
         """Show a red-background status bar warning when a connection would create a cycle."""
         path_str = " -> ".join(cycle_path)
-        self._show_error_status(
-            f"Rejected: circular dependency detected ({path_str})"
-        )
+        self._show_error_status(f"Rejected: circular dependency detected ({path_str})")
 
     def _on_reassignment_warning(self, item_id: str, old_path: str) -> None:
         """Show a warning when a recipe is reassigned from an existing path."""
-        self._show_error_status(
-            f"Recipe '{item_id}' reassigned from '{old_path}'"
-        )
+        self._show_error_status(f"Recipe '{item_id}' reassigned from '{old_path}'")
 
     def _clear_status_style(self) -> None:
         """Reset the status bar to its default style."""
@@ -2838,12 +3038,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 # Top-left AABB overlap: two rects overlap when
                 # each left edge is left of the other's right edge
                 # and each top edge is above the other's bottom edge.
-                if (
-                    x < nx + nw
-                    and x + w_est > nx
-                    and y < ny + nh
-                    and y + h_est > ny
-                ):
+                if x < nx + nw and x + w_est > nx and y < ny + nh and y + h_est > ny:
                     collision = True
                     break
             if not collision:
@@ -3042,12 +3237,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             # serialised paths stay unique across copies.
             base_id = getattr(model, "item_id", None) or getattr(model, "tab_id", "")
             node_title = node.name()
-            if (
-                base_id
-                and node_title.startswith(base_id)
-                and len(node_title) > len(base_id)
-            ):
-                suffix = node_title[len(base_id):]
+            if base_id and node_title.startswith(base_id) and len(node_title) > len(base_id):
+                suffix = node_title[len(base_id) :]
                 if hasattr(model, "display_name") and model.display_name:
                     model.display_name += suffix
                     node.set_property("display_name", model.display_name)
@@ -3316,7 +3507,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             ("Promote Ingredient to Recipe...", self._on_promote_ingredient),
         ]:
             cmd = nodes_menu.add_command(
-                op_name, func=op_func, node_class=ModifiedRecipeNode,
+                op_name,
+                func=op_func,
+                node_class=ModifiedRecipeNode,
             )
             if op_name in OPERATION_DESCRIPTIONS:
                 cmd.qaction.setToolTip(OPERATION_DESCRIPTIONS[op_name])
@@ -3346,9 +3539,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             "Ingredient",
             func=lambda g: self._create_orphan_ingredient(),
         )
-        cmd.qaction.setToolTip(
-            format_tooltip("Ingredient", NODE_DESCRIPTIONS["Ingredient"])
-        )
+        cmd.qaction.setToolTip(format_tooltip("Ingredient", NODE_DESCRIPTIONS["Ingredient"]))
 
         recipes_menu = add_menu.add_menu("Recipes")
         for kind, name in [
@@ -3359,7 +3550,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         ]:
             desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = recipes_menu.add_command(
-                name, func=self._make_create_callback(kind),
+                name,
+                func=self._make_create_callback(kind),
             )
             cmd.qaction.setToolTip(format_tooltip(name, desc))
 
@@ -3370,7 +3562,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         ]:
             desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = containers_menu.add_command(
-                name, func=self._make_create_callback(kind),
+                name,
+                func=self._make_create_callback(kind),
             )
             cmd.qaction.setToolTip(format_tooltip(name, desc))
 
@@ -3384,7 +3577,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         ]:
             desc = NODE_DESCRIPTIONS.get(name, "")
             cmd = other_menu.add_command(
-                name, func=self._make_create_callback(kind),
+                name,
+                func=self._make_create_callback(kind),
             )
             cmd.qaction.setToolTip(format_tooltip(name, desc))
 
@@ -3405,7 +3599,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         ]:
             desc = VARIABLE_DESCRIPTIONS.get(name, "")
             cmd = variables_menu.add_command(
-                name, func=self._make_var_create_cb(var_kind),
+                name,
+                func=self._make_var_create_cb(var_kind),
             )
             cmd.qaction.setToolTip(format_tooltip(name, desc))
 
@@ -3424,11 +3619,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
             sx, sy = CraftGraphWindow._find_free_position(
-                graph, scene_pos.x(), scene_pos.y(),
+                graph,
+                scene_pos.x(),
+                scene_pos.y(),
             )
             graph.clear_selection()
             node = graph.create_node(
-                type_name, name=cls.NODE_NAME,
+                type_name,
+                name=cls.NODE_NAME,
                 pos=[sx, sy],
             )
             tab = self._active_tab
@@ -3729,7 +3927,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
             scene_pos = viewer.mapToScene(cursor_pos)
             sx, sy = self._find_free_position(
-                tab.graph, scene_pos.x(), scene_pos.y(),
+                tab.graph,
+                scene_pos.x(),
+                scene_pos.y(),
             )
             tab.graph.clear_selection()
             node = tab.graph.create_node(
@@ -3861,9 +4061,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             # Append to the first fabricator's nested list
             fabs = pf.custom_fabricators
             if not fabs:
-                self._show_error_status(
-                    "No fabricator to nest into -- add a Fabricator first"
-                )
+                self._show_error_status("No fabricator to nest into -- add a Fabricator first")
                 return
             target_fab = fabs[0]
             fab_attr = fab_nestable[block_type]
@@ -3875,7 +4073,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         cursor_pos = viewer.mapFromGlobal(QtGui.QCursor.pos())
         scene_pos = viewer.mapToScene(cursor_pos)
         sx, sy = self._find_free_position(
-            tab.graph, scene_pos.x(), scene_pos.y(),
+            tab.graph,
+            scene_pos.x(),
+            scene_pos.y(),
         )
 
         node_cls = NODE_REGISTRY[kind]
@@ -4182,7 +4382,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self.setToolTip(tooltip)  # type: ignore[attr-defined]
 
         node.view._tooltip_disable = types.MethodType(  # type: ignore[attr-defined]
-            _patched_tooltip_disable, node.view,
+            _patched_tooltip_disable,
+            node.view,
         )
 
     def _create_file_tab(
@@ -4368,7 +4569,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._editor_stack.addWidget(tab.editor)
             self._tab_bar.addTab(pf.source_path.stem)
             self._tab_bar.setTabToolTip(
-                self._tab_bar.count() - 1, str(pf.source_path),
+                self._tab_bar.count() - 1,
+                str(pf.source_path),
             )
 
         # Apply sprites across all tabs
@@ -4403,6 +4605,7 @@ def _install_message_filter() -> None:
     deletion during mouse tracking).  The event is silently dropped by
     Qt -- the warning is purely diagnostic console noise.
     """
+
     def _handler(
         mode: QtCore.QtMsgType,
         context: QtCore.QMessageLogContext,
@@ -4419,18 +4622,27 @@ def _install_message_filter() -> None:
 def launch_qt_gui(recipe_path: Path | None = None) -> None:
     """Create the QApplication and show the CraftGraph main window.
 
-    Called by the ``craftgraph qt-gui`` CLI command.
+    Called by the ``craftgraph gui`` CLI command.
     """
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication(sys.argv)
+
+    # Set application icon (taskbar, title bar, ALT+TAB).
+    icon_path = app_dirs.bundled_icon_path()
+    if icon_path.exists():
+        app.setWindowIcon(QtGui.QIcon(str(icon_path)))
 
     _install_message_filter()
 
     window = CraftGraphWindow()
 
     if recipe_path is not None:
-        window.load_recipes(recipe_path)
+        if recipe_path.suffix == ".craftgraph":
+            window.open_project_file(recipe_path)
+        else:
+            window.load_recipes(recipe_path)
+        window._show_editor()
 
     window.show()
     app.exec()

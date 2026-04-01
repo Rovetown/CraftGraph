@@ -870,7 +870,7 @@ needs to stay in sync with the others in real time.
   Silent OS-default fallback when CC3 path is unset. Node editor path resolution works
   indirectly: the CC3 default paths feed file loading, which populates the nodes that
   crafting-tree path validation resolves against.
-- [ ] **Project file format (.craftgraph):** Workspace bookmark stored as a single binary
+- [x] **Project file format (.craftgraph):** Workspace bookmark stored as a single binary
   file using **MessagePack** serialization (pip: `msgpack`). Lives in the project folder
   (`~/Documents/CraftGraph/`). Does NOT contain recipe data (recipes stay in CC3 folder).
   `[high complexity | needs file format design, serialization, restore logic]`
@@ -898,9 +898,15 @@ needs to stay in sync with the others in real time.
     (sidecar `.craftgraph/layout.json` for positions, no project-level state)
   - Double-clicking a `.craftgraph` file in Explorer should open the app (file association,
     later step)
-- [ ] **Recent files:** Configurable max recent-files count
+- [x] **File association (.craftgraph):** Register `.craftgraph` as a file type so
+  double-clicking a project file in Windows Explorer launches CraftGraph and loads
+  the project. Cross-platform: Windows (registry), Linux (XDG MIME + .desktop),
+  macOS (Info.plist guidance). CLI: `craftgraph register` / `craftgraph unregister`.
+  Icon infrastructure wired; icon files pending.
+  `[medium complexity | Windows registry, CLI entry point, icon asset]`
+- [x] **Recent files:** Configurable max recent-files count
   `[medium complexity | needs recent-files list tracking, used by startup]`
-- [ ] **Startup behavior:** On-launch action (open last project / welcome screen / empty)
+- [x] **Startup behavior:** On-launch action (open last project / welcome screen / empty)
   `[high complexity | depends on recent-files + default paths being wired first]`
 
 ---
