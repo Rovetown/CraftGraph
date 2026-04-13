@@ -3577,6 +3577,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             node_editor=self._ne_settings,
             code_editor=self._ce_settings,
             autocomplete=self._ac_settings,
+            project_custom_ids=(
+                self._effective_custom_ids() if self._project is not None else None
+            ),
         )
         dialog.exec_()
         self._backup_on_save = dialog.backup_on_save
@@ -3606,6 +3609,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Apply and persist autocomplete settings
         self._ac_settings = dialog.autocomplete_settings
         self._apply_autocomplete_settings(self._ac_settings)
+
+        # Sync project-scope custom IDs back
+        if self._project is not None:
+            proj_ids = dialog.project_custom_ids
+            if proj_ids is not None:
+                self._project.settings_overrides["custom_ids"] = proj_ids
 
         # Persist all settings
         app_dirs.save_setting("backup_on_save", dialog.backup_on_save)
@@ -4078,6 +4087,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
         return CodeEditorSettings()
+
+    def _effective_custom_ids(self) -> list[str]:
+        """Return the active custom ID list: project scope if loaded, else global."""
+        if self._project is not None:
+            raw = self._project.settings_overrides.get("custom_ids")
+            if isinstance(raw, list):
+                return [s for s in raw if isinstance(s, str)]
+            return []
+        return list(self._ac_settings.custom_ids)
 
     def _apply_autocomplete_settings(self, s: AutocompleteSettings) -> None:
         """Apply autocomplete preferences to all editors and node popup."""
@@ -5334,8 +5352,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if self._ac_settings.include_mod_compat_ids:
                 ids |= load_mod_compat_ids()
             # include_project_ids: placeholder for future project-extracted IDs
-            if self._ac_settings.custom_ids:
-                ids |= set(self._ac_settings.custom_ids)
+            effective = self._effective_custom_ids()
+            if effective:
+                ids |= set(effective)
             self._id_words = sorted(ids, key=str.lower)
         return self._id_words
 

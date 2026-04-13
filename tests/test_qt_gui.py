@@ -4870,3 +4870,65 @@ class TestCustomIdScope:
 
         dialog = _SettingsDialog(project_custom_ids=None)
         assert dialog.project_custom_ids is None
+
+
+class TestProjectCustomIdPersistence:
+    """CraftGraphWindow reads/writes custom IDs from project settings_overrides."""
+
+    def test_effective_custom_ids_returns_global_when_no_project(
+        self, window: CraftGraphWindow,
+    ) -> None:
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import AutocompleteSettings
+
+        window._project = None
+        window._ac_settings = AutocompleteSettings(custom_ids=["GlobalId"])
+        assert window._effective_custom_ids() == ["GlobalId"]
+
+    def test_effective_custom_ids_returns_project_when_project_loaded(
+        self, window: CraftGraphWindow,
+    ) -> None:
+        from craftgraph.project import ProjectFile
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import AutocompleteSettings
+
+        window._project = ProjectFile(
+            version=1, name="test", description="", cc3_path="",
+            project_path="", open_files=[], active_tab="",
+            node_positions={}, editor_state={},
+            settings_overrides={"custom_ids": ["ProjectId"]},
+        )
+        window._ac_settings = AutocompleteSettings(custom_ids=["GlobalId"])
+        assert window._effective_custom_ids() == ["ProjectId"]
+
+    def test_effective_custom_ids_returns_empty_when_project_has_no_key(
+        self, window: CraftGraphWindow,
+    ) -> None:
+        from craftgraph.project import ProjectFile
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        window._project = ProjectFile(
+            version=1, name="test", description="", cc3_path="",
+            project_path="", open_files=[], active_tab="",
+            node_positions={}, editor_state={},
+            settings_overrides={},
+        )
+        assert window._effective_custom_ids() == []
+
+    def test_update_project_state_syncs_custom_ids(
+        self, window: CraftGraphWindow,
+    ) -> None:
+        from craftgraph.project import ProjectFile
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import AutocompleteSettings
+
+        window._project = ProjectFile(
+            version=1, name="test", description="", cc3_path="/tmp",
+            project_path="/tmp/test.craftgraph", open_files=[], active_tab="",
+            node_positions={}, editor_state={},
+            settings_overrides={},
+        )
+        window._ac_settings = AutocompleteSettings(custom_ids=["Ignored"])
+        window._project.settings_overrides["custom_ids"] = ["ProjectOnly"]
+        window._update_project_state()
+        assert window._project.settings_overrides["custom_ids"] == ["ProjectOnly"]
