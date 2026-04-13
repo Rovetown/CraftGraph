@@ -16,6 +16,7 @@ Architecture notes:
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 import warnings
@@ -72,6 +73,32 @@ from craftgraph.sync import (
     place_variable_nodes,
     populate_graph,
     update_child_count_labels,
+)
+from craftgraph.theme import (
+    ACCENT_COLORS,
+    ACCENT_NAMES,
+    COLORBLIND_LABELS,
+    COLORBLIND_MODES,
+    GRID_STYLE_LABELS,
+    GRID_STYLES,
+    PIPE_STYLE_LABELS,
+    PIPE_STYLES,
+    UI_SCALE_OPTIONS,
+    AutocompleteSettings,
+    CodeEditorSettings,
+    NodeEditorSettings,
+    ThemeColors,
+    accent_name_from_hex,
+    active_theme,
+    autocomplete_settings_from_dict,
+    autocomplete_settings_to_dict,
+    code_editor_settings_from_dict,
+    code_editor_settings_to_dict,
+    node_editor_settings_from_dict,
+    node_editor_settings_to_dict,
+    set_active_theme,
+    theme_from_dict,
+    theme_to_dict,
 )
 from craftgraph.tooltips import (
     NODE_DESCRIPTIONS,
@@ -388,6 +415,12 @@ class _SettingsDialog(QtWidgets.QDialog):
         subnautica_cc3_path: str = "",
         recent_max_entries: int = 10,
         on_launch: str = "welcome",
+        check_for_updates: bool = True,
+        theme: ThemeColors | None = None,
+        node_editor: NodeEditorSettings | None = None,
+        code_editor: CodeEditorSettings | None = None,
+        autocomplete: AutocompleteSettings | None = None,
+        project_custom_ids: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -395,10 +428,17 @@ class _SettingsDialog(QtWidgets.QDialog):
         self.resize(680, 580)
         self.setStyleSheet(self._STYLE)
 
+        self._theme = theme if theme is not None else active_theme()
+        self._ne = node_editor if node_editor is not None else NodeEditorSettings()
+        self._ce = code_editor if code_editor is not None else CodeEditorSettings()
+        self._ac = autocomplete if autocomplete is not None else AutocompleteSettings()
+        self._project_custom_ids = project_custom_ids
+
         root = QtWidgets.QVBoxLayout(self)
         tabs = QtWidgets.QTabWidget()
         root.addWidget(tabs)
 
+        # -- General tab widgets --
         self._backup_cb: QtWidgets.QCheckBox | None = None
         self._auto_save_cb: QtWidgets.QCheckBox | None = None
         self._auto_save_interval_spin: QtWidgets.QSpinBox | None = None
@@ -406,6 +446,62 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._cc3_path_edit: QtWidgets.QLineEdit | None = None
         self._recent_spin: QtWidgets.QSpinBox | None = None
         self._on_launch_combo: QtWidgets.QComboBox | None = None
+        self._update_check_cb: QtWidgets.QCheckBox | None = None
+        # -- Appearance tab widgets --
+        self._theme_combo: QtWidgets.QComboBox | None = None
+        self._accent_combo: QtWidgets.QComboBox | None = None
+        self._high_contrast_cb: QtWidgets.QCheckBox | None = None
+        self._colorblind_combo: QtWidgets.QComboBox | None = None
+        self._ui_scale_combo: QtWidgets.QComboBox | None = None
+        self._cycle_edge_swatch: QtWidgets.QPushButton | None = None
+        self._selected_border_swatch: QtWidgets.QPushButton | None = None
+        self._editor_bg_swatch: QtWidgets.QPushButton | None = None
+        self._editor_current_line_swatch: QtWidgets.QPushButton | None = None
+        self._editor_gutter_bg_swatch: QtWidgets.QPushButton | None = None
+        # Node color swatches keyed by NodeColors field name
+        self._node_swatches: dict[str, QtWidgets.QPushButton] = {}
+        # Syntax color swatches keyed by SyntaxColors field name
+        self._syntax_swatches: dict[str, QtWidgets.QPushButton] = {}
+        # -- Node Editor tab widgets --
+        self._zoom_speed_spin: QtWidgets.QDoubleSpinBox | None = None
+        self._invert_zoom_cb: QtWidgets.QCheckBox | None = None
+        self._pan_mmb_cb: QtWidgets.QCheckBox | None = None
+        self._show_minimap_cb: QtWidgets.QCheckBox | None = None
+        self._show_grid_cb: QtWidgets.QCheckBox | None = None
+        self._grid_size_spin: QtWidgets.QSpinBox | None = None
+        self._snap_grid_cb: QtWidgets.QCheckBox | None = None
+        self._grid_style_combo: QtWidgets.QComboBox | None = None
+        # -- Nodes settings widgets --
+        self._show_thumbnails_cb: QtWidgets.QCheckBox | None = None
+        self._thumbnail_size_spin: QtWidgets.QSpinBox | None = None
+        self._show_port_labels_cb: QtWidgets.QCheckBox | None = None
+        self._warn_cycles_cb: QtWidgets.QCheckBox | None = None
+        # -- Connections settings widgets --
+        self._pipe_style_combo: QtWidgets.QComboBox | None = None
+        self._pipe_width_spin: QtWidgets.QDoubleSpinBox | None = None
+        self._animate_pipes_cb: QtWidgets.QCheckBox | None = None
+        # -- Code Editor tab widgets --
+        self._ce_font_combo: QtWidgets.QFontComboBox | None = None
+        self._ce_font_size_spin: QtWidgets.QSpinBox | None = None
+        self._ce_line_numbers_cb: QtWidgets.QCheckBox | None = None
+        self._ce_highlight_line_cb: QtWidgets.QCheckBox | None = None
+        self._ce_word_wrap_cb: QtWidgets.QCheckBox | None = None
+        self._ce_tab_width_spin: QtWidgets.QSpinBox | None = None
+        self._ce_auto_indent_cb: QtWidgets.QCheckBox | None = None
+        self._ce_auto_close_cb: QtWidgets.QCheckBox | None = None
+        self._ce_strip_ws_cb: QtWidgets.QCheckBox | None = None
+        self._ce_debounce_spin: QtWidgets.QSpinBox | None = None
+        self._ce_parse_errors_cb: QtWidgets.QCheckBox | None = None
+        # -- Autocomplete tab widgets --
+        self._ac_scope_label: QtWidgets.QLabel | None = None
+        self._ac_case_insensitive_cb: QtWidgets.QCheckBox | None = None
+        self._ac_min_chars_spin: QtWidgets.QSpinBox | None = None
+        self._ac_max_visible_spin: QtWidgets.QSpinBox | None = None
+        self._ac_vanilla_cb: QtWidgets.QCheckBox | None = None
+        self._ac_mod_compat_cb: QtWidgets.QCheckBox | None = None
+        self._ac_project_ids_cb: QtWidgets.QCheckBox | None = None
+        self._ac_custom_list: QtWidgets.QListWidget | None = None
+
         tabs.addTab(
             self._build_general_tab(
                 backup_on_save,
@@ -415,6 +511,7 @@ class _SettingsDialog(QtWidgets.QDialog):
                 subnautica_cc3_path=subnautica_cc3_path,
                 recent_max_entries=recent_max_entries,
                 on_launch=on_launch,
+                check_for_updates=check_for_updates,
             ),
             "General",
         )
@@ -475,6 +572,336 @@ class _SettingsDialog(QtWidgets.QDialog):
             return self._ON_LAUNCH_VALUES[idx]
         return "welcome"
 
+    @property
+    def check_for_updates(self) -> bool:
+        if self._update_check_cb is not None:
+            return self._update_check_cb.isChecked()
+        return True
+
+    @property
+    def theme_colors(self) -> ThemeColors:
+        """Build a :class:`ThemeColors` from the current dialog widget values."""
+        from craftgraph.theme import (
+            EditorColors,
+            HighlightColors,
+            NodeColors,
+            SyntaxColors,
+        )
+
+        def _swatch_hex(btn: QtWidgets.QPushButton | None, fallback: str) -> str:
+            if btn is not None:
+                return btn.color_hex  # type: ignore[attr-defined]
+            return fallback
+
+        def _swatch_rgb3(
+            btn: QtWidgets.QPushButton | None,
+            fallback: tuple[int, int, int],
+        ) -> tuple[int, int, int]:
+            if btn is not None:
+                return self._hex_to_rgb3(btn.color_hex)  # type: ignore[attr-defined]
+            return fallback
+
+        def _swatch_rgba4(
+            btn: QtWidgets.QPushButton | None,
+            fallback: tuple[int, int, int, int],
+        ) -> tuple[int, int, int, int]:
+            if btn is not None:
+                return self._hex_to_rgba4(btn.color_hex)  # type: ignore[attr-defined]
+            return fallback
+
+        defaults = self._theme
+        node_kwargs: dict[str, tuple[int, int, int]] = {}
+        for field_name, btn in self._node_swatches.items():
+            node_kwargs[field_name] = _swatch_rgb3(btn, getattr(defaults.node, field_name))
+
+        syntax_kwargs: dict[str, str] = {}
+        for field_name, btn in self._syntax_swatches.items():
+            syntax_kwargs[field_name] = _swatch_hex(btn, getattr(defaults.syntax, field_name))
+
+        dhl = defaults.highlight
+        ded = defaults.editor
+        return ThemeColors(
+            node=NodeColors(**node_kwargs),
+            highlight=HighlightColors(
+                cycle_edge=_swatch_rgba4(self._cycle_edge_swatch, dhl.cycle_edge),
+                selected_node_border=_swatch_hex(
+                    self._selected_border_swatch, dhl.selected_node_border,
+                ),
+                default_pipe=dhl.default_pipe,
+            ),
+            syntax=SyntaxColors(**syntax_kwargs),
+            editor=EditorColors(
+                background=_swatch_hex(self._editor_bg_swatch, ded.background),
+                current_line=_swatch_hex(
+                    self._editor_current_line_swatch, ded.current_line,
+                ),
+                gutter_background=_swatch_hex(
+                    self._editor_gutter_bg_swatch, ded.gutter_background,
+                ),
+                gutter_text=ded.gutter_text,
+            ),
+            accent=self._selected_accent_hex(),
+            high_contrast_borders=(
+                self._high_contrast_cb.isChecked()
+                if self._high_contrast_cb is not None
+                else defaults.high_contrast_borders
+            ),
+            app_theme=self._selected_app_theme(),
+            colorblind_mode=self._selected_colorblind_mode(),
+            ui_scale=self._selected_ui_scale(),
+        )
+
+    @property
+    def node_editor_settings(self) -> NodeEditorSettings:
+        """Build a :class:`NodeEditorSettings` from the current dialog widgets."""
+        d = self._ne
+        return NodeEditorSettings(
+            zoom_speed=(
+                self._zoom_speed_spin.value()
+                if self._zoom_speed_spin is not None
+                else d.zoom_speed
+            ),
+            invert_zoom=(
+                self._invert_zoom_cb.isChecked()
+                if self._invert_zoom_cb is not None
+                else d.invert_zoom
+            ),
+            pan_with_mmb=(
+                self._pan_mmb_cb.isChecked()
+                if self._pan_mmb_cb is not None
+                else d.pan_with_mmb
+            ),
+            show_minimap=(
+                self._show_minimap_cb.isChecked()
+                if self._show_minimap_cb is not None
+                else d.show_minimap
+            ),
+            show_grid=(
+                self._show_grid_cb.isChecked()
+                if self._show_grid_cb is not None
+                else d.show_grid
+            ),
+            grid_size=(
+                self._grid_size_spin.value()
+                if self._grid_size_spin is not None
+                else d.grid_size
+            ),
+            snap_to_grid=(
+                self._snap_grid_cb.isChecked()
+                if self._snap_grid_cb is not None
+                else d.snap_to_grid
+            ),
+            grid_style=(
+                GRID_STYLES[self._grid_style_combo.currentIndex()]
+                if self._grid_style_combo is not None
+                else d.grid_style
+            ),
+            show_thumbnails=(
+                self._show_thumbnails_cb.isChecked()
+                if self._show_thumbnails_cb is not None
+                else d.show_thumbnails
+            ),
+            thumbnail_size=(
+                self._thumbnail_size_spin.value()
+                if self._thumbnail_size_spin is not None
+                else d.thumbnail_size
+            ),
+            show_port_labels=(
+                self._show_port_labels_cb.isChecked()
+                if self._show_port_labels_cb is not None
+                else d.show_port_labels
+            ),
+            warn_before_cycles=(
+                self._warn_cycles_cb.isChecked()
+                if self._warn_cycles_cb is not None
+                else d.warn_before_cycles
+            ),
+            pipe_style=(
+                PIPE_STYLES[self._pipe_style_combo.currentIndex()]
+                if self._pipe_style_combo is not None
+                else d.pipe_style
+            ),
+            pipe_width=(
+                self._pipe_width_spin.value()
+                if self._pipe_width_spin is not None
+                else d.pipe_width
+            ),
+            animate_pipes=(
+                self._animate_pipes_cb.isChecked()
+                if self._animate_pipes_cb is not None
+                else d.animate_pipes
+            ),
+        )
+
+    @property
+    def code_editor_settings(self) -> CodeEditorSettings:
+        """Build a :class:`CodeEditorSettings` from the current dialog widgets."""
+        d = self._ce
+        return CodeEditorSettings(
+            font_family=(
+                self._ce_font_combo.currentFont().family()
+                if self._ce_font_combo is not None
+                else d.font_family
+            ),
+            font_size=(
+                self._ce_font_size_spin.value()
+                if self._ce_font_size_spin is not None
+                else d.font_size
+            ),
+            show_line_numbers=(
+                self._ce_line_numbers_cb.isChecked()
+                if self._ce_line_numbers_cb is not None
+                else d.show_line_numbers
+            ),
+            highlight_current_line=(
+                self._ce_highlight_line_cb.isChecked()
+                if self._ce_highlight_line_cb is not None
+                else d.highlight_current_line
+            ),
+            word_wrap=(
+                self._ce_word_wrap_cb.isChecked()
+                if self._ce_word_wrap_cb is not None
+                else d.word_wrap
+            ),
+            tab_width=(
+                self._ce_tab_width_spin.value()
+                if self._ce_tab_width_spin is not None
+                else d.tab_width
+            ),
+            auto_indent=(
+                self._ce_auto_indent_cb.isChecked()
+                if self._ce_auto_indent_cb is not None
+                else d.auto_indent
+            ),
+            auto_close_brackets=(
+                self._ce_auto_close_cb.isChecked()
+                if self._ce_auto_close_cb is not None
+                else d.auto_close_brackets
+            ),
+            strip_trailing_whitespace=(
+                self._ce_strip_ws_cb.isChecked()
+                if self._ce_strip_ws_cb is not None
+                else d.strip_trailing_whitespace
+            ),
+            parse_debounce_ms=(
+                self._ce_debounce_spin.value()
+                if self._ce_debounce_spin is not None
+                else d.parse_debounce_ms
+            ),
+            show_parse_errors_inline=(
+                self._ce_parse_errors_cb.isChecked()
+                if self._ce_parse_errors_cb is not None
+                else d.show_parse_errors_inline
+            ),
+        )
+
+    @property
+    def autocomplete_settings(self) -> AutocompleteSettings:
+        """Build :class:`AutocompleteSettings` from current dialog widgets."""
+        d = self._ac
+        return AutocompleteSettings(
+            case_insensitive=(
+                self._ac_case_insensitive_cb.isChecked()
+                if self._ac_case_insensitive_cb is not None
+                else d.case_insensitive
+            ),
+            min_prefix_length=(
+                self._ac_min_chars_spin.value()
+                if self._ac_min_chars_spin is not None
+                else d.min_prefix_length
+            ),
+            max_visible_items=(
+                self._ac_max_visible_spin.value()
+                if self._ac_max_visible_spin is not None
+                else d.max_visible_items
+            ),
+            include_vanilla_ids=(
+                self._ac_vanilla_cb.isChecked()
+                if self._ac_vanilla_cb is not None
+                else d.include_vanilla_ids
+            ),
+            include_mod_compat_ids=(
+                self._ac_mod_compat_cb.isChecked()
+                if self._ac_mod_compat_cb is not None
+                else d.include_mod_compat_ids
+            ),
+            include_project_ids=(
+                self._ac_project_ids_cb.isChecked()
+                if self._ac_project_ids_cb is not None
+                else d.include_project_ids
+            ),
+            custom_ids=(
+                [
+                    self._ac_custom_list.item(i).text()
+                    for i in range(self._ac_custom_list.count())
+                ]
+                if self._ac_custom_list is not None
+                else list(d.custom_ids)
+            ),
+        )
+
+    @property
+    def project_custom_ids(self) -> list[str] | None:
+        """Return the custom ID list for project scope, or None if global."""
+        if self._project_custom_ids is None:
+            return None
+        lw = self._ac_custom_list
+        if lw is None:
+            return list(self._project_custom_ids)
+        return [lw.item(i).text() for i in range(lw.count())]
+
+    # -- Autocomplete custom ID slots --------------------------------------------
+
+    def _on_ac_add_custom_id(self) -> None:
+        text, ok = QtWidgets.QInputDialog.getText(
+            self, "Add Custom TechType ID", "TechType ID:",
+        )
+        if not ok or not text.strip():
+            return
+        tid = text.strip()
+        lw = self._ac_custom_list
+        if lw is None:
+            return
+        # Duplicate check
+        for i in range(lw.count()):
+            if lw.item(i).text().lower() == tid.lower():
+                return
+        lw.addItem(tid)
+
+    def _on_ac_remove_custom_id(self) -> None:
+        lw = self._ac_custom_list
+        if lw is None:
+            return
+        for item in reversed(lw.selectedItems()):
+            lw.takeItem(lw.row(item))
+
+    # -- Appearance combo readers -----------------------------------------------
+
+    _APP_THEME_VALUES: ClassVar[list[str]] = ["dark", "light", "system"]
+
+    def _selected_app_theme(self) -> str:
+        if self._theme_combo is not None:
+            return self._APP_THEME_VALUES[self._theme_combo.currentIndex()]
+        return self._theme.app_theme
+
+    def _selected_accent_hex(self) -> str:
+        if self._accent_combo is not None:
+            name = self._accent_combo.currentText()
+            return ACCENT_COLORS.get(name, self._theme.accent)
+        return self._theme.accent
+
+    def _selected_colorblind_mode(self) -> str:
+        if self._colorblind_combo is not None:
+            return COLORBLIND_MODES[self._colorblind_combo.currentIndex()]
+        return self._theme.colorblind_mode
+
+    def _selected_ui_scale(self) -> int:
+        if self._ui_scale_combo is not None:
+            text = self._ui_scale_combo.currentText().rstrip("%")
+            if text.isdigit():
+                return int(text)
+        return self._theme.ui_scale
+
     # -- Helpers --------------------------------------------------------------
 
     @staticmethod
@@ -499,6 +926,60 @@ class _SettingsDialog(QtWidgets.QDialog):
             f"background: {color}; border: 1px solid rgb(120,120,120); border-radius: 3px;"
         )
         return btn
+
+    @staticmethod
+    def _color_picker_swatch(
+        initial: str,
+        size: int = 28,
+    ) -> QtWidgets.QPushButton:
+        """Clickable color swatch that opens QColorDialog on click.
+
+        The button stores its current hex color in a dynamic ``color_hex``
+        attribute.  After the dialog, the button's background updates to
+        the chosen color.
+        """
+        btn = QtWidgets.QPushButton("")
+        btn.setFixedSize(size, size)
+        btn.color_hex = initial  # type: ignore[attr-defined]
+        btn.setStyleSheet(
+            f"background: {initial}; border: 1px solid rgb(120,120,120); border-radius: 3px;"
+        )
+
+        def _pick() -> None:
+            current = QtGui.QColor(btn.color_hex)  # type: ignore[attr-defined]
+            chosen = QtWidgets.QColorDialog.getColor(current, btn, "Pick color")
+            if chosen.isValid():
+                hex_color = chosen.name()
+                btn.color_hex = hex_color  # type: ignore[attr-defined]
+                btn.setStyleSheet(
+                    f"background: {hex_color};"
+                    " border: 1px solid rgb(120,120,120); border-radius: 3px;"
+                )
+
+        btn.clicked.connect(_pick)
+        return btn
+
+    @staticmethod
+    def _rgba4_to_hex(rgba: tuple[int, int, int, int]) -> str:
+        """Convert an (R, G, B, A) tuple to ``#rrggbb`` hex (alpha ignored)."""
+        return f"#{rgba[0]:02x}{rgba[1]:02x}{rgba[2]:02x}"
+
+    @staticmethod
+    def _hex_to_rgba4(hex_color: str) -> tuple[int, int, int, int]:
+        """Convert ``#rrggbb`` hex to an (R, G, B, 255) tuple."""
+        c = QtGui.QColor(hex_color)
+        return (c.red(), c.green(), c.blue(), 255)
+
+    @staticmethod
+    def _rgb3_to_hex(rgb: tuple[int, int, int]) -> str:
+        """Convert an (R, G, B) tuple to ``#rrggbb`` hex."""
+        return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+    @staticmethod
+    def _hex_to_rgb3(hex_color: str) -> tuple[int, int, int]:
+        """Convert ``#rrggbb`` hex to an (R, G, B) tuple."""
+        c = QtGui.QColor(hex_color)
+        return (c.red(), c.green(), c.blue())
 
     def _browse_project_folder(self) -> None:
         """Open a directory picker for the default project folder."""
@@ -530,6 +1011,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         subnautica_cc3_path: str = "",
         recent_max_entries: int = 10,
         on_launch: str = "welcome",
+        check_for_updates: bool = True,
     ) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
@@ -595,7 +1077,9 @@ class _SettingsDialog(QtWidgets.QDialog):
         # Updates
         updates = QtWidgets.QGroupBox("Updates")
         ul = QtWidgets.QVBoxLayout(updates)
-        ul.addWidget(QtWidgets.QCheckBox("Check for updates on startup"))
+        self._update_check_cb = QtWidgets.QCheckBox("Check for updates on startup")
+        self._update_check_cb.setChecked(check_for_updates)
+        ul.addWidget(self._update_check_cb)
         col.addWidget(updates)
 
         col.addStretch()
@@ -637,38 +1121,47 @@ class _SettingsDialog(QtWidgets.QDialog):
         layout.addWidget(subtabs)
         return container
 
-    @staticmethod
-    def _build_appearance_theme() -> QtWidgets.QWidget:
+    def _build_appearance_theme(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
         col.setSpacing(12)
 
-        theme = QtWidgets.QGroupBox("Application Theme")
-        tl = QtWidgets.QFormLayout(theme)
-        theme_combo = QtWidgets.QComboBox()
-        theme_combo.addItems(["Dark (default)", "Light", "System"])
-        tl.addRow("Theme:", theme_combo)
-        accent = QtWidgets.QComboBox()
-        accent.addItems(["Blue", "Teal", "Green", "Orange", "Purple", "Red"])
-        tl.addRow("Accent color:", accent)
-        col.addWidget(theme)
+        theme_group = QtWidgets.QGroupBox("Application Theme")
+        tl = QtWidgets.QFormLayout(theme_group)
+        self._theme_combo = QtWidgets.QComboBox()
+        self._theme_combo.addItems(["Dark (default)", "Light", "System"])
+        theme_idx = self._APP_THEME_VALUES.index(self._theme.app_theme)
+        self._theme_combo.setCurrentIndex(theme_idx)
+        tl.addRow("Theme:", self._theme_combo)
+        self._accent_combo = QtWidgets.QComboBox()
+        self._accent_combo.addItems(ACCENT_NAMES)
+        accent_name = accent_name_from_hex(self._theme.accent)
+        accent_idx = ACCENT_NAMES.index(accent_name)
+        self._accent_combo.setCurrentIndex(accent_idx)
+        tl.addRow("Accent color:", self._accent_combo)
+        col.addWidget(theme_group)
 
         access = QtWidgets.QGroupBox("Accessibility")
         al = QtWidgets.QFormLayout(access)
-        cb_mode = QtWidgets.QComboBox()
-        cb_mode.addItems(
-            [
-                "None (default)",
-                "Deuteranopia (red-green)",
-                "Protanopia (red-green variant)",
-                "Tritanopia (blue-yellow)",
-            ]
+        self._colorblind_combo = QtWidgets.QComboBox()
+        self._colorblind_combo.addItems(
+            [COLORBLIND_LABELS[m] for m in COLORBLIND_MODES]
         )
-        al.addRow("Colorblind mode:", cb_mode)
-        ui_scale = QtWidgets.QComboBox()
-        ui_scale.addItems(["100%", "110%", "125%", "150%", "175%", "200%"])
-        al.addRow("UI scale:", ui_scale)
-        al.addRow("High contrast borders:", QtWidgets.QCheckBox("Enable"))
+        cb_idx = COLORBLIND_MODES.index(self._theme.colorblind_mode)
+        self._colorblind_combo.setCurrentIndex(cb_idx)
+        al.addRow("Colorblind mode:", self._colorblind_combo)
+        self._ui_scale_combo = QtWidgets.QComboBox()
+        self._ui_scale_combo.addItems([f"{s}%" for s in UI_SCALE_OPTIONS])
+        scale_idx = (
+            UI_SCALE_OPTIONS.index(self._theme.ui_scale)
+            if self._theme.ui_scale in UI_SCALE_OPTIONS
+            else 0
+        )
+        self._ui_scale_combo.setCurrentIndex(scale_idx)
+        al.addRow("UI scale:", self._ui_scale_combo)
+        self._high_contrast_cb = QtWidgets.QCheckBox("Enable")
+        self._high_contrast_cb.setChecked(self._theme.high_contrast_borders)
+        al.addRow("High contrast borders:", self._high_contrast_cb)
         col.addWidget(access)
 
         col.addStretch()
@@ -681,21 +1174,26 @@ class _SettingsDialog(QtWidgets.QDialog):
 
         colors = QtWidgets.QGroupBox("Node Colors by Block Type")
         cl = QtWidgets.QFormLayout(colors)
-        node_types = [
-            ("ModifiedRecipe", "#5b8c5a"),
-            ("AddedRecipe", "#4a90d9"),
-            ("AliasRecipe", "#7b68ee"),
-            ("CustomFood", "#d4a017"),
-            ("CustomFabricator", "#c06040"),
-            ("CraftingTab", "#c06040"),
-            ("CustomSize", "#808080"),
-            ("MovedRecipe", "#808080"),
-            ("CustomBioFuel", "#808080"),
-            ("CustomFragmentCount", "#808080"),
+        nc = self._theme.node
+        node_types: list[tuple[str, str, tuple[int, int, int]]] = [
+            ("modified_recipe", "ModifiedRecipe", nc.modified_recipe),
+            ("added_recipe", "AddedRecipe", nc.added_recipe),
+            ("alias_recipe", "AliasRecipe", nc.alias_recipe),
+            ("custom_food", "CustomFood", nc.custom_food),
+            ("fabricator", "CustomFabricator", nc.fabricator),
+            ("crafting_tab", "CraftingTab", nc.crafting_tab),
+            ("custom_size", "CustomSize", nc.custom_size),
+            ("moved_recipe", "MovedRecipe", nc.moved_recipe),
+            ("custom_bio_fuel", "CustomBioFuel", nc.custom_bio_fuel),
+            ("custom_fragment_count", "CustomFragmentCount", nc.custom_fragment_count),
+            ("orphan_ingredient", "Orphan Ingredient", nc.orphan_ingredient),
+            ("sprite", "Sprite", nc.sprite),
         ]
-        for label, color in node_types:
+        for field_name, label, rgb in node_types:
             row = QtWidgets.QHBoxLayout()
-            row.addWidget(self._color_swatch(color))
+            swatch = self._color_picker_swatch(self._rgb3_to_hex(rgb))
+            self._node_swatches[field_name] = swatch
+            row.addWidget(swatch)
             row.addWidget(QtWidgets.QLabel(label))
             row.addStretch()
             cl.addRow(row)
@@ -704,12 +1202,18 @@ class _SettingsDialog(QtWidgets.QDialog):
         highlight = QtWidgets.QGroupBox("Highlights")
         hl = QtWidgets.QFormLayout(highlight)
         hl_row = QtWidgets.QHBoxLayout()
-        hl_row.addWidget(self._color_swatch("#ff4444"))
+        self._cycle_edge_swatch = self._color_picker_swatch(
+            self._rgba4_to_hex(self._theme.highlight.cycle_edge),
+        )
+        hl_row.addWidget(self._cycle_edge_swatch)
         hl_row.addWidget(QtWidgets.QLabel("Cycle edges"))
         hl_row.addStretch()
         hl.addRow(hl_row)
         sel_row = QtWidgets.QHBoxLayout()
-        sel_row.addWidget(self._color_swatch("#ffcc00"))
+        self._selected_border_swatch = self._color_picker_swatch(
+            self._theme.highlight.selected_node_border,
+        )
+        sel_row.addWidget(self._selected_border_swatch)
         sel_row.addWidget(QtWidgets.QLabel("Selected node border"))
         sel_row.addStretch()
         hl.addRow(sel_row)
@@ -718,31 +1222,41 @@ class _SettingsDialog(QtWidgets.QDialog):
         col.addStretch()
         return self._scrollable(content)
 
-    @staticmethod
-    def _build_appearance_code() -> QtWidgets.QWidget:
+    def _build_appearance_code(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
         col.setSpacing(12)
 
         syntax = QtWidgets.QGroupBox("Syntax Colors")
         sl = QtWidgets.QFormLayout(syntax)
-        tokens = [
-            "Keywords (block type names)",
-            "Field names (ItemID, Required, ...)",
-            "String values (quoted text)",
-            "Numeric values",
-            "Comments (#)",
-            "Delimiters (parentheses, semicolons)",
+        sc = self._theme.syntax
+        syntax_tokens: list[tuple[str, str, str]] = [
+            ("block_type", "Keywords (block type names)", sc.block_type),
+            ("field_key", "Field names (ItemID, Required, ...)", sc.field_key),
+            ("string", "String values (quoted text)", sc.string),
+            ("comment", "Comments (#)", sc.comment),
+            ("error_underline", "Error underline", sc.error_underline),
         ]
-        for token in tokens:
-            sl.addRow(f"{token}:", QtWidgets.QComboBox())
+        for field_name, label, hex_color in syntax_tokens:
+            swatch = self._color_picker_swatch(hex_color)
+            self._syntax_swatches[field_name] = swatch
+            sl.addRow(f"{label}:", swatch)
         col.addWidget(syntax)
 
         editor_bg = QtWidgets.QGroupBox("Editor Background")
         el = QtWidgets.QFormLayout(editor_bg)
-        el.addRow("Background:", QtWidgets.QComboBox())
-        el.addRow("Current line highlight:", QtWidgets.QComboBox())
-        el.addRow("Line number gutter:", QtWidgets.QComboBox())
+        self._editor_bg_swatch = self._color_picker_swatch(
+            self._theme.editor.background,
+        )
+        el.addRow("Background:", self._editor_bg_swatch)
+        self._editor_current_line_swatch = self._color_picker_swatch(
+            self._theme.editor.current_line,
+        )
+        el.addRow("Current line highlight:", self._editor_current_line_swatch)
+        self._editor_gutter_bg_swatch = self._color_picker_swatch(
+            self._theme.editor.gutter_background,
+        )
+        el.addRow("Line number gutter:", self._editor_gutter_bg_swatch)
         col.addWidget(editor_bg)
 
         col.addStretch()
@@ -752,68 +1266,94 @@ class _SettingsDialog(QtWidgets.QDialog):
     # Tab 3: Node Editor
     # =========================================================================
 
-    @staticmethod
-    def _build_node_editor_tab() -> QtWidgets.QWidget:
+    def _build_node_editor_tab(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
         col.setSpacing(12)
+        ne = self._ne
+
+        # Navigation
+        nav = QtWidgets.QGroupBox("Navigation")
+        nl = QtWidgets.QFormLayout(nav)
+        self._zoom_speed_spin = QtWidgets.QDoubleSpinBox()
+        self._zoom_speed_spin.setRange(0.1, 5.0)
+        self._zoom_speed_spin.setSingleStep(0.1)
+        self._zoom_speed_spin.setValue(ne.zoom_speed)
+        nl.addRow("Zoom speed:", self._zoom_speed_spin)
+        self._invert_zoom_cb = QtWidgets.QCheckBox()
+        self._invert_zoom_cb.setChecked(ne.invert_zoom)
+        nl.addRow("Invert zoom direction:", self._invert_zoom_cb)
+        self._pan_mmb_cb = QtWidgets.QCheckBox("Enable")
+        self._pan_mmb_cb.setChecked(ne.pan_with_mmb)
+        nl.addRow("Pan with middle mouse:", self._pan_mmb_cb)
+        self._show_minimap_cb = QtWidgets.QCheckBox("Enable")
+        self._show_minimap_cb.setChecked(ne.show_minimap)
+        nl.addRow("Show minimap:", self._show_minimap_cb)
+        col.addWidget(nav)
 
         # Grid
         grid = QtWidgets.QGroupBox("Grid")
         gl = QtWidgets.QFormLayout(grid)
-        gl.addRow("Show grid:", QtWidgets.QCheckBox("Enable"))
-        grid_size = QtWidgets.QSpinBox()
-        grid_size.setRange(10, 100)
-        grid_size.setValue(20)
-        grid_size.setSuffix(" px")
-        gl.addRow("Grid size:", grid_size)
-        gl.addRow("Snap to grid:", QtWidgets.QCheckBox("Enable"))
-        grid_style = QtWidgets.QComboBox()
-        grid_style.addItems(["Dots", "Lines", "None"])
-        gl.addRow("Grid style:", grid_style)
+        self._show_grid_cb = QtWidgets.QCheckBox("Enable")
+        self._show_grid_cb.setChecked(ne.show_grid)
+        gl.addRow("Show grid:", self._show_grid_cb)
+        self._grid_size_spin = QtWidgets.QSpinBox()
+        self._grid_size_spin.setRange(10, 200)
+        self._grid_size_spin.setValue(ne.grid_size)
+        self._grid_size_spin.setSuffix(" px")
+        gl.addRow("Grid size:", self._grid_size_spin)
+        self._snap_grid_cb = QtWidgets.QCheckBox("Enable")
+        self._snap_grid_cb.setChecked(ne.snap_to_grid)
+        gl.addRow("Snap to grid:", self._snap_grid_cb)
+        self._grid_style_combo = QtWidgets.QComboBox()
+        self._grid_style_combo.addItems(
+            [GRID_STYLE_LABELS[s] for s in GRID_STYLES]
+        )
+        style_idx = GRID_STYLES.index(ne.grid_style) if ne.grid_style in GRID_STYLES else 1
+        self._grid_style_combo.setCurrentIndex(style_idx)
+        gl.addRow("Grid style:", self._grid_style_combo)
         col.addWidget(grid)
-
-        # Zoom / Navigation
-        nav = QtWidgets.QGroupBox("Navigation")
-        nl = QtWidgets.QFormLayout(nav)
-        zoom_speed = QtWidgets.QDoubleSpinBox()
-        zoom_speed.setRange(0.5, 3.0)
-        zoom_speed.setSingleStep(0.1)
-        zoom_speed.setValue(1.0)
-        nl.addRow("Zoom speed:", zoom_speed)
-        nl.addRow("Invert zoom direction:", QtWidgets.QCheckBox())
-        nl.addRow("Pan with middle mouse:", QtWidgets.QCheckBox("Enable"))
-        nl.addRow("Show minimap:", QtWidgets.QCheckBox("Enable"))
-        col.addWidget(nav)
 
         # Connections
         conn = QtWidgets.QGroupBox("Connections")
         cnl = QtWidgets.QFormLayout(conn)
-        pipe_style = QtWidgets.QComboBox()
-        pipe_style.addItems(["Curved", "Straight", "Angle"])
-        cnl.addRow("Connection style:", pipe_style)
-        pipe_width = QtWidgets.QDoubleSpinBox()
-        pipe_width.setRange(1.0, 5.0)
-        pipe_width.setSingleStep(0.5)
-        pipe_width.setValue(2.0)
-        pipe_width.setSuffix(" px")
-        cnl.addRow("Connection width:", pipe_width)
-        cnl.addRow("Animate connections:", QtWidgets.QCheckBox())
+        self._pipe_style_combo = QtWidgets.QComboBox()
+        self._pipe_style_combo.addItems(
+            [PIPE_STYLE_LABELS[s] for s in PIPE_STYLES]
+        )
+        pipe_idx = PIPE_STYLES.index(ne.pipe_style) if ne.pipe_style in PIPE_STYLES else 0
+        self._pipe_style_combo.setCurrentIndex(pipe_idx)
+        cnl.addRow("Connection style:", self._pipe_style_combo)
+        self._pipe_width_spin = QtWidgets.QDoubleSpinBox()
+        self._pipe_width_spin.setRange(1.0, 5.0)
+        self._pipe_width_spin.setSingleStep(0.5)
+        self._pipe_width_spin.setValue(ne.pipe_width)
+        self._pipe_width_spin.setSuffix(" px")
+        cnl.addRow("Connection width:", self._pipe_width_spin)
+        self._animate_pipes_cb = QtWidgets.QCheckBox()
+        self._animate_pipes_cb.setChecked(ne.animate_pipes)
+        cnl.addRow("Animate connections:", self._animate_pipes_cb)
         col.addWidget(conn)
 
         # Nodes
         nodes = QtWidgets.QGroupBox("Nodes")
         ndl = QtWidgets.QFormLayout(nodes)
-        ndl.addRow("Show node thumbnails:", QtWidgets.QCheckBox("Enable"))
-        thumb_size = QtWidgets.QSpinBox()
-        thumb_size.setRange(24, 128)
-        thumb_size.setValue(64)
-        thumb_size.setSuffix(" px")
-        ndl.addRow("Thumbnail size:", thumb_size)
-        ndl.addRow("Show port labels:", QtWidgets.QCheckBox("Enable"))
+        self._show_thumbnails_cb = QtWidgets.QCheckBox("Enable")
+        self._show_thumbnails_cb.setChecked(ne.show_thumbnails)
+        ndl.addRow("Show node thumbnails:", self._show_thumbnails_cb)
+        self._thumbnail_size_spin = QtWidgets.QSpinBox()
+        self._thumbnail_size_spin.setRange(24, 128)
+        self._thumbnail_size_spin.setValue(ne.thumbnail_size)
+        self._thumbnail_size_spin.setSuffix(" px")
+        ndl.addRow("Thumbnail size:", self._thumbnail_size_spin)
+        self._show_port_labels_cb = QtWidgets.QCheckBox("Enable")
+        self._show_port_labels_cb.setChecked(ne.show_port_labels)
+        ndl.addRow("Show port labels:", self._show_port_labels_cb)
+        self._warn_cycles_cb = QtWidgets.QCheckBox("Enable")
+        self._warn_cycles_cb.setChecked(ne.warn_before_cycles)
         ndl.addRow(
             "Warn before creating cycles:",
-            QtWidgets.QCheckBox("Enable"),
+            self._warn_cycles_cb,
         )
         col.addWidget(nodes)
 
@@ -824,55 +1364,68 @@ class _SettingsDialog(QtWidgets.QDialog):
     # Tab 4: Code Editor
     # =========================================================================
 
-    @staticmethod
-    def _build_code_editor_tab() -> QtWidgets.QWidget:
+    def _build_code_editor_tab(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
         col.setSpacing(12)
+        ce = self._ce
 
         # Font
-        font = QtWidgets.QGroupBox("Font")
-        fl = QtWidgets.QFormLayout(font)
-        fl.addRow("Font family:", QtWidgets.QFontComboBox())
-        font_size = QtWidgets.QSpinBox()
-        font_size.setRange(6, 36)
-        font_size.setValue(10)
-        font_size.setSuffix(" pt")
-        fl.addRow("Font size:", font_size)
-        col.addWidget(font)
+        font_group = QtWidgets.QGroupBox("Font")
+        fl = QtWidgets.QFormLayout(font_group)
+        self._ce_font_combo = QtWidgets.QFontComboBox()
+        self._ce_font_combo.setCurrentFont(QtGui.QFont(ce.font_family))
+        fl.addRow("Font family:", self._ce_font_combo)
+        self._ce_font_size_spin = QtWidgets.QSpinBox()
+        self._ce_font_size_spin.setRange(6, 36)
+        self._ce_font_size_spin.setValue(ce.font_size)
+        self._ce_font_size_spin.setSuffix(" pt")
+        fl.addRow("Font size:", self._ce_font_size_spin)
+        col.addWidget(font_group)
 
         # Display
         display = QtWidgets.QGroupBox("Display")
         dl = QtWidgets.QFormLayout(display)
-        dl.addRow("Show line numbers:", QtWidgets.QCheckBox("Enable"))
-        dl.addRow("Highlight current line:", QtWidgets.QCheckBox("Enable"))
-        dl.addRow("Word wrap:", QtWidgets.QCheckBox("Enable"))
-        tab_width = QtWidgets.QSpinBox()
-        tab_width.setRange(1, 8)
-        tab_width.setValue(4)
-        dl.addRow("Tab width (spaces):", tab_width)
+        self._ce_line_numbers_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_line_numbers_cb.setChecked(ce.show_line_numbers)
+        dl.addRow("Show line numbers:", self._ce_line_numbers_cb)
+        self._ce_highlight_line_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_highlight_line_cb.setChecked(ce.highlight_current_line)
+        dl.addRow("Highlight current line:", self._ce_highlight_line_cb)
+        self._ce_word_wrap_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_word_wrap_cb.setChecked(ce.word_wrap)
+        dl.addRow("Word wrap:", self._ce_word_wrap_cb)
+        self._ce_tab_width_spin = QtWidgets.QSpinBox()
+        self._ce_tab_width_spin.setRange(1, 8)
+        self._ce_tab_width_spin.setValue(ce.tab_width)
+        dl.addRow("Tab width (spaces):", self._ce_tab_width_spin)
         col.addWidget(display)
 
         # Editing
         editing = QtWidgets.QGroupBox("Editing")
         el = QtWidgets.QFormLayout(editing)
-        el.addRow("Auto-indent:", QtWidgets.QCheckBox("Enable"))
-        el.addRow("Auto-close brackets:", QtWidgets.QCheckBox("Enable"))
-        el.addRow("Strip trailing whitespace:", QtWidgets.QCheckBox("On save"))
+        self._ce_auto_indent_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_auto_indent_cb.setChecked(ce.auto_indent)
+        el.addRow("Auto-indent:", self._ce_auto_indent_cb)
+        self._ce_auto_close_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_auto_close_cb.setChecked(ce.auto_close_brackets)
+        el.addRow("Auto-close brackets:", self._ce_auto_close_cb)
+        self._ce_strip_ws_cb = QtWidgets.QCheckBox("On save")
+        self._ce_strip_ws_cb.setChecked(ce.strip_trailing_whitespace)
+        el.addRow("Strip trailing whitespace:", self._ce_strip_ws_cb)
         col.addWidget(editing)
 
         # Sync
         sync = QtWidgets.QGroupBox("Bidirectional Sync")
         synl = QtWidgets.QFormLayout(sync)
-        debounce = QtWidgets.QSpinBox()
-        debounce.setRange(100, 2000)
-        debounce.setValue(400)
-        debounce.setSuffix(" ms")
-        synl.addRow("Parse debounce:", debounce)
-        synl.addRow(
-            "Show parse errors inline:",
-            QtWidgets.QCheckBox("Enable"),
-        )
+        self._ce_debounce_spin = QtWidgets.QSpinBox()
+        self._ce_debounce_spin.setRange(100, 2000)
+        self._ce_debounce_spin.setValue(ce.parse_debounce_ms)
+        self._ce_debounce_spin.setSuffix(" ms")
+        synl.addRow("Parse debounce:", self._ce_debounce_spin)
+        self._ce_parse_errors_cb = QtWidgets.QCheckBox("Enable")
+        self._ce_parse_errors_cb.setChecked(ce.show_parse_errors_inline)
+        synl.addRow("Show parse errors inline:", self._ce_parse_errors_cb)
         col.addWidget(sync)
 
         col.addStretch()
@@ -882,34 +1435,58 @@ class _SettingsDialog(QtWidgets.QDialog):
     # Tab 5: Autocomplete
     # =========================================================================
 
-    @staticmethod
-    def _build_autocomplete_tab() -> QtWidgets.QWidget:
+    def _build_autocomplete_tab(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
         col.setSpacing(12)
+        ac = self._ac
 
         # ID Sources
         sources = QtWidgets.QGroupBox("TechType ID Sources")
         sl = QtWidgets.QVBoxLayout(sources)
-        sl.addWidget(QtWidgets.QCheckBox("Vanilla IDs (498 items)"))
-        sl.addWidget(QtWidgets.QCheckBox("Mod-compat IDs (120 items)"))
-        sl.addWidget(QtWidgets.QCheckBox("IDs from open project files"))
+        self._ac_vanilla_cb = QtWidgets.QCheckBox("Vanilla IDs (498 items)")
+        self._ac_vanilla_cb.setChecked(ac.include_vanilla_ids)
+        sl.addWidget(self._ac_vanilla_cb)
+        self._ac_mod_compat_cb = QtWidgets.QCheckBox("Mod-compat IDs (120 items)")
+        self._ac_mod_compat_cb.setChecked(ac.include_mod_compat_ids)
+        sl.addWidget(self._ac_mod_compat_cb)
+        self._ac_project_ids_cb = QtWidgets.QCheckBox("IDs from open project files")
+        self._ac_project_ids_cb.setChecked(ac.include_project_ids)
+        self._ac_project_ids_cb.setToolTip("Placeholder -- will extract IDs from loaded files in a future update")
+        sl.addWidget(self._ac_project_ids_cb)
         col.addWidget(sources)
 
         # Custom IDs
         custom = QtWidgets.QGroupBox("Custom TechType IDs")
         cl = QtWidgets.QVBoxLayout(custom)
-        desc = QtWidgets.QLabel("Add custom IDs that appear in autocomplete across all files.")
-        desc.setWordWrap(True)
-        desc.setStyleSheet("color: rgb(160, 160, 160); font-size: 9pt;")
-        cl.addWidget(desc)
-        lw = QtWidgets.QListWidget()
-        lw.addItems(["(no custom IDs)"])
-        lw.setMaximumHeight(120)
-        cl.addWidget(lw)
+        self._ac_scope_label = QtWidgets.QLabel()
+        if self._project_custom_ids is not None:
+            self._ac_scope_label.setText("Editing: Project")
+            self._ac_scope_label.setStyleSheet(
+                "color: rgb(140, 180, 255); font-weight: bold; font-size: 9pt;"
+            )
+        else:
+            self._ac_scope_label.setText("Editing: Global")
+            self._ac_scope_label.setStyleSheet(
+                "color: rgb(160, 160, 160); font-weight: bold; font-size: 9pt;"
+            )
+        cl.addWidget(self._ac_scope_label)
+        self._ac_custom_list = QtWidgets.QListWidget()
+        active_ids = self._project_custom_ids if self._project_custom_ids is not None else ac.custom_ids
+        if active_ids:
+            self._ac_custom_list.addItems(active_ids)
+        self._ac_custom_list.setMaximumHeight(120)
+        self._ac_custom_list.setSelectionMode(
+            QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection,
+        )
+        cl.addWidget(self._ac_custom_list)
         btn_row = QtWidgets.QHBoxLayout()
-        btn_row.addWidget(QtWidgets.QPushButton("Add"))
-        btn_row.addWidget(QtWidgets.QPushButton("Remove"))
+        add_btn = QtWidgets.QPushButton("Add")
+        add_btn.clicked.connect(self._on_ac_add_custom_id)
+        btn_row.addWidget(add_btn)
+        remove_btn = QtWidgets.QPushButton("Remove")
+        remove_btn.clicked.connect(self._on_ac_remove_custom_id)
+        btn_row.addWidget(remove_btn)
         btn_row.addStretch()
         cl.addLayout(btn_row)
         col.addWidget(custom)
@@ -932,15 +1509,17 @@ class _SettingsDialog(QtWidgets.QDialog):
         # Behavior
         behavior = QtWidgets.QGroupBox("Behavior")
         bl = QtWidgets.QFormLayout(behavior)
-        bl.addRow("Case-insensitive matching:", QtWidgets.QCheckBox("Enable"))
-        min_chars = QtWidgets.QSpinBox()
-        min_chars.setRange(1, 5)
-        min_chars.setValue(2)
-        bl.addRow("Min chars to trigger popup:", min_chars)
-        max_items = QtWidgets.QSpinBox()
-        max_items.setRange(5, 50)
-        max_items.setValue(12)
-        bl.addRow("Max visible suggestions:", max_items)
+        self._ac_case_insensitive_cb = QtWidgets.QCheckBox("Enable")
+        self._ac_case_insensitive_cb.setChecked(ac.case_insensitive)
+        bl.addRow("Case-insensitive matching:", self._ac_case_insensitive_cb)
+        self._ac_min_chars_spin = QtWidgets.QSpinBox()
+        self._ac_min_chars_spin.setRange(1, 5)
+        self._ac_min_chars_spin.setValue(ac.min_prefix_length)
+        bl.addRow("Min chars to trigger popup:", self._ac_min_chars_spin)
+        self._ac_max_visible_spin = QtWidgets.QSpinBox()
+        self._ac_max_visible_spin.setRange(5, 50)
+        self._ac_max_visible_spin.setValue(ac.max_visible_items)
+        bl.addRow("Max visible suggestions:", self._ac_max_visible_spin)
         col.addWidget(behavior)
 
         col.addStretch()
@@ -1632,7 +2211,17 @@ class NodeCompletionPopup(QtWidgets.QFrame):
 
         self._active_edit: QtWidgets.QLineEdit | None = None
         self._all_words: list[str] = []
+        self._max_visible: int = _POPUP_MAX_VISIBLE
+        self._case_insensitive: bool = True
         self.hide()
+
+    def set_max_visible(self, count: int) -> None:
+        """Set maximum visible suggestion rows."""
+        self._max_visible = max(5, min(count, 50))
+
+    def set_case_insensitive(self, enabled: bool) -> None:
+        """Toggle case-insensitive matching for node popup filtering."""
+        self._case_insensitive = enabled
 
     # -- public API -----------------------------------------------------------
 
@@ -1678,13 +2267,16 @@ class NodeCompletionPopup(QtWidgets.QFrame):
             self.hide()
             return
 
-        prefix = text.lower()
-        matches = [w for w in words if prefix in w.lower()]
+        if self._case_insensitive:
+            prefix = text.lower()
+            matches = [w for w in words if prefix in w.lower()]
+        else:
+            matches = [w for w in words if text in w]
 
         self._list.clear()
 
         # Add real word-list matches (capped to leave room for the new-item entry)
-        for m in matches[: _POPUP_MAX_VISIBLE - 1]:
+        for m in matches[: self._max_visible - 1]:
             item = QtWidgets.QListWidgetItem(m)
             item.setToolTip(m)
             self._list.addItem(item)
@@ -1715,7 +2307,7 @@ class NodeCompletionPopup(QtWidgets.QFrame):
             QtCore.QPoint(0, line_edit.height()),
         )
         row_height = self._list.sizeHintForRow(0) or 20
-        visible = min(self._list.count(), _POPUP_MAX_VISIBLE)
+        visible = min(self._list.count(), self._max_visible)
         popup_h = row_height * visible + 4
         popup_w = max(line_edit.width(), 180)
         self.setFixedWidth(popup_w)
@@ -1829,17 +2421,31 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._id_words: list[str] | None = None
         self._path_words: list[str] = []
         self._node_popup = NodeCompletionPopup(self)
-        self._backup_on_save: bool = False
-        self._auto_save_enabled: bool = False
-        self._auto_save_interval: int = 60
-        self._default_project_folder: str = str(default_project_folder())
+        self._backup_on_save = bool(app_dirs.load_setting("backup_on_save", False))
+        self._auto_save_enabled = bool(app_dirs.load_setting("auto_save_enabled", False))
+        self._auto_save_interval = int(app_dirs.load_setting("auto_save_interval", 60))
+        saved_project_folder = app_dirs.load_setting("default_project_folder", "")
+        self._default_project_folder: str = (
+            str(saved_project_folder) if saved_project_folder else str(default_project_folder())
+        )
         detected = detect_subnautica_cc3_path()
-        self._subnautica_cc3_path: str = str(detected) if detected is not None else ""
+        saved_cc3 = app_dirs.load_setting("subnautica_cc3_path", "")
+        self._subnautica_cc3_path: str = (
+            str(saved_cc3) if saved_cc3 else (str(detected) if detected is not None else "")
+        )
+        self._check_for_updates = bool(app_dirs.load_setting("check_for_updates", True))
         self._auto_save_timer = QtCore.QTimer(self)
         self._auto_save_timer.timeout.connect(self._auto_save_tick)
         self._project: ProjectFile | None = None
         app_dirs.migrate_legacy_config()
-        self._recent = RecentFiles(app_dirs.recent_files_path())
+        recent_max = int(app_dirs.load_setting("recent_max_entries", 10))
+        self._recent = RecentFiles(app_dirs.recent_files_path(), max_entries=recent_max)
+
+        # -- Load persisted theme, node editor, and code editor settings ---------
+        set_active_theme(self._load_theme())
+        self._ne_settings: NodeEditorSettings = self._load_node_editor_settings()
+        self._ce_settings: CodeEditorSettings = self._load_code_editor_settings()
+        self._ac_settings: AutocompleteSettings = self._load_autocomplete_settings()
 
         # -- Build UI ---------------------------------------------------------
         self._setup_menu_bar()
@@ -1847,16 +2453,19 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._setup_status_bar()
         self._setup_id_reference_panel()
 
-        # Force combo box dropdowns to be fully opaque so underlying
-        # scene content does not bleed through the popup list.
-        self.setStyleSheet(
-            "QComboBox QAbstractItemView {"
-            "  background: rgb(30, 30, 30);"
-            "  color: rgb(200, 200, 200);"
-            "  selection-background-color: rgb(60, 80, 120);"
-            "  border: 1px solid rgb(80, 80, 80);"
-            "}"
-        )
+        # Apply theme stylesheet (dark/light/system + accent + high-contrast)
+        self._apply_theme(active_theme())
+
+        # Apply node editor settings (grid, minimap, etc.)
+        self._apply_node_editor_settings(self._ne_settings)
+
+        # Apply autocomplete settings to node popup
+        self._node_popup.set_max_visible(self._ac_settings.max_visible_items)
+        self._node_popup.set_case_insensitive(self._ac_settings.case_insensitive)
+
+        # -- Apply persisted auto-save setting --------------------------------
+        if self._auto_save_enabled:
+            self._set_auto_save(enabled=True, interval=self._auto_save_interval)
 
         # -- Launch flow: decide what to show on startup --
         on_launch = app_dirs.load_setting("on_launch", "welcome")
@@ -1872,6 +2481,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     self.load_recipes(Path(first.path))
                     self._recent.add(Path(first.path), "folder")
                     self._rebuild_recent_menu()
+
+        # -- Deferred update check (runs after the event loop starts) --
+        if self._check_for_updates:
+            QtCore.QTimer.singleShot(0, self._run_update_check)
 
     # -- Properties -----------------------------------------------------------
 
@@ -2087,6 +2700,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         editor.setPlaceholderText("Open a recipe file to view its source...")
         EasyMarkupHighlighter(editor.document())
         self._setup_autocomplete_for(editor)
+        self._apply_code_editor_settings_to(editor, self._ce_settings)
+        self._apply_autocomplete_settings_to(editor, self._ac_settings)
 
         from craftgraph.commands import EditHistory
 
@@ -2106,6 +2721,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._tab_bar.setTabToolTip(self._tab_bar.count() - 1, "untitled")
 
         self._setup_context_menus_for(graph)
+        self._install_viewer_patches(graph)
+
+        # Snap-to-grid for placeholder tab
+        def _on_placeholder_moved(moved: dict) -> None:
+            self._snap_moved_nodes(graph, moved)
+
+        graph.viewer().moved_nodes.connect(_on_placeholder_moved)
+
         self._minimap.attach(graph)
 
     def _on_tab_changed(self, index: int) -> None:
@@ -2425,6 +3048,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             return
         saved = 0
         for tab in dirty_tabs:
+            if self._ce_settings.strip_trailing_whitespace:
+                tab.editor.strip_trailing_whitespace()
             path = tab.parsed_file.source_path  # type: ignore[union-attr]
             text = serialize_file(tab.parsed_file)  # type: ignore[arg-type]
             save_with_backup(path, text, backup=self._backup_on_save)
@@ -2714,6 +3339,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self.load_recipes(target)
             self._recent.add(target, "folder")
             self._rebuild_recent_menu()
+            self._show_editor()
 
     def _on_startup_toggle(self, checked: bool) -> None:
         """Handle the 'Don't show on startup' checkbox toggle."""
@@ -2878,6 +3504,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         else:
             self._prompt_create_project()
 
+        # Strip trailing whitespace from the code editor before serializing
+        if self._ce_settings.strip_trailing_whitespace:
+            tab.editor.strip_trailing_whitespace()
+
         issues = self._collect_validation_issues(tab)
         if issues and not self._show_validation_summary(issues):
             self.statusBar().showMessage("Save cancelled")
@@ -2941,7 +3571,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             default_project_folder=self._default_project_folder,
             subnautica_cc3_path=self._subnautica_cc3_path,
             recent_max_entries=self._recent.max_entries,
-            on_launch=app_dirs.load_setting("on_launch", "welcome"),
+            on_launch=str(app_dirs.load_setting("on_launch", "welcome")),
+            check_for_updates=self._check_for_updates,
+            theme=active_theme(),
+            node_editor=self._ne_settings,
+            code_editor=self._ce_settings,
+            autocomplete=self._ac_settings,
         )
         dialog.exec_()
         self._backup_on_save = dialog.backup_on_save
@@ -2951,9 +3586,568 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         self._default_project_folder = dialog.default_project_folder
         self._subnautica_cc3_path = dialog.subnautica_cc3_path
+        self._check_for_updates = dialog.check_for_updates
         self._recent.max_entries = dialog.recent_max_entries
         self._rebuild_recent_menu()
+
+        # Apply and persist theme
+        new_theme = dialog.theme_colors
+        set_active_theme(new_theme)
+        self._apply_theme(new_theme)
+
+        # Apply and persist node editor settings
+        self._ne_settings = dialog.node_editor_settings
+        self._apply_node_editor_settings(self._ne_settings)
+
+        # Apply and persist code editor settings
+        self._ce_settings = dialog.code_editor_settings
+        self._apply_code_editor_settings(self._ce_settings)
+
+        # Apply and persist autocomplete settings
+        self._ac_settings = dialog.autocomplete_settings
+        self._apply_autocomplete_settings(self._ac_settings)
+
+        # Persist all settings
+        app_dirs.save_setting("backup_on_save", dialog.backup_on_save)
+        app_dirs.save_setting("auto_save_enabled", dialog.auto_save_enabled)
+        app_dirs.save_setting("auto_save_interval", dialog.auto_save_interval)
+        app_dirs.save_setting("default_project_folder", dialog.default_project_folder)
+        app_dirs.save_setting("subnautica_cc3_path", dialog.subnautica_cc3_path)
+        app_dirs.save_setting("recent_max_entries", dialog.recent_max_entries)
         app_dirs.save_setting("on_launch", dialog.on_launch)
+        app_dirs.save_setting("check_for_updates", dialog.check_for_updates)
+        self._save_theme(new_theme)
+        self._save_node_editor_settings(self._ne_settings)
+        self._save_code_editor_settings(self._ce_settings)
+        self._save_autocomplete_settings(self._ac_settings)
+
+    def _apply_theme(self, theme: ThemeColors) -> None:
+        """Apply visual theme changes: stylesheet, node borders, UI scale."""
+        self.setStyleSheet(self._build_app_stylesheet(theme))
+
+        # High-contrast borders on existing nodes: brighten border_color
+        border_color = (
+            (220, 220, 220, 255) if theme.high_contrast_borders else (46, 57, 66, 255)
+        )
+        for tab in self._file_tabs:
+            for node in tab.graph.all_nodes():
+                view = node.view
+                view.border_color = border_color
+
+        # UI scale: adjust the application-wide default font size
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            base_font = app.font()
+            # 10pt is our baseline at 100%
+            scaled_pt = round(10.0 * theme.ui_scale / 100.0)
+            base_font.setPointSize(max(scaled_pt, 6))
+            app.setFont(base_font)
+
+    @staticmethod
+    def _build_app_stylesheet(theme: ThemeColors) -> str:
+        """Build the root window stylesheet from theme settings."""
+        accent = theme.accent
+        if theme.app_theme == "light":
+            bg = "rgb(240, 240, 240)"
+            fg = "rgb(30, 30, 30)"
+            panel_bg = "rgb(255, 255, 255)"
+            border = "rgb(180, 180, 180)"
+            combo_bg = "rgb(250, 250, 250)"
+            combo_sel = "rgb(210, 230, 255)"
+        elif theme.app_theme == "system":
+            palette = QtWidgets.QApplication.palette()
+            bg_c = palette.color(QtGui.QPalette.ColorRole.Window)
+            fg_c = palette.color(QtGui.QPalette.ColorRole.WindowText)
+            bg = f"rgb({bg_c.red()}, {bg_c.green()}, {bg_c.blue()})"
+            fg = f"rgb({fg_c.red()}, {fg_c.green()}, {fg_c.blue()})"
+            panel_bg = bg
+            border = "rgb(140, 140, 140)"
+            combo_bg = bg
+            combo_sel = f"rgb({bg_c.red() + 20}, {bg_c.green() + 20}, {bg_c.blue() + 40})"
+        else:
+            bg = "rgb(30, 30, 30)"
+            fg = "rgb(200, 200, 200)"
+            panel_bg = "rgb(30, 30, 30)"
+            border = "rgb(80, 80, 80)"
+            combo_bg = "rgb(30, 30, 30)"
+            combo_sel = "rgb(60, 80, 120)"
+
+        hc_border = "2px" if theme.high_contrast_borders else "1px"
+
+        parts = [
+            # Combo box dropdown opacity fix (always needed)
+            f"QComboBox QAbstractItemView {{"
+            f"  background: {combo_bg}; color: {fg};"
+            f"  selection-background-color: {combo_sel};"
+            f"  border: {hc_border} solid {border};"
+            f"}}",
+            # Status bar accent stripe
+            f"QStatusBar {{ border-top: 2px solid {accent}; }}",
+        ]
+
+        if theme.app_theme == "light":
+            parts.append(
+                f"QMainWindow {{ background: {bg}; color: {fg}; }}"
+                f"QMenuBar {{ background: {panel_bg}; color: {fg}; }}"
+                f"QMenuBar::item:selected {{ background: {combo_sel}; }}"
+                f"QMenu {{ background: {panel_bg}; color: {fg};"
+                f"  border: {hc_border} solid {border}; }}"
+                f"QMenu::item:selected {{ background: {combo_sel}; }}"
+                f"QTabBar::tab {{ background: rgb(230, 230, 230); color: {fg};"
+                f"  border: {hc_border} solid {border}; padding: 4px 10px; }}"
+                f"QTabBar::tab:selected {{ background: {panel_bg}; }}"
+                f"QSplitter::handle {{ background: {border}; }}"
+            )
+
+        if theme.high_contrast_borders:
+            parts.append(
+                f"QGroupBox {{ border: {hc_border} solid {border}; }}"
+                f"QLineEdit, QSpinBox, QComboBox {{"
+                f"  border: {hc_border} solid {border}; }}"
+            )
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _save_theme(theme: ThemeColors) -> None:
+        """Persist theme colors to settings.json under the ``theme`` key."""
+        import contextlib
+
+        path = app_dirs.settings_path()
+        data: dict[str, object] = {"version": 1}
+        if path.is_file():
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                data = json.loads(path.read_text(encoding="utf-8"))
+        data["theme"] = theme_to_dict(theme)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _load_theme() -> ThemeColors:
+        """Load theme colors from settings.json, falling back to defaults."""
+        path = app_dirs.settings_path()
+        if not path.is_file():
+            return ThemeColors()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw_theme = data.get("theme")
+            if isinstance(raw_theme, dict):
+                return theme_from_dict(raw_theme)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return ThemeColors()
+
+    def _install_viewer_patches(self, graph: NodeGraph) -> None:
+        """Patch a graph's viewer and scene for CraftGraph-specific settings.
+
+        Installs one-time monkey-patches that read dynamic ``_cg_*`` attributes
+        from the viewer/scene so that settings changes take effect immediately
+        without re-patching.  Safe to call multiple times per graph (guarded).
+        """
+        viewer = graph.viewer()
+        if getattr(viewer, "_cg_patched", False):
+            return
+        viewer._cg_patched = True
+
+        # Seed dynamic attributes from current settings
+        s = self._ne_settings
+        viewer._cg_zoom_speed: float = s.zoom_speed
+        viewer._cg_invert_zoom: bool = s.invert_zoom
+        viewer._cg_pan_with_mmb: bool = s.pan_with_mmb
+
+        # -- Patch wheelEvent (zoom speed + invert) --
+        def _patched_wheel(event: QtGui.QWheelEvent) -> None:
+            try:
+                delta = event.delta()
+            except AttributeError:
+                delta = event.angleDelta().y()
+                if delta == 0:
+                    delta = event.angleDelta().x()
+            delta = int(delta * viewer._cg_zoom_speed)
+            if viewer._cg_invert_zoom:
+                delta = -delta
+            try:
+                viewer._set_viewer_zoom(delta, pos=event.pos())
+            except AttributeError:
+                viewer._set_viewer_zoom(delta, pos=event.position().toPoint())
+
+        viewer.wheelEvent = _patched_wheel
+
+        # -- Patch mouseMoveEvent (pan-with-MMB toggle) --
+        _orig_mouse_move = viewer.mouseMoveEvent
+
+        def _patched_mouse_move(event: QtGui.QMouseEvent) -> None:
+            # When MMB pan is disabled, skip the plain-MMB pan branch but
+            # preserve Alt+MMB zoom and Alt+LMB pan.
+            if (
+                viewer.MMB_state
+                and not viewer.ALT_state
+                and not viewer._cg_pan_with_mmb
+            ):
+                viewer._previous_pos = event.pos()
+                QtWidgets.QGraphicsView.mouseMoveEvent(viewer, event)
+                return
+            _orig_mouse_move(event)
+
+        viewer.mouseMoveEvent = _patched_mouse_move
+
+        # -- Patch scene.drawBackground (custom grid size) --
+        scene = graph.scene()
+        scene._cg_grid_size: int = s.grid_size
+
+        def _patched_draw_bg(
+            painter: QtGui.QPainter,
+            rect: QtCore.QRectF,
+        ) -> None:
+            from NodeGraphQt.constants import ViewerEnum
+            from NodeGraphQt.widgets.scene import NodeScene
+
+            super(NodeScene, scene).drawBackground(painter, rect)
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+            painter.setBrush(scene.backgroundBrush())
+
+            gs: int = scene._cg_grid_size
+
+            if scene._grid_mode is ViewerEnum.GRID_DISPLAY_DOTS.value:
+                pen = QtGui.QPen(QtGui.QColor(*scene.grid_color), 0.65)
+                scene._draw_dots(painter, rect, pen, gs)
+            elif scene._grid_mode is ViewerEnum.GRID_DISPLAY_LINES.value:
+                zoom = scene.viewer().get_zoom()
+                if zoom > -0.5:
+                    pen = QtGui.QPen(QtGui.QColor(*scene.grid_color), 0.65)
+                    scene._draw_grid(painter, rect, pen, gs)
+                color = QtGui.QColor(*scene._bg_color).darker(200)
+                if zoom < -0.0:
+                    color = color.darker(100 - int(zoom * 110))
+                pen = QtGui.QPen(color, 0.65)
+                scene._draw_grid(painter, rect, pen, gs * 8)
+
+            painter.restore()
+
+        scene.drawBackground = types.MethodType(
+            lambda self, p, r: _patched_draw_bg(p, r), scene,
+        )
+
+    def _snap_moved_nodes(self, graph: NodeGraph, moved: dict) -> None:
+        """Snap recently moved nodes to the grid if snap-to-grid is enabled."""
+        if not self._ne_settings.snap_to_grid:
+            return
+        size = self._ne_settings.grid_size
+        for node_item in moved:
+            node = graph.get_node_by_id(node_item.id)
+            if node is None:
+                continue
+            x, y = node.pos()
+            sx = round(x / size) * size
+            sy = round(y / size) * size
+            if sx != x or sy != y:
+                node.set_pos(sx, sy)
+
+    def _apply_node_editor_settings(self, s: NodeEditorSettings) -> None:
+        """Apply node editor preferences to all open graphs."""
+        from NodeGraphQt.constants import PipeLayoutEnum, ViewerEnum
+
+        old = self._ne_settings
+        self._ne_settings = s
+
+        grid_mode_map = {
+            "dots": ViewerEnum.GRID_DISPLAY_DOTS.value,
+            "lines": ViewerEnum.GRID_DISPLAY_LINES.value,
+            "none": ViewerEnum.GRID_DISPLAY_NONE.value,
+        }
+        mode = grid_mode_map.get(s.grid_style, ViewerEnum.GRID_DISPLAY_LINES.value)
+        if not s.show_grid:
+            mode = ViewerEnum.GRID_DISPLAY_NONE.value
+
+        pipe_style_map = {
+            "curved": PipeLayoutEnum.CURVED.value,
+            "straight": PipeLayoutEnum.STRAIGHT.value,
+            "angle": PipeLayoutEnum.ANGLE.value,
+        }
+        pipe_mode = pipe_style_map.get(s.pipe_style, PipeLayoutEnum.CURVED.value)
+
+        for tab in self._file_tabs:
+            tab.graph.set_grid_mode(mode)
+
+            # Update dynamic attributes on patched viewers/scenes
+            viewer = tab.graph.viewer()
+            if getattr(viewer, "_cg_patched", False):
+                viewer._cg_zoom_speed = s.zoom_speed
+                viewer._cg_invert_zoom = s.invert_zoom
+                viewer._cg_pan_with_mmb = s.pan_with_mmb
+                tab.graph.scene()._cg_grid_size = s.grid_size
+                viewer.force_update()
+
+            # Pipe style
+            tab.graph.set_pipe_style(pipe_mode)
+
+            # Pipe width -- update pen on all existing pipe items
+            self._apply_pipe_width(tab, s.pipe_width)
+
+            # Port label visibility
+            self._apply_port_label_visibility(tab, s.show_port_labels)
+
+        # Thumbnails: toggle visibility or re-apply at new size
+        thumbnails_changed = (
+            s.show_thumbnails != old.show_thumbnails
+            or s.thumbnail_size != old.thumbnail_size
+        )
+        if thumbnails_changed:
+            self._apply_thumbnail_settings(s.show_thumbnails, s.thumbnail_size)
+
+        # Pipe animation
+        if s.animate_pipes != old.animate_pipes:
+            self._set_pipe_animation(s.animate_pipes)
+
+        # Cycle warning toggle
+        for tab in self._file_tabs:
+            if tab.ui_handler is not None:
+                tab.ui_handler.warn_before_cycles = s.warn_before_cycles
+
+        # Minimap visibility
+        if hasattr(self, "_minimap"):
+            self._minimap.setVisible(s.show_minimap)
+            if hasattr(self, "_minimap_action"):
+                self._minimap_action.setChecked(s.show_minimap)
+
+    def _apply_pipe_width(self, tab: FileTab, width: float) -> None:
+        """Update pen width on all existing pipe items in a tab's scene."""
+        from NodeGraphQt.qgraphics.pipe import PipeItem
+
+        scene = tab.graph.scene()
+        if scene is None:
+            return
+        for item in scene.items():
+            if isinstance(item, PipeItem):
+                pen = item.pen()
+                pen.setWidthF(width)
+                item.setPen(pen)
+
+    @staticmethod
+    def _apply_port_label_visibility(tab: FileTab, visible: bool) -> None:
+        """Show or hide port name labels on all nodes in a tab."""
+        for node in tab.graph.all_nodes():
+            view = getattr(node, "view", None)
+            if view is None:
+                continue
+            for port_item in list(view.inputs) + list(view.outputs):
+                port_item.display_name = visible
+            view.post_init()
+
+    def _apply_thumbnail_settings(
+        self, show: bool, size: int,
+    ) -> None:
+        """Toggle sprite visibility and re-apply at *size* across all tabs."""
+        from craftgraph.qt_nodes import CraftGraphBaseNode
+
+        for tab in self._file_tabs:
+            for node in tab.model_to_node.values():
+                if not isinstance(node, CraftGraphBaseNode):
+                    continue
+                if not show:
+                    node.clear_sprite()
+                elif node._sprite_path is not None and node._sprite_path.exists():
+                    node.set_sprite(node._sprite_path, size=size)
+
+    def _set_pipe_animation(self, enabled: bool) -> None:
+        """Start or stop the pipe dash-offset animation timer."""
+        if enabled:
+            if not hasattr(self, "_pipe_anim_timer"):
+                self._pipe_anim_timer = QtCore.QTimer(self)
+                self._pipe_anim_timer.setInterval(50)
+                self._pipe_anim_timer.timeout.connect(self._tick_pipe_animation)
+                self._pipe_anim_offset = 0.0
+            self._pipe_anim_timer.start()
+        elif hasattr(self, "_pipe_anim_timer"):
+            self._pipe_anim_timer.stop()
+            # Reset pipes to solid style
+            self._reset_pipe_dash()
+
+    def _tick_pipe_animation(self) -> None:
+        """Advance the dash offset on all pipes for a flowing animation."""
+        from NodeGraphQt.qgraphics.pipe import PipeItem
+
+        self._pipe_anim_offset = (self._pipe_anim_offset + 1.5) % 20.0
+        for tab in self._file_tabs:
+            scene = tab.graph.scene()
+            if scene is None:
+                continue
+            for item in scene.items():
+                if isinstance(item, PipeItem):
+                    pen = item.pen()
+                    pen.setDashPattern([4, 3])
+                    pen.setDashOffset(self._pipe_anim_offset)
+                    item.setPen(pen)
+
+    def _reset_pipe_dash(self) -> None:
+        """Remove dash pattern from all pipes (restore solid lines)."""
+        from NodeGraphQt.qgraphics.pipe import PipeItem
+
+        for tab in self._file_tabs:
+            scene = tab.graph.scene()
+            if scene is None:
+                continue
+            for item in scene.items():
+                if isinstance(item, PipeItem):
+                    pen = item.pen()
+                    pen.setStyle(QtCore.Qt.PenStyle.SolidLine)
+                    item.setPen(pen)
+
+    @staticmethod
+    def _save_node_editor_settings(s: NodeEditorSettings) -> None:
+        """Persist node editor settings to settings.json."""
+        import contextlib
+
+        path = app_dirs.settings_path()
+        data: dict[str, object] = {"version": 1}
+        if path.is_file():
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                data = json.loads(path.read_text(encoding="utf-8"))
+        data["node_editor"] = node_editor_settings_to_dict(s)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _load_node_editor_settings() -> NodeEditorSettings:
+        """Load node editor settings from settings.json, with defaults."""
+        path = app_dirs.settings_path()
+        if not path.is_file():
+            return NodeEditorSettings()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw = data.get("node_editor")
+            if isinstance(raw, dict):
+                return node_editor_settings_from_dict(raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return NodeEditorSettings()
+
+    def _apply_code_editor_settings(self, s: CodeEditorSettings) -> None:
+        """Apply code editor preferences to all open editors."""
+        for tab in self._file_tabs:
+            editor = tab.editor
+            editor.set_editor_font(s.font_family, s.font_size)
+            editor.set_show_line_numbers(s.show_line_numbers)
+            editor.set_highlight_current_line(s.highlight_current_line)
+            editor.set_word_wrap(s.word_wrap)
+            editor.set_tab_width(s.tab_width)
+            editor.set_auto_indent(s.auto_indent)
+            editor.set_auto_close_brackets(s.auto_close_brackets)
+            # Update parse debounce timer interval
+            if tab.parse_timer is not None:
+                tab.parse_timer.setInterval(s.parse_debounce_ms)
+
+    def _apply_code_editor_settings_to(
+        self, editor: CodeEditor, s: CodeEditorSettings,
+    ) -> None:
+        """Apply code editor preferences to a single editor instance."""
+        editor.set_editor_font(s.font_family, s.font_size)
+        editor.set_show_line_numbers(s.show_line_numbers)
+        editor.set_highlight_current_line(s.highlight_current_line)
+        editor.set_word_wrap(s.word_wrap)
+        editor.set_tab_width(s.tab_width)
+        editor.set_auto_indent(s.auto_indent)
+        editor.set_auto_close_brackets(s.auto_close_brackets)
+
+    @staticmethod
+    def _save_code_editor_settings(s: CodeEditorSettings) -> None:
+        """Persist code editor settings to settings.json."""
+        import contextlib
+
+        path = app_dirs.settings_path()
+        data: dict[str, object] = {"version": 1}
+        if path.is_file():
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                data = json.loads(path.read_text(encoding="utf-8"))
+        data["code_editor"] = code_editor_settings_to_dict(s)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _load_code_editor_settings() -> CodeEditorSettings:
+        """Load code editor settings from settings.json, with defaults."""
+        path = app_dirs.settings_path()
+        if not path.is_file():
+            return CodeEditorSettings()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw = data.get("code_editor")
+            if isinstance(raw, dict):
+                return code_editor_settings_from_dict(raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return CodeEditorSettings()
+
+    def _apply_autocomplete_settings(self, s: AutocompleteSettings) -> None:
+        """Apply autocomplete preferences to all editors and node popup."""
+        # Invalidate cached word list so _get_id_words() rebuilds with new sources
+        self._id_words = None
+
+        for tab in self._file_tabs:
+            editor = tab.editor
+            editor.set_min_prefix_length(s.min_prefix_length)
+            editor.set_case_insensitive(s.case_insensitive)
+            # Rebuild completer with updated word list
+            self._setup_autocomplete_for(editor)
+
+        # Rebuild node completers with updated word list
+        for tab in self._file_tabs:
+            for node in tab.graph.all_nodes():
+                if isinstance(node, CraftGraphBaseNode):
+                    self._attach_node_completers(node)
+
+        self._node_popup.set_max_visible(s.max_visible_items)
+        self._node_popup.set_case_insensitive(s.case_insensitive)
+
+    def _apply_autocomplete_settings_to(
+        self, editor: CodeEditor, s: AutocompleteSettings,
+    ) -> None:
+        """Apply autocomplete preferences to a single editor instance."""
+        editor.set_min_prefix_length(s.min_prefix_length)
+        editor.set_case_insensitive(s.case_insensitive)
+
+    @staticmethod
+    def _save_autocomplete_settings(s: AutocompleteSettings) -> None:
+        """Persist autocomplete settings to settings.json."""
+        import contextlib
+
+        path = app_dirs.settings_path()
+        data: dict[str, object] = {"version": 1}
+        if path.is_file():
+            with contextlib.suppress(json.JSONDecodeError, ValueError):
+                data = json.loads(path.read_text(encoding="utf-8"))
+        data["autocomplete"] = autocomplete_settings_to_dict(s)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    @staticmethod
+    def _load_autocomplete_settings() -> AutocompleteSettings:
+        """Load autocomplete settings from settings.json, with defaults."""
+        path = app_dirs.settings_path()
+        if not path.is_file():
+            return AutocompleteSettings()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            raw = data.get("autocomplete")
+            if isinstance(raw, dict):
+                return autocomplete_settings_from_dict(raw)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return AutocompleteSettings()
+
+    def _run_update_check(self) -> None:
+        """Check for a newer CraftGraph version and show a status message."""
+        from craftgraph import __version__
+        from craftgraph.updater import check_for_update
+
+        result = check_for_update(__version__)
+        if result is not None:
+            self.statusBar().showMessage(
+                f"Update available: CraftGraph {result.version} "
+                f"-- download at {result.url}",
+                15_000,
+            )
 
     def _cc3_working_dir(self) -> str:
         """CC3 WorkingFiles/ path if configured, else empty string."""
@@ -3420,7 +4614,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             pf = parse_text(text, source_path=src)
         except (ParseError, MappingError) as exc:
             self.statusBar().showMessage(f"Parse error: {exc}")
+            if self._ce_settings.show_parse_errors_inline:
+                line = getattr(exc, "line", 0)
+                tab.editor.show_parse_error(line, str(exc))
             return
+
+        tab.editor.clear_parse_errors()
 
         # Tear down previous handler
         if tab.ui_handler is not None:
@@ -4125,14 +5324,19 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     )
 
     def _get_id_words(self) -> list[str]:
-        """Return the cached, sorted list of vanilla + mod-compat TechType IDs."""
+        """Return the cached, sorted list of TechType IDs per settings."""
         if self._id_words is None:
             from craftgraph.vanilla_ids import load_mod_compat_ids, load_vanilla_ids
 
-            self._id_words = sorted(
-                load_vanilla_ids() | load_mod_compat_ids(),
-                key=str.lower,
-            )
+            ids: set[str] = set()
+            if self._ac_settings.include_vanilla_ids:
+                ids |= load_vanilla_ids()
+            if self._ac_settings.include_mod_compat_ids:
+                ids |= load_mod_compat_ids()
+            # include_project_ids: placeholder for future project-extracted IDs
+            if self._ac_settings.custom_ids:
+                ids |= set(self._ac_settings.custom_ids)
+            self._id_words = sorted(ids, key=str.lower)
         return self._id_words
 
     def _make_completer(
@@ -4140,10 +5344,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         words: list[str],
         parent: QtCore.QObject | None = None,
     ) -> QtWidgets.QCompleter:
-        """Build a case-insensitive, substring-matching QCompleter."""
+        """Build a substring-matching QCompleter using current settings."""
         completer = QtWidgets.QCompleter(words, parent or self)
-        completer.setCaseSensitivity(QtCore.Qt.CaseSensitivity.CaseInsensitive)
+        sensitivity = (
+            QtCore.Qt.CaseSensitivity.CaseInsensitive
+            if self._ac_settings.case_insensitive
+            else QtCore.Qt.CaseSensitivity.CaseSensitive
+        )
+        completer.setCaseSensitivity(sensitivity)
         completer.setFilterMode(QtCore.Qt.MatchFlag.MatchContains)
+        completer.setMaxVisibleItems(self._ac_settings.max_visible_items)
         return completer
 
     def _setup_autocomplete_for(self, editor: CodeEditor) -> None:
@@ -4409,6 +5619,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for cls in all_variable_node_classes():
             graph.register_node(cls)
         self._setup_context_menus_for(graph)
+        self._install_viewer_patches(graph)
         graph.node_created.connect(self._apply_node_header_tooltip)
 
         guard = SyncGuard()
@@ -4436,11 +5647,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         editor = CodeEditor()
         EasyMarkupHighlighter(editor.document())
         self._setup_autocomplete_for(editor)
+        self._apply_code_editor_settings_to(editor, self._ce_settings)
+        self._apply_autocomplete_settings_to(editor, self._ac_settings)
 
         # Per-tab debounce timer
         timer = QtCore.QTimer(self)
         timer.setSingleShot(True)
-        timer.setInterval(300)
+        timer.setInterval(self._ce_settings.parse_debounce_ms)
 
         tab = FileTab(
             parsed_file=parsed_file,
@@ -4492,8 +5705,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         graph.node_selected.connect(on_node_selected)
 
-        # Wire node drag -> save user positions
+        # Wire node drag -> snap-to-grid + save user positions
         def on_nodes_moved(moved: dict, _tab: FileTab = tab) -> None:
+            # Snap first so recorded positions are already on-grid
+            self._snap_moved_nodes(_tab.graph, moved)
+
             for node_item in moved:
                 node = _tab.graph.get_node_by_id(node_item.id)
                 if node is None:
@@ -4523,6 +5739,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             on_cycle_rejected=self._on_cycle_rejected,
             on_reassignment_warning=self._on_reassignment_warning,
         )
+        tab.ui_handler.warn_before_cycles = self._ne_settings.warn_before_cycles
 
         return tab
 
@@ -4579,6 +5796,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         self._update_path_completions()
         self._refresh_all_ref_nodes()
+
+        # Apply persisted node editor settings (pipe style, port labels, etc.)
+        self._apply_node_editor_settings(self._ne_settings)
 
         # Activate first tab
         self._tab_bar.setCurrentIndex(0)

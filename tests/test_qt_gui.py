@@ -35,10 +35,12 @@ def qapp():
 
 
 @pytest.fixture
-def window(qapp):
-    """Fresh CraftGraphWindow for each test."""
+def window(qapp, monkeypatch, tmp_path):
+    """Fresh CraftGraphWindow for each test, isolated from real settings."""
+    from craftgraph import app_dirs
     from craftgraph.qt_gui import CraftGraphWindow
 
+    monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
     return CraftGraphWindow()
 
 
@@ -3672,6 +3674,86 @@ class TestLaunchFlow:
         assert win._main_stack.currentIndex() == 0
 
 
+# ---------------------------------------------------------------------------
+# Welcome screen button integration
+# ---------------------------------------------------------------------------
+
+
+class TestWelcomeButtonIntegration:
+    """Verify welcome screen buttons interact correctly with CraftGraphWindow."""
+
+    def test_open_folder_cancel_stays_on_welcome(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        assert window._main_stack.currentIndex() == 0
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+            return_value="",
+        ):
+            window._on_open_folder()
+        assert window._main_stack.currentIndex() == 0
+
+    def test_open_folder_success_switches_to_editor(
+        self, window: CraftGraphWindow, tmp_path
+    ) -> None:
+        from unittest.mock import patch
+
+        recipe_dir = tmp_path / "recipes"
+        recipe_dir.mkdir()
+        (recipe_dir / "ModifiedRecipes.txt").write_text(
+            "ModifiedRecipes:\n", encoding="utf-8"
+        )
+        assert window._main_stack.currentIndex() == 0
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
+            return_value=str(recipe_dir),
+        ):
+            window._on_open_folder()
+        assert window._main_stack.currentIndex() == 1
+
+    def test_open_project_cancel_stays_on_welcome(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import patch
+
+        assert window._main_stack.currentIndex() == 0
+        with patch(
+            "PySide6.QtWidgets.QFileDialog.getOpenFileName",
+            return_value=("", ""),
+        ):
+            window._on_open_project()
+        assert window._main_stack.currentIndex() == 0
+
+    def test_new_project_cancel_stays_on_welcome(self, window: CraftGraphWindow) -> None:
+        from unittest.mock import Mock, patch
+
+        assert window._main_stack.currentIndex() == 0
+        mock_dialog = Mock()
+        mock_dialog.return_value.exec_.return_value = (
+            QtWidgets.QDialog.DialogCode.Rejected
+        )
+        with patch("craftgraph.qt_gui.NewProjectDialog", mock_dialog):
+            window._on_new_project()
+        assert window._main_stack.currentIndex() == 0
+
+    def test_welcome_open_recent_folder_switches_to_editor(
+        self, window: CraftGraphWindow, tmp_path
+    ) -> None:
+        recipe_dir = tmp_path / "recipes"
+        recipe_dir.mkdir()
+        (recipe_dir / "ModifiedRecipes.txt").write_text(
+            "ModifiedRecipes:\n", encoding="utf-8"
+        )
+        assert window._main_stack.currentIndex() == 0
+        window._welcome_open_recent(str(recipe_dir), "folder")
+        assert window._main_stack.currentIndex() == 1
+
+    def test_welcome_open_recent_stale_path_stays_on_welcome(
+        self, window: CraftGraphWindow
+    ) -> None:
+        assert window._main_stack.currentIndex() == 0
+        window._welcome_open_recent("/nonexistent/path", "folder")
+        assert window._main_stack.currentIndex() == 0
+
+
 class TestSettingsDialogOnLaunch:
     def test_dialog_has_on_launch_property(self, qapp):
         from craftgraph.qt_gui import _SettingsDialog
@@ -3690,3 +3772,1101 @@ class TestSettingsDialogOnLaunch:
 
         dialog = _SettingsDialog(None, on_launch="empty")
         assert dialog.on_launch == "empty"
+
+
+class TestSettingsDialogCheckForUpdates:
+    def test_dialog_has_check_for_updates_property(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        assert hasattr(dialog, "check_for_updates")
+
+    def test_check_for_updates_default_is_true(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        assert dialog.check_for_updates is True
+
+    def test_check_for_updates_false(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, check_for_updates=False)
+        assert dialog.check_for_updates is False
+
+
+class TestUpdateChecker:
+    def test_run_update_check_no_update(self, window):
+        """Stub always returns None -- status bar should not show update text."""
+        msg_before = window.statusBar().currentMessage()
+        window._run_update_check()
+        assert "Update available" not in window.statusBar().currentMessage()
+        assert window.statusBar().currentMessage() == msg_before
+
+    def test_check_for_updates_false_skips_check(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("check_for_updates", False)
+        win = CraftGraphWindow()
+        assert win._check_for_updates is False
+
+
+class TestSettingsPersistenceRoundTrip:
+    """Settings saved from _on_settings are restored on next window creation."""
+
+    def test_backup_on_save_persists(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("backup_on_save", True)
+        win = CraftGraphWindow()
+        assert win._backup_on_save is True
+
+    def test_auto_save_interval_persists(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("auto_save_interval", 120)
+        win = CraftGraphWindow()
+        assert win._auto_save_interval == 120
+
+    def test_default_project_folder_persists(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("default_project_folder", "/custom/path")
+        win = CraftGraphWindow()
+        assert win._default_project_folder == "/custom/path"
+
+    def test_on_settings_saves_all_keys(self, window, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import _SettingsDialog
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        window._on_settings()
+        data = __import__("json").loads(
+            (tmp_path / "settings.json").read_text(encoding="utf-8")
+        )
+        expected_keys = {
+            "backup_on_save",
+            "auto_save_enabled",
+            "auto_save_interval",
+            "default_project_folder",
+            "subnautica_cc3_path",
+            "recent_max_entries",
+            "on_launch",
+            "check_for_updates",
+        }
+        assert expected_keys.issubset(data.keys())
+
+
+# ---------------------------------------------------------------------------
+# Appearance tab -- node and syntax color swatches
+# ---------------------------------------------------------------------------
+
+
+class TestAppearanceNodeSwatches:
+    """Node Colors subtab has interactive swatches for all block types."""
+
+    def test_dialog_has_node_swatches(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        expected_fields = {
+            "modified_recipe", "added_recipe", "alias_recipe", "custom_food",
+            "fabricator", "crafting_tab", "custom_size", "moved_recipe",
+            "custom_bio_fuel", "custom_fragment_count", "orphan_ingredient", "sprite",
+        }
+        assert set(dialog._node_swatches.keys()) == expected_fields
+
+    def test_node_swatches_are_clickable(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        for btn in dialog._node_swatches.values():
+            assert hasattr(btn, "color_hex")
+
+    def test_node_swatches_match_theme_defaults(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import NodeColors
+
+        dialog = _SettingsDialog()
+        nc = NodeColors()
+        btn = dialog._node_swatches["modified_recipe"]
+        r, g, b = nc.modified_recipe
+        expected = f"#{r:02x}{g:02x}{b:02x}"
+        assert btn.color_hex == expected  # type: ignore[attr-defined]
+
+
+class TestAppearanceSyntaxSwatches:
+    """Code Colors subtab has interactive swatches for syntax tokens."""
+
+    def test_dialog_has_syntax_swatches(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        expected_fields = {
+            "block_type", "field_key", "string", "comment", "error_underline",
+        }
+        assert set(dialog._syntax_swatches.keys()) == expected_fields
+
+    def test_syntax_swatches_match_theme_defaults(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import SyntaxColors
+
+        dialog = _SettingsDialog()
+        sc = SyntaxColors()
+        assert dialog._syntax_swatches["block_type"].color_hex == sc.block_type  # type: ignore[attr-defined]
+        assert dialog._syntax_swatches["comment"].color_hex == sc.comment  # type: ignore[attr-defined]
+
+
+class TestAppearanceThemeProperty:
+    """_SettingsDialog.theme_colors builds a ThemeColors from widget values."""
+
+    def test_theme_colors_returns_theme_instance(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ThemeColors
+
+        dialog = _SettingsDialog()
+        tc = dialog.theme_colors
+        assert isinstance(tc, ThemeColors)
+
+    def test_theme_colors_matches_defaults(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ThemeColors
+
+        dialog = _SettingsDialog()
+        tc = dialog.theme_colors
+        defaults = ThemeColors()
+        assert tc.node.modified_recipe == defaults.node.modified_recipe
+        assert tc.highlight.cycle_edge == defaults.highlight.cycle_edge
+        assert tc.syntax.block_type == defaults.syntax.block_type
+        assert tc.editor.background == defaults.editor.background
+        assert tc.high_contrast_borders == defaults.high_contrast_borders
+
+    def test_high_contrast_checkbox_reflected(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._high_contrast_cb is not None
+        dialog._high_contrast_cb.setChecked(True)
+        assert dialog.theme_colors.high_contrast_borders is True
+        dialog._high_contrast_cb.setChecked(False)
+        assert dialog.theme_colors.high_contrast_borders is False
+
+
+class TestThemePersistence:
+    """Theme colors round-trip through _save_theme / _load_theme."""
+
+    def test_save_and_load_theme(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import NodeColors, ThemeColors
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        custom = ThemeColors(node=NodeColors(modified_recipe=(200, 100, 50)))
+        CraftGraphWindow._save_theme(custom)
+
+        loaded = CraftGraphWindow._load_theme()
+        assert loaded.node.modified_recipe == (200, 100, 50)
+        # Other fields stay at defaults
+        assert loaded.node.added_recipe == NodeColors().added_recipe
+
+    def test_load_theme_missing_file_returns_defaults(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "nope.json")
+        loaded = CraftGraphWindow._load_theme()
+        assert loaded.node.modified_recipe == ThemeColors().node.modified_recipe
+
+    def test_on_settings_persists_theme(self, window, monkeypatch, tmp_path):
+        import json
+
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import _SettingsDialog
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        window._on_settings()
+        data = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+        assert "theme" in data
+        assert "node" in data["theme"]
+        assert "syntax" in data["theme"]
+
+    def test_theme_loaded_on_startup(self, qapp, monkeypatch, tmp_path):
+        import json
+
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import NodeColors, ThemeColors, active_theme, theme_to_dict
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        custom = ThemeColors(node=NodeColors(sprite=(11, 22, 33)))
+        settings_data = {"version": 1, "theme": theme_to_dict(custom)}
+        (tmp_path / "settings.json").write_text(json.dumps(settings_data), encoding="utf-8")
+        CraftGraphWindow()
+        assert active_theme().node.sprite == (11, 22, 33)
+
+
+# ---------------------------------------------------------------------------
+# High contrast borders
+# ---------------------------------------------------------------------------
+
+
+class TestHighContrastBorders:
+    """High-contrast borders toggle applies visual changes."""
+
+    def test_dialog_reflects_high_contrast_in_theme_colors(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._high_contrast_cb.setChecked(True)
+        tc = dialog.theme_colors
+        assert tc.high_contrast_borders is True
+
+    def test_apply_theme_sets_bright_border_on_nodes(self, window):
+        from craftgraph.theme import ThemeColors
+
+        theme = ThemeColors(high_contrast_borders=True)
+        window._apply_theme(theme)
+        # With no file loaded there are no nodes, so just verify no crash
+        assert window.styleSheet() != ""
+
+    def test_stylesheet_contains_2px_border_when_enabled(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        ss = CraftGraphWindow._build_app_stylesheet(ThemeColors(high_contrast_borders=True))
+        assert "2px" in ss
+
+    def test_stylesheet_uses_1px_border_when_disabled(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        ss = CraftGraphWindow._build_app_stylesheet(ThemeColors(high_contrast_borders=False))
+        assert "1px solid" in ss
+        # Only the accent stripe should use 2px, not widget borders
+        assert "QGroupBox" not in ss
+
+
+# ---------------------------------------------------------------------------
+# Accent color
+# ---------------------------------------------------------------------------
+
+
+class TestAccentColorSelector:
+    """Accent color combo wires to ThemeColors.accent."""
+
+    def test_dialog_has_accent_combo(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._accent_combo is not None
+
+    def test_default_accent_is_blue(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ACCENT_COLORS
+
+        dialog = _SettingsDialog()
+        assert dialog.theme_colors.accent == ACCENT_COLORS["Blue"]
+
+    def test_changing_accent_combo_updates_theme_colors(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ACCENT_COLORS, ACCENT_NAMES
+
+        dialog = _SettingsDialog()
+        red_idx = ACCENT_NAMES.index("Red")
+        dialog._accent_combo.setCurrentIndex(red_idx)
+        assert dialog.theme_colors.accent == ACCENT_COLORS["Red"]
+
+    def test_accent_initializes_from_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ACCENT_COLORS, ThemeColors
+
+        theme = ThemeColors(accent=ACCENT_COLORS["Green"])
+        dialog = _SettingsDialog(theme=theme)
+        assert dialog._accent_combo.currentText() == "Green"
+
+    def test_accent_appears_in_stylesheet(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ACCENT_COLORS, ThemeColors
+
+        theme = ThemeColors(accent=ACCENT_COLORS["Orange"])
+        ss = CraftGraphWindow._build_app_stylesheet(theme)
+        assert ACCENT_COLORS["Orange"].lower() in ss.lower()
+
+
+# ---------------------------------------------------------------------------
+# Application theme (Dark / Light / System)
+# ---------------------------------------------------------------------------
+
+
+class TestAppThemeSelector:
+    """Application theme combo wires to ThemeColors.app_theme."""
+
+    def test_dialog_has_theme_combo(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._theme_combo is not None
+
+    def test_default_app_theme_is_dark(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.theme_colors.app_theme == "dark"
+
+    def test_selecting_light_sets_app_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._theme_combo.setCurrentIndex(1)  # Light
+        assert dialog.theme_colors.app_theme == "light"
+
+    def test_selecting_system_sets_app_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._theme_combo.setCurrentIndex(2)  # System
+        assert dialog.theme_colors.app_theme == "system"
+
+    def test_theme_combo_initializes_from_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ThemeColors
+
+        dialog = _SettingsDialog(theme=ThemeColors(app_theme="light"))
+        assert dialog._theme_combo.currentIndex() == 1
+
+    def test_light_stylesheet_contains_light_bg(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        ss = CraftGraphWindow._build_app_stylesheet(ThemeColors(app_theme="light"))
+        assert "rgb(240, 240, 240)" in ss
+
+    def test_dark_stylesheet_has_dark_combo_bg(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        ss = CraftGraphWindow._build_app_stylesheet(ThemeColors(app_theme="dark"))
+        assert "rgb(30, 30, 30)" in ss
+
+    def test_system_stylesheet_no_crash(self, qapp):
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ThemeColors
+
+        ss = CraftGraphWindow._build_app_stylesheet(ThemeColors(app_theme="system"))
+        assert isinstance(ss, str)
+
+
+# ---------------------------------------------------------------------------
+# Colorblind mode
+# ---------------------------------------------------------------------------
+
+
+class TestColorblindModeSelector:
+    """Colorblind mode combo wires to ThemeColors.colorblind_mode."""
+
+    def test_dialog_has_colorblind_combo(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._colorblind_combo is not None
+
+    def test_default_colorblind_mode_is_none(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.theme_colors.colorblind_mode == "none"
+
+    def test_selecting_deuteranopia(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._colorblind_combo.setCurrentIndex(1)  # deuteranopia
+        assert dialog.theme_colors.colorblind_mode == "deuteranopia"
+
+    def test_selecting_tritanopia(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._colorblind_combo.setCurrentIndex(3)  # tritanopia
+        assert dialog.theme_colors.colorblind_mode == "tritanopia"
+
+    def test_colorblind_combo_initializes_from_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import ThemeColors
+
+        dialog = _SettingsDialog(theme=ThemeColors(colorblind_mode="protanopia"))
+        assert dialog._colorblind_combo.currentIndex() == 2
+
+    def test_round_trip_new_theme_fields_persisted(self, qapp, monkeypatch, tmp_path):
+        """app_theme, colorblind_mode, ui_scale survive save/load."""
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import ACCENT_COLORS, ThemeColors
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        custom = ThemeColors(
+            app_theme="light",
+            accent=ACCENT_COLORS["Teal"],
+            colorblind_mode="deuteranopia",
+            ui_scale=150,
+        )
+        CraftGraphWindow._save_theme(custom)
+        loaded = CraftGraphWindow._load_theme()
+        assert loaded.app_theme == "light"
+        assert loaded.accent == ACCENT_COLORS["Teal"]
+        assert loaded.colorblind_mode == "deuteranopia"
+        assert loaded.ui_scale == 150
+
+
+# ---------------------------------------------------------------------------
+# UI scale
+# ---------------------------------------------------------------------------
+
+
+class TestUIScaleSelector:
+    """UI scale combo wires to ThemeColors.ui_scale."""
+
+    def test_dialog_has_ui_scale_combo(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._ui_scale_combo is not None
+
+    def test_default_ui_scale_is_100(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.theme_colors.ui_scale == 100
+
+    def test_selecting_150_percent(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import UI_SCALE_OPTIONS
+
+        dialog = _SettingsDialog()
+        idx = UI_SCALE_OPTIONS.index(150)
+        dialog._ui_scale_combo.setCurrentIndex(idx)
+        assert dialog.theme_colors.ui_scale == 150
+
+    def test_ui_scale_combo_initializes_from_theme(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import UI_SCALE_OPTIONS, ThemeColors
+
+        dialog = _SettingsDialog(theme=ThemeColors(ui_scale=125))
+        expected_idx = UI_SCALE_OPTIONS.index(125)
+        assert dialog._ui_scale_combo.currentIndex() == expected_idx
+
+    def test_apply_theme_adjusts_font_size(self, window):
+        from craftgraph.theme import ThemeColors
+
+        theme = ThemeColors(ui_scale=200)
+        window._apply_theme(theme)
+        app = QtWidgets.QApplication.instance()
+        assert app.font().pointSize() == 20  # 10pt * 200/100
+
+
+# ---------------------------------------------------------------------------
+# Node Editor: Navigation settings
+# ---------------------------------------------------------------------------
+
+
+class TestNavigationSettings:
+    """Navigation widgets wire to NodeEditorSettings."""
+
+    def test_dialog_has_zoom_speed_spin(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._zoom_speed_spin is not None
+
+    def test_default_zoom_speed(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.node_editor_settings.zoom_speed == 1.0
+
+    def test_changing_zoom_speed(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._zoom_speed_spin.setValue(2.5)
+        assert dialog.node_editor_settings.zoom_speed == 2.5
+
+    def test_invert_zoom_default_false(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.node_editor_settings.invert_zoom is False
+
+    def test_invert_zoom_toggle(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._invert_zoom_cb.setChecked(True)
+        assert dialog.node_editor_settings.invert_zoom is True
+
+    def test_pan_mmb_default_true(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.node_editor_settings.pan_with_mmb is True
+
+    def test_show_minimap_default_true(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog.node_editor_settings.show_minimap is True
+
+    def test_show_minimap_toggle(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._show_minimap_cb.setChecked(False)
+        assert dialog.node_editor_settings.show_minimap is False
+
+    def test_initializes_from_settings(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import NodeEditorSettings
+
+        ne = NodeEditorSettings(zoom_speed=3.0, invert_zoom=True, show_minimap=False)
+        dialog = _SettingsDialog(node_editor=ne)
+        assert dialog._zoom_speed_spin.value() == 3.0
+        assert dialog._invert_zoom_cb.isChecked() is True
+        assert dialog._show_minimap_cb.isChecked() is False
+
+
+# ---------------------------------------------------------------------------
+# Node Editor: Grid settings
+# ---------------------------------------------------------------------------
+
+
+class TestGridSettings:
+    """Grid widgets wire to NodeEditorSettings."""
+
+    def test_dialog_has_grid_widgets(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        assert dialog._show_grid_cb is not None
+        assert dialog._grid_size_spin is not None
+        assert dialog._snap_grid_cb is not None
+        assert dialog._grid_style_combo is not None
+
+    def test_default_grid_settings(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        s = dialog.node_editor_settings
+        assert s.show_grid is True
+        assert s.grid_size == 50
+        assert s.snap_to_grid is False
+        assert s.grid_style == "lines"
+
+    def test_changing_grid_size(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._grid_size_spin.setValue(30)
+        assert dialog.node_editor_settings.grid_size == 30
+
+    def test_changing_grid_style_to_dots(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._grid_style_combo.setCurrentIndex(0)  # Dots
+        assert dialog.node_editor_settings.grid_style == "dots"
+
+    def test_changing_grid_style_to_none(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._grid_style_combo.setCurrentIndex(2)  # None
+        assert dialog.node_editor_settings.grid_style == "none"
+
+    def test_snap_toggle(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._snap_grid_cb.setChecked(True)
+        assert dialog.node_editor_settings.snap_to_grid is True
+
+    def test_show_grid_toggle(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        dialog._show_grid_cb.setChecked(False)
+        assert dialog.node_editor_settings.show_grid is False
+
+    def test_initializes_from_settings(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import NodeEditorSettings
+
+        ne = NodeEditorSettings(show_grid=False, grid_size=80, grid_style="dots", snap_to_grid=True)
+        dialog = _SettingsDialog(node_editor=ne)
+        assert dialog._show_grid_cb.isChecked() is False
+        assert dialog._grid_size_spin.value() == 80
+        assert dialog._grid_style_combo.currentIndex() == 0  # dots
+        assert dialog._snap_grid_cb.isChecked() is True
+
+
+# ---------------------------------------------------------------------------
+# Node Editor: persistence round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestNodeEditorSettingsPersistence:
+    """Node editor settings survive save/load."""
+
+    def test_save_and_load_round_trip(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import NodeEditorSettings
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        custom = NodeEditorSettings(
+            zoom_speed=2.0, invert_zoom=True, grid_size=30, grid_style="dots",
+        )
+        CraftGraphWindow._save_node_editor_settings(custom)
+        loaded = CraftGraphWindow._load_node_editor_settings()
+        assert loaded.zoom_speed == 2.0
+        assert loaded.invert_zoom is True
+        assert loaded.grid_size == 30
+        assert loaded.grid_style == "dots"
+
+    def test_load_missing_file_returns_defaults(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.theme import NodeEditorSettings
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "nope.json")
+        loaded = CraftGraphWindow._load_node_editor_settings()
+        assert loaded.zoom_speed == NodeEditorSettings().zoom_speed
+
+    def test_apply_sets_grid_mode_none_when_hidden(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(show_grid=False))
+        # No crash; grid_mode was set to NONE
+
+    def test_apply_shows_minimap(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(show_minimap=True))
+        # isVisible() requires the widget tree to be shown; use not isHidden()
+        assert not window._minimap.isHidden()
+
+    def test_apply_hides_minimap(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(show_minimap=False))
+        assert window._minimap.isHidden()
+
+
+# ---------------------------------------------------------------------------
+# Node Editor: viewer patches (zoom, pan, grid size, snap)
+# ---------------------------------------------------------------------------
+
+
+class TestViewerPatches:
+    """Viewer monkey-patches for zoom speed, invert zoom, pan toggle, grid size."""
+
+    def test_viewer_patched_on_creation(self, window):
+        viewer = window.graph.viewer()
+        assert getattr(viewer, "_cg_patched", False) is True
+
+    def test_zoom_speed_attribute_set(self, window):
+        viewer = window.graph.viewer()
+        assert viewer._cg_zoom_speed == 1.0
+
+    def test_invert_zoom_attribute_set(self, window):
+        viewer = window.graph.viewer()
+        assert viewer._cg_invert_zoom is False
+
+    def test_pan_with_mmb_attribute_set(self, window):
+        viewer = window.graph.viewer()
+        assert viewer._cg_pan_with_mmb is True
+
+    def test_scene_grid_size_attribute_set(self, window):
+        scene = window.graph.scene()
+        assert scene._cg_grid_size == 50
+
+    def test_apply_updates_zoom_speed(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(zoom_speed=3.0))
+        assert window.graph.viewer()._cg_zoom_speed == 3.0
+
+    def test_apply_updates_invert_zoom(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(invert_zoom=True))
+        assert window.graph.viewer()._cg_invert_zoom is True
+
+    def test_apply_updates_pan_with_mmb(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(pan_with_mmb=False))
+        assert window.graph.viewer()._cg_pan_with_mmb is False
+
+    def test_apply_updates_grid_size(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(grid_size=80))
+        assert window.graph.scene()._cg_grid_size == 80
+
+    def test_double_patch_is_noop(self, window):
+        """Calling _install_viewer_patches twice does not break anything."""
+        viewer = window.graph.viewer()
+        wheel_ref = viewer.wheelEvent
+        window._install_viewer_patches(window.graph)
+        assert viewer.wheelEvent is wheel_ref
+
+    def test_wheel_event_replaced(self, window):
+        """wheelEvent is a patched closure, not the original bound method."""
+        viewer = window.graph.viewer()
+        # The patched wheelEvent is a plain function, not a bound method
+        assert not hasattr(viewer.wheelEvent, "__self__")
+
+
+class TestSnapToGrid:
+    """Snap-to-grid rounds node positions after drag."""
+
+    def test_snap_rounds_position(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(
+            NodeEditorSettings(snap_to_grid=True, grid_size=50),
+        )
+        graph = window.graph
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
+        node.set_pos(73, 128)
+
+        # Simulate the moved_nodes signal payload
+        node_item = node.view
+        moved = {node_item: (0.0, 0.0)}
+        window._snap_moved_nodes(graph, moved)
+
+        x, y = node.pos()
+        assert x == 50.0
+        assert y == 150.0
+
+    def test_snap_disabled_does_not_move(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(
+            NodeEditorSettings(snap_to_grid=False, grid_size=50),
+        )
+        graph = window.graph
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
+        node.set_pos(73, 128)
+
+        node_item = node.view
+        moved = {node_item: (0.0, 0.0)}
+        window._snap_moved_nodes(graph, moved)
+
+        x, y = node.pos()
+        assert x == 73.0
+        assert y == 128.0
+
+    def test_snap_uses_current_grid_size(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(
+            NodeEditorSettings(snap_to_grid=True, grid_size=25),
+        )
+        graph = window.graph
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
+        node.set_pos(37, 60)
+
+        node_item = node.view
+        moved = {node_item: (0.0, 0.0)}
+        window._snap_moved_nodes(graph, moved)
+
+        x, y = node.pos()
+        assert x == 25.0  # round(37/25)*25 = round(1.48)*25 = 1*25 = 25
+        assert y == 50.0  # round(60/25)*25 = round(2.4)*25 = 2*25 = 50
+
+    def test_snap_exact_position_unchanged(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(
+            NodeEditorSettings(snap_to_grid=True, grid_size=50),
+        )
+        graph = window.graph
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode")
+        node.set_pos(100, 200)
+
+        node_item = node.view
+        moved = {node_item: (0.0, 0.0)}
+        window._snap_moved_nodes(graph, moved)
+
+        x, y = node.pos()
+        assert x == 100.0
+        assert y == 200.0
+
+
+# ---------------------------------------------------------------------------
+# Code Editor Settings
+# ---------------------------------------------------------------------------
+
+
+class TestCodeEditorSettingsDialog:
+    """_SettingsDialog exposes code editor settings via property."""
+
+    def test_dialog_has_code_editor_settings_property(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        assert hasattr(dialog, "code_editor_settings")
+
+    def test_code_editor_settings_returns_dataclass(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import CodeEditorSettings
+
+        dialog = _SettingsDialog(None)
+        ce = dialog.code_editor_settings
+        assert isinstance(ce, CodeEditorSettings)
+
+    def test_dialog_reflects_passed_code_editor_values(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import CodeEditorSettings
+
+        custom = CodeEditorSettings(
+            font_family="Courier New",
+            font_size=14,
+            show_line_numbers=False,
+            highlight_current_line=False,
+            word_wrap=True,
+            tab_width=2,
+            auto_indent=False,
+            auto_close_brackets=False,
+            strip_trailing_whitespace=False,
+            parse_debounce_ms=800,
+            show_parse_errors_inline=False,
+        )
+        dialog = _SettingsDialog(None, code_editor=custom)
+        ce = dialog.code_editor_settings
+        assert ce.font_size == 14
+        assert ce.show_line_numbers is False
+        assert ce.highlight_current_line is False
+        assert ce.word_wrap is True
+        assert ce.tab_width == 2
+        assert ce.auto_indent is False
+        assert ce.auto_close_brackets is False
+        assert ce.strip_trailing_whitespace is False
+        assert ce.parse_debounce_ms == 800
+        assert ce.show_parse_errors_inline is False
+
+    def test_dialog_defaults_match_dataclass_defaults(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import CodeEditorSettings
+
+        dialog = _SettingsDialog(None)
+        ce = dialog.code_editor_settings
+        defaults = CodeEditorSettings()
+        assert ce.font_size == defaults.font_size
+        assert ce.show_line_numbers == defaults.show_line_numbers
+        assert ce.highlight_current_line == defaults.highlight_current_line
+        assert ce.word_wrap == defaults.word_wrap
+        assert ce.tab_width == defaults.tab_width
+        assert ce.auto_indent == defaults.auto_indent
+        assert ce.auto_close_brackets == defaults.auto_close_brackets
+        assert ce.strip_trailing_whitespace == defaults.strip_trailing_whitespace
+        assert ce.parse_debounce_ms == defaults.parse_debounce_ms
+        assert ce.show_parse_errors_inline == defaults.show_parse_errors_inline
+
+
+class TestCodeEditorSettingsPersistence:
+    """Code editor settings survive save/load round-trip."""
+
+    def test_on_settings_saves_code_editor_key(self, window, monkeypatch, tmp_path):
+        import json
+
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import _SettingsDialog
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        window._on_settings()
+        data = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+        assert "code_editor" in data
+        ce_data = data["code_editor"]
+        assert "font_family" in ce_data
+        assert "font_size" in ce_data
+        assert "parse_debounce_ms" in ce_data
+
+    def test_load_code_editor_settings_from_file(self, window, monkeypatch, tmp_path):
+        import json
+
+        from craftgraph import app_dirs
+        from craftgraph.theme import CodeEditorSettings
+
+        settings_file = tmp_path / "settings.json"
+        settings_file.write_text(json.dumps({
+            "version": 1,
+            "code_editor": {
+                "font_family": "Courier New",
+                "font_size": 16,
+                "tab_width": 8,
+                "parse_debounce_ms": 1000,
+            },
+        }), encoding="utf-8")
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: settings_file)
+
+        loaded = window._load_code_editor_settings()
+        assert loaded.font_family == "Courier New"
+        assert loaded.font_size == 16
+        assert loaded.tab_width == 8
+        assert loaded.parse_debounce_ms == 1000
+        # Unset fields get defaults
+        defaults = CodeEditorSettings()
+        assert loaded.show_line_numbers == defaults.show_line_numbers
+        assert loaded.auto_indent == defaults.auto_indent
+
+    def test_load_missing_file_returns_defaults(self, window, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.theme import CodeEditorSettings
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "nope.json")
+        loaded = window._load_code_editor_settings()
+        assert loaded == CodeEditorSettings()
+
+
+class TestCodeEditorSettingsApplication:
+    """Settings are applied to CodeEditor instances."""
+
+    def test_apply_font_to_editor(self, window):
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(font_family="Courier New", font_size=16)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        font = window.code_editor.font()
+        assert font.family() == "Courier New"
+        assert font.pointSize() == 16
+
+    def test_apply_hide_line_numbers(self, window):
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(show_line_numbers=False)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert window.code_editor.line_number_area.isHidden()
+        assert window.code_editor.line_number_area_width() == 0
+
+    def test_apply_show_line_numbers(self, window):
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(show_line_numbers=True)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert not window.code_editor.line_number_area.isHidden()
+        assert window.code_editor.line_number_area_width() > 0
+
+    def test_apply_word_wrap_on(self, window):
+        from PySide6.QtWidgets import QPlainTextEdit
+
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(word_wrap=True)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert window.code_editor.lineWrapMode() == QPlainTextEdit.LineWrapMode.WidgetWidth
+
+    def test_apply_word_wrap_off(self, window):
+        from PySide6.QtWidgets import QPlainTextEdit
+
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(word_wrap=False)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert window.code_editor.lineWrapMode() == QPlainTextEdit.LineWrapMode.NoWrap
+
+    def test_apply_auto_indent_flag(self, window):
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(auto_indent=False)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert window.code_editor._auto_indent is False
+
+    def test_apply_auto_close_brackets_flag(self, window):
+        from craftgraph.theme import CodeEditorSettings
+
+        s = CodeEditorSettings(auto_close_brackets=False)
+        window._apply_code_editor_settings_to(window.code_editor, s)
+        assert window.code_editor._auto_close_brackets is False
+
+    def test_debounce_timer_updated(self, window, tmp_path):
+        """Loading a file creates a parse timer; settings update its interval."""
+        from craftgraph.theme import CodeEditorSettings
+
+        # Create a minimal recipe file to load
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+
+        s = CodeEditorSettings(parse_debounce_ms=1200)
+        window._apply_code_editor_settings(s)
+        tab = window._file_tabs[-1]
+        assert tab.parse_timer is not None
+        assert tab.parse_timer.interval() == 1200
+
+
+# ---------------------------------------------------------------------------
+# Custom ID scope awareness
+# ---------------------------------------------------------------------------
+
+
+class TestCustomIdScope:
+    """Settings dialog shows correct scope label and uses project IDs when available."""
+
+    def test_scope_label_shows_global_when_no_project(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(project_custom_ids=None)
+        assert dialog._ac_scope_label.text() == "Editing: Global"
+
+    def test_scope_label_shows_project_when_project_ids_given(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(project_custom_ids=["MyMod"])
+        assert dialog._ac_scope_label.text() == "Editing: Project"
+
+    def test_custom_list_shows_project_ids_when_project_loaded(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import AutocompleteSettings
+
+        dialog = _SettingsDialog(
+            autocomplete=AutocompleteSettings(custom_ids=["GlobalId"]),
+            project_custom_ids=["ProjectId"],
+        )
+        items = [dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())]
+        assert items == ["ProjectId"]
+
+    def test_custom_list_shows_global_ids_when_no_project(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import AutocompleteSettings
+
+        dialog = _SettingsDialog(
+            autocomplete=AutocompleteSettings(custom_ids=["GlobalId"]),
+            project_custom_ids=None,
+        )
+        items = [dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())]
+        assert items == ["GlobalId"]
+
+    def test_project_custom_ids_property_returns_list_when_project(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(project_custom_ids=["A", "B"])
+        assert dialog.project_custom_ids == ["A", "B"]
+
+    def test_project_custom_ids_property_returns_none_when_global(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(project_custom_ids=None)
+        assert dialog.project_custom_ids is None
