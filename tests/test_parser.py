@@ -36,6 +36,7 @@ from craftgraph.parser import (
     MappingError,
     ParseError,
     clean_value,
+    extract_ids,
     map_added_recipe,
     map_alias_recipe,
     map_crafting_tab,
@@ -2392,3 +2393,172 @@ class TestParseText:
         text = "ModifiedRecipes:\n(\n    ItemID: X;\n);\n"
         pf = parse_text(text, source_path=Path("my/path.txt"))
         assert pf.source_path == Path("my/path.txt")
+
+
+# ---------------------------------------------------------------------------
+# extract_ids
+# ---------------------------------------------------------------------------
+
+
+class TestExtractIds:
+    """Tests for extract_ids() -- collects all TechType IDs from parsed files."""
+
+    def test_empty_list_returns_empty_set(self) -> None:
+        result = extract_ids([])
+        assert result == set()
+
+    def test_modified_recipe_ids(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            modified_recipes=[
+                ModifiedRecipe(
+                    item_id="Titanium",
+                    ingredients=[Ingredient("Quartz", 2), Ingredient("Gold", 1)],
+                    linked_item_ids=["Silver"],
+                    unlocks=["Knife"],
+                    unlocked_by=["Scanner"],
+                ),
+            ],
+        )
+        result = extract_ids([pf])
+        assert result == {"Titanium", "Quartz", "Gold", "Silver", "Knife", "Scanner"}
+
+    def test_alias_recipe_extra_fields(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.ALIAS_RECIPES,
+            alias_recipes=[
+                AliasRecipe(
+                    item_id="MyItem",
+                    functional_id="Knife",
+                    sprite_item_id="Titanium",
+                ),
+            ],
+        )
+        result = extract_ids([pf])
+        assert result == {"MyItem", "Knife", "Titanium"}
+
+    def test_custom_food_inherits_alias_fields(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FOODS,
+            custom_foods=[
+                CustomFood(
+                    item_id="MyFood",
+                    functional_id="CookedPeeper",
+                    sprite_item_id="Peeper",
+                    ingredients=[Ingredient("Peeper", 1)],
+                ),
+            ],
+        )
+        result = extract_ids([pf])
+        assert result == {"MyFood", "CookedPeeper", "Peeper"}
+
+    def test_crafting_tab_ids(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_CRAFTING_TABS,
+            crafting_tabs=[
+                CraftingTab(tab_id="MyTab", sprite_item_id="Beacon"),
+            ],
+        )
+        result = extract_ids([pf])
+        assert result == {"MyTab", "Beacon"}
+
+    def test_custom_fabricator_with_nested_recipes(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FABRICATORS,
+            custom_fabricators=[
+                CustomFabricator(
+                    item_id="MyFab",
+                    ingredients=[Ingredient("Titanium", 4)],
+                    unlocked_by=["Builder"],
+                    tabs=[CraftingTab(tab_id="InnerTab", sprite_item_id="Beacon")],
+                    added_recipes=[AddedRecipe(item_id="InnerRecipe")],
+                    alias_recipes=[AliasRecipe(item_id="InnerAlias", functional_id="Knife")],
+                    moved_recipes=[MovedRecipe(item_id="InnerMoved")],
+                    custom_foods=[CustomFood(item_id="InnerFood")],
+                ),
+            ],
+        )
+        result = extract_ids([pf])
+        expected = {
+            "MyFab", "Titanium", "Builder", "InnerTab", "Beacon",
+            "InnerRecipe", "InnerAlias", "Knife", "InnerMoved", "InnerFood",
+        }
+        assert result == expected
+
+    def test_moved_recipe_id(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.MOVED_RECIPES,
+            moved_recipes=[MovedRecipe(item_id="Titanium")],
+        )
+        assert extract_ids([pf]) == {"Titanium"}
+
+    def test_custom_size_id(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_SIZES,
+            custom_sizes=[CustomSize(item_id="BigItem")],
+        )
+        assert extract_ids([pf]) == {"BigItem"}
+
+    def test_custom_bio_fuel_id(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_BIO_FUELS,
+            custom_bio_fuels=[CustomBioFuel(item_id="FuelItem", energy=100.0)],
+        )
+        assert extract_ids([pf]) == {"FuelItem"}
+
+    def test_custom_fragment_count_id(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.CUSTOM_FRAGMENT_COUNTS,
+            custom_fragment_counts=[CustomFragmentCount(item_id="FragItem")],
+        )
+        assert extract_ids([pf]) == {"FragItem"}
+
+    def test_multiple_files_union(self) -> None:
+        pf1 = ParsedFile(
+            source_path=Path("a.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            modified_recipes=[ModifiedRecipe(item_id="Titanium")],
+        )
+        pf2 = ParsedFile(
+            source_path=Path("b.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            modified_recipes=[ModifiedRecipe(item_id="Gold")],
+        )
+        assert extract_ids([pf1, pf2]) == {"Titanium", "Gold"}
+
+    def test_skips_none_optional_fields(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.ALIAS_RECIPES,
+            alias_recipes=[
+                AliasRecipe(
+                    item_id="MyItem",
+                    functional_id=None,
+                    sprite_item_id=None,
+                ),
+            ],
+        )
+        assert extract_ids([pf]) == {"MyItem"}
+
+    def test_deduplicates_across_sources(self) -> None:
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            block_type=BlockType.MODIFIED_RECIPES,
+            modified_recipes=[
+                ModifiedRecipe(
+                    item_id="Titanium",
+                    ingredients=[Ingredient("Titanium", 2)],
+                ),
+            ],
+        )
+        result = extract_ids([pf])
+        assert result == {"Titanium"}

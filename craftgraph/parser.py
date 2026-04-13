@@ -737,3 +737,63 @@ def _validate_ingredient_ranges(parsed: ParsedFile, warnings: list[str]) -> None
                     f"in fabricator '{fab.item_id}' has Required={ing.required} "
                     f"(valid range: {_INGREDIENT_REQUIRED_MIN}-{_INGREDIENT_REQUIRED_MAX})"
                 )
+
+
+# -- ID extraction -------------------------------------------------------------
+
+
+def _collect_recipe_ids(recipe: ModifiedRecipe, ids: set[str]) -> None:
+    """Collect all TechType IDs from a recipe and its fields."""
+    ids.add(recipe.item_id)
+    for ing in recipe.ingredients:
+        ids.add(ing.item_id)
+    ids.update(recipe.linked_item_ids)
+    ids.update(recipe.unlocks)
+    ids.update(recipe.unlocked_by)
+    if isinstance(recipe, AliasRecipe):
+        if recipe.functional_id is not None:
+            ids.add(recipe.functional_id)
+        if recipe.sprite_item_id is not None:
+            ids.add(recipe.sprite_item_id)
+
+
+def _collect_tab_ids(tab: CraftingTab, ids: set[str]) -> None:
+    """Collect TechType IDs from a crafting tab."""
+    ids.add(tab.tab_id)
+    if tab.sprite_item_id is not None:
+        ids.add(tab.sprite_item_id)
+
+
+def extract_ids(parsed_files: list[ParsedFile]) -> set[str]:
+    """Collect every TechType ID referenced in *parsed_files*.
+
+    Walks all block types (recipes, fabricators, tabs, sizes, bio fuels,
+    fragment counts) and returns the union of all IDs found.  The caller
+    is responsible for filtering out vanilla or mod-compat IDs if desired.
+    """
+    ids: set[str] = set()
+    for pf in parsed_files:
+        for recipe in pf.all_recipes:
+            _collect_recipe_ids(recipe, ids)
+        for tab in pf.crafting_tabs:
+            _collect_tab_ids(tab, ids)
+        for fab in pf.custom_fabricators:
+            ids.add(fab.item_id)
+            for ing in fab.ingredients:
+                ids.add(ing.item_id)
+            ids.update(fab.unlocked_by)
+            for tab in fab.tabs:
+                _collect_tab_ids(tab, ids)
+            # added_recipes, alias_recipes, custom_foods already covered
+            # by pf.all_recipes above; only moved_recipes is exclusive
+            for r in fab.moved_recipes:
+                ids.add(r.item_id)
+        for mr in pf.moved_recipes:
+            ids.add(mr.item_id)
+        for cs in pf.custom_sizes:
+            ids.add(cs.item_id)
+        for bf in pf.custom_bio_fuels:
+            ids.add(bf.item_id)
+        for fc in pf.custom_fragment_counts:
+            ids.add(fc.item_id)
+    return ids
