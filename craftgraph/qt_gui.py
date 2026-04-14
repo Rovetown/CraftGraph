@@ -625,7 +625,8 @@ class _SettingsDialog(QtWidgets.QDialog):
             highlight=HighlightColors(
                 cycle_edge=_swatch_rgba4(self._cycle_edge_swatch, dhl.cycle_edge),
                 selected_node_border=_swatch_hex(
-                    self._selected_border_swatch, dhl.selected_node_border,
+                    self._selected_border_swatch,
+                    dhl.selected_node_border,
                 ),
                 default_pipe=dhl.default_pipe,
             ),
@@ -633,10 +634,12 @@ class _SettingsDialog(QtWidgets.QDialog):
             editor=EditorColors(
                 background=_swatch_hex(self._editor_bg_swatch, ded.background),
                 current_line=_swatch_hex(
-                    self._editor_current_line_swatch, ded.current_line,
+                    self._editor_current_line_swatch,
+                    ded.current_line,
                 ),
                 gutter_background=_swatch_hex(
-                    self._editor_gutter_bg_swatch, ded.gutter_background,
+                    self._editor_gutter_bg_swatch,
+                    ded.gutter_background,
                 ),
                 gutter_text=ded.gutter_text,
             ),
@@ -667,9 +670,7 @@ class _SettingsDialog(QtWidgets.QDialog):
                 else d.invert_zoom
             ),
             pan_with_mmb=(
-                self._pan_mmb_cb.isChecked()
-                if self._pan_mmb_cb is not None
-                else d.pan_with_mmb
+                self._pan_mmb_cb.isChecked() if self._pan_mmb_cb is not None else d.pan_with_mmb
             ),
             show_minimap=(
                 self._show_minimap_cb.isChecked()
@@ -677,14 +678,10 @@ class _SettingsDialog(QtWidgets.QDialog):
                 else d.show_minimap
             ),
             show_grid=(
-                self._show_grid_cb.isChecked()
-                if self._show_grid_cb is not None
-                else d.show_grid
+                self._show_grid_cb.isChecked() if self._show_grid_cb is not None else d.show_grid
             ),
             grid_size=(
-                self._grid_size_spin.value()
-                if self._grid_size_spin is not None
-                else d.grid_size
+                self._grid_size_spin.value() if self._grid_size_spin is not None else d.grid_size
             ),
             snap_to_grid=(
                 self._snap_grid_cb.isChecked()
@@ -831,10 +828,7 @@ class _SettingsDialog(QtWidgets.QDialog):
                 else d.include_project_ids
             ),
             custom_ids=(
-                [
-                    self._ac_custom_list.item(i).text()
-                    for i in range(self._ac_custom_list.count())
-                ]
+                [self._ac_custom_list.item(i).text() for i in range(self._ac_custom_list.count())]
                 if self._ac_custom_list is not None
                 else list(d.custom_ids)
             ),
@@ -854,7 +848,9 @@ class _SettingsDialog(QtWidgets.QDialog):
 
     def _on_ac_add_custom_id(self) -> None:
         text, ok = QtWidgets.QInputDialog.getText(
-            self, "Add Custom TechType ID", "TechType ID:",
+            self,
+            "Add Custom TechType ID",
+            "TechType ID:",
         )
         if not ok or not text.strip():
             return
@@ -893,14 +889,18 @@ class _SettingsDialog(QtWidgets.QDialog):
             parsed = parse_file(p)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
-                self, "Parse Error", f"Failed to parse {p.name}: {exc}",
+                self,
+                "Parse Error",
+                f"Failed to parse {p.name}: {exc}",
             )
             return
 
         extracted = extract_ids([parsed])
         if not extracted:
             QtWidgets.QMessageBox.information(
-                self, "Import IDs", f"No IDs found in {p.name}.",
+                self,
+                "Import IDs",
+                f"No IDs found in {p.name}.",
             )
             return
 
@@ -937,7 +937,46 @@ class _SettingsDialog(QtWidgets.QDialog):
         )
 
     def _on_import_ids_from_folder(self) -> None:
-        """Placeholder -- folder import is implemented in a later task."""
+        """Import TechType IDs from all .txt files in a directory."""
+        from craftgraph.parser import extract_ids, parse_directory
+
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Import IDs from Mod Folder",
+            "",
+        )
+        if not folder:
+            return
+
+        folder_path = Path(folder)
+        try:
+            parsed_files = parse_directory(folder_path)
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Import Error",
+                str(exc),
+            )
+            return
+
+        if not parsed_files:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Import IDs",
+                f"No parseable .txt files found in {folder_path.name}.",
+            )
+            return
+
+        extracted = extract_ids(parsed_files)
+        if not extracted:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Import IDs",
+                f"No IDs found in {folder_path.name} ({len(parsed_files)} files parsed).",
+            )
+            return
+
+        self._merge_imported_ids(extracted, folder_path.name)
 
     # -- Appearance combo readers -----------------------------------------------
 
@@ -1208,9 +1247,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         access = QtWidgets.QGroupBox("Accessibility")
         al = QtWidgets.QFormLayout(access)
         self._colorblind_combo = QtWidgets.QComboBox()
-        self._colorblind_combo.addItems(
-            [COLORBLIND_LABELS[m] for m in COLORBLIND_MODES]
-        )
+        self._colorblind_combo.addItems([COLORBLIND_LABELS[m] for m in COLORBLIND_MODES])
         cb_idx = COLORBLIND_MODES.index(self._theme.colorblind_mode)
         self._colorblind_combo.setCurrentIndex(cb_idx)
         al.addRow("Colorblind mode:", self._colorblind_combo)
@@ -1370,9 +1407,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._snap_grid_cb.setChecked(ne.snap_to_grid)
         gl.addRow("Snap to grid:", self._snap_grid_cb)
         self._grid_style_combo = QtWidgets.QComboBox()
-        self._grid_style_combo.addItems(
-            [GRID_STYLE_LABELS[s] for s in GRID_STYLES]
-        )
+        self._grid_style_combo.addItems([GRID_STYLE_LABELS[s] for s in GRID_STYLES])
         style_idx = GRID_STYLES.index(ne.grid_style) if ne.grid_style in GRID_STYLES else 1
         self._grid_style_combo.setCurrentIndex(style_idx)
         gl.addRow("Grid style:", self._grid_style_combo)
@@ -1382,9 +1417,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         conn = QtWidgets.QGroupBox("Connections")
         cnl = QtWidgets.QFormLayout(conn)
         self._pipe_style_combo = QtWidgets.QComboBox()
-        self._pipe_style_combo.addItems(
-            [PIPE_STYLE_LABELS[s] for s in PIPE_STYLES]
-        )
+        self._pipe_style_combo.addItems([PIPE_STYLE_LABELS[s] for s in PIPE_STYLES])
         pipe_idx = PIPE_STYLES.index(ne.pipe_style) if ne.pipe_style in PIPE_STYLES else 0
         self._pipe_style_combo.setCurrentIndex(pipe_idx)
         cnl.addRow("Connection style:", self._pipe_style_combo)
@@ -1516,7 +1549,9 @@ class _SettingsDialog(QtWidgets.QDialog):
         sl.addWidget(self._ac_mod_compat_cb)
         self._ac_project_ids_cb = QtWidgets.QCheckBox("IDs from open project files")
         self._ac_project_ids_cb.setChecked(ac.include_project_ids)
-        self._ac_project_ids_cb.setToolTip("Placeholder -- will extract IDs from loaded files in a future update")
+        self._ac_project_ids_cb.setToolTip(
+            "Placeholder -- will extract IDs from loaded files in a future update"
+        )
         sl.addWidget(self._ac_project_ids_cb)
         col.addWidget(sources)
 
@@ -1536,7 +1571,9 @@ class _SettingsDialog(QtWidgets.QDialog):
             )
         cl.addWidget(self._ac_scope_label)
         self._ac_custom_list = QtWidgets.QListWidget()
-        active_ids = self._project_custom_ids if self._project_custom_ids is not None else ac.custom_ids
+        active_ids = (
+            self._project_custom_ids if self._project_custom_ids is not None else ac.custom_ids
+        )
         if active_ids:
             self._ac_custom_list.addItems(active_ids)
         self._ac_custom_list.setMaximumHeight(120)
@@ -3703,9 +3740,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self.setStyleSheet(self._build_app_stylesheet(theme))
 
         # High-contrast borders on existing nodes: brighten border_color
-        border_color = (
-            (220, 220, 220, 255) if theme.high_contrast_borders else (46, 57, 66, 255)
-        )
+        border_color = (220, 220, 220, 255) if theme.high_contrast_borders else (46, 57, 66, 255)
         for tab in self._file_tabs:
             for node in tab.graph.all_nodes():
                 view = node.view
@@ -3810,7 +3845,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw_theme = data.get("theme")
             if isinstance(raw_theme, dict):
                 return theme_from_dict(raw_theme)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return ThemeColors()
 
@@ -3856,11 +3891,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         def _patched_mouse_move(event: QtGui.QMouseEvent) -> None:
             # When MMB pan is disabled, skip the plain-MMB pan branch but
             # preserve Alt+MMB zoom and Alt+LMB pan.
-            if (
-                viewer.MMB_state
-                and not viewer.ALT_state
-                and not viewer._cg_pan_with_mmb
-            ):
+            if viewer.MMB_state and not viewer.ALT_state and not viewer._cg_pan_with_mmb:
                 viewer._previous_pos = event.pos()
                 QtWidgets.QGraphicsView.mouseMoveEvent(viewer, event)
                 return
@@ -3903,7 +3934,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             painter.restore()
 
         scene.drawBackground = types.MethodType(
-            lambda self, p, r: _patched_draw_bg(p, r), scene,
+            lambda self, p, r: _patched_draw_bg(p, r),
+            scene,
         )
 
     def _snap_moved_nodes(self, graph: NodeGraph, moved: dict) -> None:
@@ -3967,8 +3999,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         # Thumbnails: toggle visibility or re-apply at new size
         thumbnails_changed = (
-            s.show_thumbnails != old.show_thumbnails
-            or s.thumbnail_size != old.thumbnail_size
+            s.show_thumbnails != old.show_thumbnails or s.thumbnail_size != old.thumbnail_size
         )
         if thumbnails_changed:
             self._apply_thumbnail_settings(s.show_thumbnails, s.thumbnail_size)
@@ -4013,7 +4044,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             view.post_init()
 
     def _apply_thumbnail_settings(
-        self, show: bool, size: int,
+        self,
+        show: bool,
+        size: int,
     ) -> None:
         """Toggle sprite visibility and re-apply at *size* across all tabs."""
         from craftgraph.qt_nodes import CraftGraphBaseNode
@@ -4096,7 +4129,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw = data.get("node_editor")
             if isinstance(raw, dict):
                 return node_editor_settings_from_dict(raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return NodeEditorSettings()
 
@@ -4116,7 +4149,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 tab.parse_timer.setInterval(s.parse_debounce_ms)
 
     def _apply_code_editor_settings_to(
-        self, editor: CodeEditor, s: CodeEditorSettings,
+        self,
+        editor: CodeEditor,
+        s: CodeEditorSettings,
     ) -> None:
         """Apply code editor preferences to a single editor instance."""
         editor.set_editor_font(s.font_family, s.font_size)
@@ -4152,7 +4187,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw = data.get("code_editor")
             if isinstance(raw, dict):
                 return code_editor_settings_from_dict(raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return CodeEditorSettings()
 
@@ -4187,7 +4222,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._node_popup.set_case_insensitive(s.case_insensitive)
 
     def _apply_autocomplete_settings_to(
-        self, editor: CodeEditor, s: AutocompleteSettings,
+        self,
+        editor: CodeEditor,
+        s: AutocompleteSettings,
     ) -> None:
         """Apply autocomplete preferences to a single editor instance."""
         editor.set_min_prefix_length(s.min_prefix_length)
@@ -4218,7 +4255,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw = data.get("autocomplete")
             if isinstance(raw, dict):
                 return autocomplete_settings_from_dict(raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return AutocompleteSettings()
 
@@ -4230,8 +4267,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         result = check_for_update(__version__)
         if result is not None:
             self.statusBar().showMessage(
-                f"Update available: CraftGraph {result.version} "
-                f"-- download at {result.url}",
+                f"Update available: CraftGraph {result.version} -- download at {result.url}",
                 15_000,
             )
 
