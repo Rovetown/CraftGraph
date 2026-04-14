@@ -871,6 +871,48 @@ class _SettingsDialog(QtWidgets.QDialog):
         for item in reversed(lw.selectedItems()):
             lw.takeItem(lw.row(item))
 
+    def _on_ac_export_custom_ids(self) -> None:
+        """Export the Custom IDs list to a JSON file."""
+        import json
+
+        lw = self._ac_custom_list
+        if lw is None:
+            return
+
+        ids = [lw.item(i).text() for i in range(lw.count())]
+        if not ids:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export IDs",
+                "No custom IDs to export.",
+            )
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Custom IDs",
+            "custom_ids.json",
+            "JSON files (*.json);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        try:
+            Path(file_path).write_text(json.dumps(ids, indent=2), encoding="utf-8")
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export Error",
+                f"Failed to write file: {exc}",
+            )
+            return
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Export IDs",
+            f"Exported {len(ids)} IDs to {Path(file_path).name}.",
+        )
+
     def _on_import_ids_from_file(self) -> None:
         """Import TechType IDs from a single recipe .txt file."""
         from craftgraph.parser import extract_ids, parse_file
@@ -1588,6 +1630,9 @@ class _SettingsDialog(QtWidgets.QDialog):
         remove_btn = QtWidgets.QPushButton("Remove")
         remove_btn.clicked.connect(self._on_ac_remove_custom_id)
         btn_row.addWidget(remove_btn)
+        export_btn = QtWidgets.QPushButton("Export")
+        export_btn.clicked.connect(self._on_ac_export_custom_ids)
+        btn_row.addWidget(export_btn)
         btn_row.addStretch()
         cl.addLayout(btn_row)
         col.addWidget(custom)
