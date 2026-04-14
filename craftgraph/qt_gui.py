@@ -875,6 +875,70 @@ class _SettingsDialog(QtWidgets.QDialog):
         for item in reversed(lw.selectedItems()):
             lw.takeItem(lw.row(item))
 
+    def _on_import_ids_from_file(self) -> None:
+        """Import TechType IDs from a single recipe .txt file."""
+        from craftgraph.parser import extract_ids, parse_file
+
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Import IDs from Recipe File",
+            "",
+            "Recipe files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+
+        p = Path(file_path)
+        try:
+            parsed = parse_file(p)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Parse Error", f"Failed to parse {p.name}: {exc}",
+            )
+            return
+
+        extracted = extract_ids([parsed])
+        if not extracted:
+            QtWidgets.QMessageBox.information(
+                self, "Import IDs", f"No IDs found in {p.name}.",
+            )
+            return
+
+        self._merge_imported_ids(extracted, p.name)
+
+    def _merge_imported_ids(self, extracted: set[str], source_label: str) -> None:
+        """Deduplicate *extracted* against the Custom IDs list and append new ones."""
+        lw = self._ac_custom_list
+        if lw is None:
+            return
+
+        existing_lower: set[str] = set()
+        for i in range(lw.count()):
+            existing_lower.add(lw.item(i).text().lower())
+
+        new_ids = sorted(tid for tid in extracted if tid.lower() not in existing_lower)
+        dupes = len(extracted) - len(new_ids)
+
+        if not new_ids:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Import IDs",
+                f"All {len(extracted)} IDs from {source_label} already in list.",
+            )
+            return
+
+        for tid in new_ids:
+            lw.addItem(tid)
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Import IDs",
+            f"Imported {len(new_ids)} new IDs ({dupes} duplicates skipped).",
+        )
+
+    def _on_import_ids_from_folder(self) -> None:
+        """Placeholder -- folder import is implemented in a later task."""
+
     # -- Appearance combo readers -----------------------------------------------
 
     _APP_THEME_VALUES: ClassVar[list[str]] = ["dark", "light", "system"]
@@ -1496,12 +1560,16 @@ class _SettingsDialog(QtWidgets.QDialog):
         il = QtWidgets.QVBoxLayout(imp)
         recipe_row = QtWidgets.QHBoxLayout()
         recipe_row.addWidget(QtWidgets.QLabel("Recipe file (.txt):"))
-        recipe_row.addWidget(QtWidgets.QPushButton("Browse..."))
+        import_file_btn = QtWidgets.QPushButton("Browse...")
+        import_file_btn.clicked.connect(self._on_import_ids_from_file)
+        recipe_row.addWidget(import_file_btn)
         recipe_row.addStretch()
         il.addLayout(recipe_row)
         folder_row = QtWidgets.QHBoxLayout()
         folder_row.addWidget(QtWidgets.QLabel("Mod folder (scan all):"))
-        folder_row.addWidget(QtWidgets.QPushButton("Browse..."))
+        import_folder_btn = QtWidgets.QPushButton("Browse...")
+        import_folder_btn.clicked.connect(self._on_import_ids_from_folder)
+        folder_row.addWidget(import_folder_btn)
         folder_row.addStretch()
         il.addLayout(folder_row)
         col.addWidget(imp)
