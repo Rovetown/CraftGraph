@@ -18,6 +18,7 @@ import networkx
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from craftgraph.config import get_config
 from craftgraph.graph import build_graph, find_cycles
 from craftgraph.models import ParsedFile
 from craftgraph.parser import MappingError, ParseError, parse_directory, parse_file
@@ -32,8 +33,6 @@ RebuildCallback = Callable[
     None,
 ]
 
-_DEBOUNCE_SECONDS = 0.3
-
 
 class _RecipeEventHandler(FileSystemEventHandler):
     """Watchdog event handler that debounces .txt changes and rebuilds the graph.
@@ -42,15 +41,28 @@ class _RecipeEventHandler(FileSystemEventHandler):
     rebuild, the full graph is reconstructed from all cached files.
     """
 
-    def __init__(self, directory: Path, on_rebuild: RebuildCallback) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        on_rebuild: RebuildCallback,
+        *,
+        debounce_seconds: float | None = None,
+    ) -> None:
         super().__init__()
         self._directory = directory
         self._on_rebuild = on_rebuild
+        if debounce_seconds is None:
+            debounce_seconds = get_config().timings.watcher_debounce_sec
+        self._debounce_seconds = debounce_seconds
         self._cache: dict[Path, ParsedFile] = {}
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
 
     # -- Public API ------------------------------------------------------------
+
+    def set_debounce_seconds(self, seconds: float) -> None:
+        """Update the debounce interval for future rebuilds."""
+        self._debounce_seconds = seconds
 
     def initial_parse(self) -> None:
         """Walk the directory, populate the cache, and trigger the first rebuild."""
@@ -118,7 +130,7 @@ class _RecipeEventHandler(FileSystemEventHandler):
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
-            self._timer = threading.Timer(_DEBOUNCE_SECONDS, self._rebuild)
+            self._timer = threading.Timer(self._debounce_seconds, self._rebuild)
             self._timer.daemon = True
             self._timer.start()
 
@@ -132,14 +144,59 @@ class _RecipeEventHandler(FileSystemEventHandler):
         self._on_rebuild(parsed_files, graph, cycles)
 
 
-def watch_directory(directory: Path, on_rebuild: RebuildCallback) -> None:
+class RecipeWatcher:
+    """Non-blocking wrapper around Watchdog for GUI integration.
+
+    Call :meth:`start` to begin watching and :meth:`stop` to tear down.
+    The *on_rebuild* callback fires from the Watchdog thread, so GUI
+    callers must marshal into their event loop.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        on_rebuild: RebuildCallback,
+        *,
+        debounce_seconds: float | None = None,
+    ) -> None:
+        self._handler = _RecipeEventHandler(
+            directory, on_rebuild, debounce_seconds=debounce_seconds,
+        )
+        self._observer = Observer()
+        self._observer.schedule(self._handler, str(directory), recursive=True)
+
+    def start(self) -> None:
+        """Run the initial parse and start the background observer."""
+        self._handler.initial_parse()
+        self._observer.start()
+
+    def stop(self) -> None:
+        """Stop the observer and wait for its thread to finish."""
+        self._observer.stop()
+        self._observer.join()
+
+    def set_debounce_seconds(self, seconds: float) -> None:
+        """Update the debounce interval for future change events."""
+        self._handler.set_debounce_seconds(seconds)
+
+    @property
+    def running(self) -> bool:
+        return self._observer.is_alive()
+
+
+def watch_directory(
+    directory: Path,
+    on_rebuild: RebuildCallback,
+    *,
+    debounce_seconds: float | None = None,
+) -> None:
     """Watch a directory tree for .txt changes and rebuild on each change.
 
     Performs an initial parse and rebuild, then blocks until
     KeyboardInterrupt. The *on_rebuild* callback fires on the initial
     build and again after each debounced change.
     """
-    handler = _RecipeEventHandler(directory, on_rebuild)
+    handler = _RecipeEventHandler(directory, on_rebuild, debounce_seconds=debounce_seconds)
     handler.initial_parse()
 
     observer = Observer()

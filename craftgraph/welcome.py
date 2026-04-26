@@ -13,6 +13,7 @@ from pathlib import Path
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from craftgraph.recent import RecentEntry
+from craftgraph.theme import scaled_pt
 
 
 class WelcomeWidget(QtWidgets.QWidget):
@@ -65,7 +66,9 @@ class WelcomeWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         header = QtWidgets.QLabel("Recent Projects")
-        header.setStyleSheet("font-size: 12pt; font-weight: bold; color: rgb(180, 200, 255);")
+        header.setStyleSheet(
+            f"font-size: {scaled_pt(12)}pt; font-weight: bold; color: rgb(180, 200, 255);"
+        )
         layout.addWidget(header)
 
         if not self._recent_entries:
@@ -123,7 +126,9 @@ class WelcomeWidget(QtWidgets.QWidget):
         layout.addWidget(icon_label, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
         title = QtWidgets.QLabel("CraftGraph")
-        title.setStyleSheet("font-size: 20pt; font-weight: bold; color: rgb(220, 220, 220);")
+        title.setStyleSheet(
+            f"font-size: {scaled_pt(20)}pt; font-weight: bold; color: rgb(220, 220, 220);"
+        )
         title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
@@ -132,7 +137,9 @@ class WelcomeWidget(QtWidgets.QWidget):
         except Exception:
             ver = "dev"
         version_label = QtWidgets.QLabel(f"v{ver}")
-        version_label.setStyleSheet("font-size: 10pt; color: rgb(140, 140, 140);")
+        version_label.setStyleSheet(
+            f"font-size: {scaled_pt(10)}pt; color: rgb(140, 140, 140);"
+        )
         version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version_label)
 
@@ -174,7 +181,7 @@ class WelcomeWidget(QtWidgets.QWidget):
         # Links
         links_header = QtWidgets.QLabel("Links")
         links_header.setStyleSheet(
-            "font-size: 12pt; font-weight: bold; color: rgb(180, 200, 255);"
+            f"font-size: {scaled_pt(12)}pt; font-weight: bold; color: rgb(180, 200, 255);"
         )
         layout.addWidget(links_header, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
@@ -230,10 +237,12 @@ class _RecentEntryItem(QtWidgets.QFrame):
         name_row.addWidget(icon_label)
 
         name_label = QtWidgets.QLabel(display_name)
-        name_style = "font-size: 11pt; color: rgb(200, 200, 200);"
+        name_pt = scaled_pt(11)
+        name_style = f"font-size: {name_pt}pt; color: rgb(200, 200, 200);"
         if self._stale:
             name_style = (
-                "font-size: 11pt; color: rgb(100, 100, 100); text-decoration: line-through;"
+                f"font-size: {name_pt}pt; color: rgb(100, 100, 100);"
+                " text-decoration: line-through;"
             )
         name_label.setStyleSheet(name_style)
         name_row.addWidget(name_label)
@@ -241,9 +250,13 @@ class _RecentEntryItem(QtWidgets.QFrame):
         layout.addLayout(name_row)
 
         path_label = QtWidgets.QLabel(entry.path)
-        path_style = "font-size: 9pt; color: rgb(120, 120, 120);"
+        path_pt = scaled_pt(9)
+        path_style = f"font-size: {path_pt}pt; color: rgb(120, 120, 120);"
         if self._stale:
-            path_style = "font-size: 9pt; color: rgb(80, 80, 80); text-decoration: line-through;"
+            path_style = (
+                f"font-size: {path_pt}pt; color: rgb(80, 80, 80);"
+                " text-decoration: line-through;"
+            )
         path_label.setStyleSheet(path_style)
         path_label.setWordWrap(True)
         layout.addWidget(path_label)

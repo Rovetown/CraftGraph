@@ -125,6 +125,7 @@ from craftgraph.sync import (
     place_orphan_nodes,
     populate_graph,
     update_child_count_labels,
+    update_node_issue_overlays,
 )
 
 
@@ -174,7 +175,7 @@ class TestPopulateGraph:
 
         assert len(result) == 1
         node = result[id(recipe)]
-        assert node.name() == "Titanium"
+        assert node.name() == "Titanium (x2)"
         assert node.model_ref is recipe
         assert node.get_widget("amount_crafted").get_value() == "2"
 
@@ -1575,6 +1576,51 @@ class TestCycleDetection:
         assert recipe_a.ingredients[0].item_id == "Bar"
         handler.disconnect()
 
+    def test_warn_before_cycles_disabled_allows_cycle(self, graph, qapp):
+        """When warn_before_cycles is False, cyclic connections are accepted."""
+        recipe_a = ModifiedRecipe(
+            item_id="Alpha",
+            ingredients=[Ingredient(item_id="Beta", required=1)],
+        )
+        recipe_b = ModifiedRecipe(item_id="Beta")
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            modified_recipes=[recipe_a, recipe_b],
+        )
+        guard = SyncGuard()
+        history = EditHistory()
+
+        with guard():
+            m2n = populate_graph(graph, [pf])
+            connect_ingredients(graph, [pf], m2n)
+
+        rejected: list[tuple[str, str]] = []
+        handler = UIToModelHandler(
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
+            on_cycle_rejected=lambda c, i, p: rejected.append((c, i)),
+        )
+        handler.warn_before_cycles = False
+
+        # Try to connect Alpha's output to Beta's ingredient (would be a cycle)
+        alpha_out = m2n[id(recipe_a)].get_output("output")
+        beta_free = [
+            p
+            for p in m2n[id(recipe_b)].input_ports()
+            if p.name().startswith("ingredient_") and not p.connected_ports()
+        ]
+        if beta_free:
+            alpha_out.connect_to(beta_free[0])
+
+        # Cycle was NOT rejected -- connection goes through
+        assert len(rejected) == 0
+        assert history.can_undo
+        assert len(recipe_b.ingredients) == 1
+        assert recipe_b.ingredients[0].item_id == "Alpha"
+        handler.disconnect()
+
 
 # ---------------------------------------------------------------------------
 # Cycle edge highlighting (Step M7.7)
@@ -1697,6 +1743,107 @@ class TestCycleEdgeHighlighting:
         assert len(orphan_pipes) > 0
         for p in orphan_pipes:
             assert p.color == _DEFAULT_PIPE_COLOR
+
+
+# ---------------------------------------------------------------------------
+# Node issue overlays (warning triangles)
+# ---------------------------------------------------------------------------
+
+
+class TestNodeIssueOverlays:
+    """Verify warning-triangle overlays appear on nodes with issues."""
+
+    def test_acyclic_clean_no_overlays(self, graph, qapp):
+        """Clean acyclic recipes with known ingredients get no warnings."""
+        recipe = ModifiedRecipe(
+            item_id="A",
+            ingredients=[Ingredient(item_id="B", required=1)],
+        )
+        pf = ParsedFile(source_path=Path("test.txt"), modified_recipes=[recipe])
+
+        with SyncGuard()():
+            m2n = populate_graph(graph, [pf])
+            connect_ingredients(graph, [pf], m2n)
+            errors, warnings = update_node_issue_overlays(
+                graph, [pf], m2n, frozenset({"a", "b"}),
+            )
+
+        assert errors == 0
+        assert warnings == 0
+        node = m2n[id(recipe)]
+        assert node._warning_overlay is None or not node._warning_overlay.isVisible()
+
+    def test_cycle_member_gets_error_overlay(self, graph, qapp):
+        """Recipes participating in a cycle get the red error overlay."""
+        recipe_a = ModifiedRecipe(
+            item_id="CycA",
+            ingredients=[Ingredient(item_id="CycB", required=1)],
+        )
+        recipe_b = ModifiedRecipe(
+            item_id="CycB",
+            ingredients=[Ingredient(item_id="CycA", required=1)],
+        )
+        pf = ParsedFile(
+            source_path=Path("test.txt"),
+            modified_recipes=[recipe_a, recipe_b],
+        )
+
+        with SyncGuard()():
+            m2n = populate_graph(graph, [pf])
+            connect_ingredients(graph, [pf], m2n)
+            errors, _ = update_node_issue_overlays(
+                graph, [pf], m2n, frozenset({"cyca", "cycb"}),
+            )
+
+        assert errors >= 2
+        for recipe in (recipe_a, recipe_b):
+            node = m2n[id(recipe)]
+            assert node._warning_overlay is not None
+            assert node._warning_overlay.isVisible()
+            assert node._warning_overlay._severity == "error"
+
+    def test_unknown_ingredient_gets_warning_overlay(self, graph, qapp):
+        """Recipe with unknown ingredient ID gets the yellow warning overlay."""
+        recipe = ModifiedRecipe(
+            item_id="WidgetCraft",
+            ingredients=[Ingredient(item_id="MysteryAlloy", required=1)],
+        )
+        pf = ParsedFile(source_path=Path("test.txt"), modified_recipes=[recipe])
+
+        with SyncGuard()():
+            m2n = populate_graph(graph, [pf])
+            connect_ingredients(graph, [pf], m2n)
+            errors, warnings = update_node_issue_overlays(
+                graph, [pf], m2n, frozenset({"widgetcraft"}),
+            )
+
+        assert errors == 0
+        assert warnings == 1
+        node = m2n[id(recipe)]
+        assert node._warning_overlay is not None
+        assert node._warning_overlay.isVisible()
+        assert node._warning_overlay._severity == "warning"
+
+    def test_clear_when_issue_resolved(self, graph, qapp):
+        """Re-running with the previously-unknown ingredient now known clears the overlay."""
+        recipe = ModifiedRecipe(
+            item_id="WidgetCraft",
+            ingredients=[Ingredient(item_id="Alloy", required=1)],
+        )
+        pf = ParsedFile(source_path=Path("test.txt"), modified_recipes=[recipe])
+
+        with SyncGuard()():
+            m2n = populate_graph(graph, [pf])
+            connect_ingredients(graph, [pf], m2n)
+            update_node_issue_overlays(
+                graph, [pf], m2n, frozenset({"widgetcraft"}),
+            )
+            update_node_issue_overlays(
+                graph, [pf], m2n, frozenset({"widgetcraft", "alloy"}),
+            )
+
+        node = m2n[id(recipe)]
+        assert node._warning_overlay is None or not node._warning_overlay.isVisible()
 
 
 # ---------------------------------------------------------------------------

@@ -22,10 +22,21 @@ from typing import TYPE_CHECKING, Any
 from NodeGraphQt import BaseNode
 from NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PortTypeEnum, ViewerEnum
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget, _NodeGroupBox
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLineEdit, QPushButton, QWidget
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtWidgets import (
+    QComboBox,
+    QGraphicsItem,
+    QGraphicsView,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QStyleOptionGraphicsItem,
+    QWidget,
+)
 
+from craftgraph.config import get_config
+from craftgraph.theme import scaled_pt
 from craftgraph.models import (
     FABRICATOR_MODELS,
     FOOD_MODELS,
@@ -44,31 +55,43 @@ if TYPE_CHECKING:
     from craftgraph.commands import EditHistory
 
 # ---------------------------------------------------------------------------
-# Monkey-patch: prevent _NodeGroupBox HWND leak on Windows
+# Monkey-patch: prevent _NodeGroupBox HWND allocation on Windows
 # ---------------------------------------------------------------------------
-# NodeGraphQt creates every _NodeGroupBox without a parent, which allocates a
-# native window handle (HWND) on Windows.  With 894+ nodes and ~8 widgets
-# each, this exhausts the per-process USER object limit (~10,000).
+# NodeGraphQt creates every _NodeGroupBox without a parent.  On Windows, the
+# moment a QWidget becomes top-level (parent = None), Qt allocates a native
+# window handle (HWND) for it during the next polish/show cycle.  With large
+# graphs (~894 nodes x ~8 widgets) this exhausts the per-process USER object
+# limit (~10,000 handles), surfaced as
+# "CreateWindowEx failed (... system allowance of handles for Window Manager)".
 #
-# Fix: create _NodeGroupBox with a shared hidden parent widget so it never
-# gets its own HWND.  QGraphicsProxyWidget.setWidget() reparents it anyway.
+# Fix:
+# 1. Create _NodeGroupBox with a shared hidden (WA_DontShowOnScreen) parent so
+#    it starts out non-top-level (no HWND allocation on construction).
+# 2. Mark the group AND the embedded widget tree WA_DontShowOnScreen *before*
+#    the brief `setParent(None)` window so Qt skips HWND creation when the
+#    group becomes top-level.
+# 3. Do NOT destroy() the underlying window afterwards -- that breaks
+#    QGraphicsProxyWidget rendering (only the first registry widget paints,
+#    escaping the node bounds).
 
 _GROUPBOX_PARENT: QWidget | None = None
 
 
-def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
-    """Replacement for NodeBaseWidget.set_custom_widget that parents the group box.
+def _suppress_native_window(widget: QWidget) -> None:
+    """Mark *widget* and every descendant ``WA_DontShowOnScreen``.
 
-    Upstream creates ``_NodeGroupBox(label)`` with no parent, which on Windows
-    may allocate a native window handle (HWND) for each instance.  With large
-    graphs (~894 nodes x ~8 widgets), this exhausts the per-process USER object
-    limit (~10,000 handles).
-
-    Fix: construct with a shared hidden parent (prevents HWND allocation), then
-    call ``setParent(None)`` before ``setWidget()`` (which requires an unparented
-    widget).  Since the group box was never shown, removing the parent does not
-    trigger HWND creation.
+    ``WA_DontShowOnScreen`` makes Qt skip the HWND-creation path during the
+    polish step that runs when a widget becomes top-level or is embedded in a
+    ``QGraphicsProxyWidget``.  The proxy paints via ``QWidget.render()``, which
+    does not require a native window, so rendering still works.
     """
+    widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+    for child in widget.findChildren(QWidget):
+        child.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+
+
+def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
+    """Replacement for NodeBaseWidget.set_custom_widget that prevents HWND leaks."""
     global _GROUPBOX_PARENT
     if self.widget():
         from NodeGraphQt.errors import NodeWidgetError
@@ -77,10 +100,15 @@ def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
         raise NodeWidgetError(msg)
     if _GROUPBOX_PARENT is None:
         _GROUPBOX_PARENT = QWidget()
-        _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)
+        _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
     group = _NodeGroupBox(self._label, parent=_GROUPBOX_PARENT)
     group.add_node_widget(widget)
-    group.setParent(None)  # setWidget() requires an unparented widget
+    # Block HWND allocation that would otherwise fire when group becomes
+    # top-level via setParent(None) below, and again during setWidget()'s
+    # internal ensurePolished().
+    _suppress_native_window(group)
+    _suppress_native_window(widget)
+    group.setParent(None)
     self.setWidget(group)
 
 
@@ -110,38 +138,79 @@ def _safe_auto_switch_mode(self: _NodeItem) -> None:  # type: ignore[override]
 _NodeItem.auto_switch_mode = _safe_auto_switch_mode  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
+# Monkey-patch: switch viewport update mode during live-pipe drag
+# ---------------------------------------------------------------------------
+# NodeGraphQt's live drag updates the LivePipeItem path and a child arrow
+# polygon (``_idx_pointer``) whose geometry changes drastically each frame
+# as the cursor moves.  With the default ``MinimalViewportUpdate`` mode and
+# a BSP-indexed scene, prior frames of the arrow polygon are not always
+# invalidated, leaving small stale "ghost arrow" fragments behind.
+#
+# Fix: switch the QGraphicsView to ``FullViewportUpdate`` while a live pipe
+# is active so the entire viewport is repainted on each frame, then restore
+# the previous mode when the drag ends.  Only the brief drag window pays
+# the extra repaint cost; idle and pan/zoom keep the original behaviour.
+
+from NodeGraphQt.widgets.viewer import NodeViewer as _NodeViewer  # noqa: E402
+
+_original_start_live_connection = _NodeViewer.start_live_connection
+_original_end_live_connection = _NodeViewer.end_live_connection
+_PREV_UPDATE_MODE_ATTR = "_cg_prev_viewport_update_mode"
+
+
+def _patched_start_live_connection(self: _NodeViewer, selected_port: object) -> None:
+    setattr(self, _PREV_UPDATE_MODE_ATTR, self.viewportUpdateMode())
+    self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+    _original_start_live_connection(self, selected_port)
+
+
+def _patched_end_live_connection(self: _NodeViewer) -> None:
+    _original_end_live_connection(self)
+    prev = getattr(self, _PREV_UPDATE_MODE_ATTR, None)
+    if prev is not None:
+        self.setViewportUpdateMode(prev)
+
+
+_NodeViewer.start_live_connection = _patched_start_live_connection  # type: ignore[assignment]
+_NodeViewer.end_live_connection = _patched_end_live_connection  # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-IDENTIFIER = "com.craftgraph"
-SPRITE_SIZE = 64
+IDENTIFIER = get_config().app.identifier
+
+# Palettes sourced from config.toml [ui.colors.*] and [ui.variable_nodes].
+_NODE_COLORS = get_config().ui.colors.nodes
+_PORT_COLORS = get_config().ui.colors.ports
+_VAR_NODES = get_config().ui.variable_nodes
 
 # Port colors (R, G, B)
-PORT_COLOR_HIERARCHY = (200, 200, 100)
-PORT_COLOR_OUTPUT = (100, 200, 100)
-PORT_COLOR_INGREDIENT = (180, 80, 0)
-PORT_COLOR_CHILDREN = (100, 100, 220)
+PORT_COLOR_HIERARCHY = _PORT_COLORS.hierarchy
+PORT_COLOR_OUTPUT = _PORT_COLORS.output
+PORT_COLOR_INGREDIENT = _PORT_COLORS.ingredient
+PORT_COLOR_CHILDREN = _PORT_COLORS.children
 
 # Node colors by category
-NODE_COLOR_MODIFIED_RECIPE = (60, 120, 80)
-NODE_COLOR_ADDED_RECIPE = (60, 140, 80)
-NODE_COLOR_ALIAS_RECIPE = (80, 120, 120)
-NODE_COLOR_CUSTOM_FOOD = (120, 100, 60)
-NODE_COLOR_FABRICATOR = (80, 80, 160)
-NODE_COLOR_CRAFTING_TAB = (160, 120, 40)
-NODE_COLOR_CUSTOM_SIZE = (100, 100, 100)
-NODE_COLOR_MOVED_RECIPE = (120, 80, 120)
-NODE_COLOR_CUSTOM_BIO_FUEL = (140, 100, 40)
-NODE_COLOR_CUSTOM_FRAGMENT_COUNT = (80, 100, 140)
-NODE_COLOR_ORPHAN_INGREDIENT = (90, 90, 90)
-NODE_COLOR_SPRITE = (180, 160, 60)
+NODE_COLOR_MODIFIED_RECIPE = _NODE_COLORS.modified_recipe
+NODE_COLOR_ADDED_RECIPE = _NODE_COLORS.added_recipe
+NODE_COLOR_ALIAS_RECIPE = _NODE_COLORS.alias_recipe
+NODE_COLOR_CUSTOM_FOOD = _NODE_COLORS.custom_food
+NODE_COLOR_FABRICATOR = _NODE_COLORS.fabricator
+NODE_COLOR_CRAFTING_TAB = _NODE_COLORS.crafting_tab
+NODE_COLOR_CUSTOM_SIZE = _NODE_COLORS.custom_size
+NODE_COLOR_MOVED_RECIPE = _NODE_COLORS.moved_recipe
+NODE_COLOR_CUSTOM_BIO_FUEL = _NODE_COLORS.custom_bio_fuel
+NODE_COLOR_CUSTOM_FRAGMENT_COUNT = _NODE_COLORS.custom_fragment_count
+NODE_COLOR_ORPHAN_INGREDIENT = _NODE_COLORS.orphan_ingredient
+NODE_COLOR_SPRITE = _NODE_COLORS.sprite
 
-PORT_COLOR_SPRITE = (180, 160, 60)
-PORT_COLOR_VARIABLE = (100, 70, 130)
+PORT_COLOR_SPRITE = _PORT_COLORS.sprite
+PORT_COLOR_VARIABLE = _PORT_COLORS.variable
 
 # Stylesheet fragments for required-field validation highlighting.
-_REQUIRED_EMPTY_STYLE = "border: 1px solid rgb(200, 60, 60);"
-_REQUIRED_VALID_STYLE = "border: none;"
+_REQUIRED_EMPTY_STYLE = _VAR_NODES.required_empty_style
+_REQUIRED_VALID_STYLE = _VAR_NODES.required_valid_style
 
 
 # Node type strings for port constraints (identifier + "." + ClassName)
@@ -180,7 +249,7 @@ class _IntEditWidget(QWidget):
             " color: rgba({6},{7},{8},150);"
             " min-width: 18px; max-width: 18px;"
             " min-height: 18px; max-height: 18px;"
-            " font-size: 11pt; font-weight: bold; }}"
+            f" font-size: {scaled_pt(11)}pt; font-weight: bold; }}}}"
             " QPushButton:hover {{ background: rgba({0},{1},{2},60); }}"
         ).format(*bg, *grid, *txt)
 
@@ -307,7 +376,7 @@ class _FloatEditWidget(QWidget):
             " color: rgba({6},{7},{8},150);"
             " min-width: 18px; max-width: 18px;"
             " min-height: 18px; max-height: 18px;"
-            " font-size: 11pt; font-weight: bold; }}"
+            f" font-size: {scaled_pt(11)}pt; font-weight: bold; }}}}"
             " QPushButton:hover {{ background: rgba({0},{1},{2},60); }}"
         ).format(*bg, *grid, *txt)
 
@@ -399,6 +468,17 @@ class NodeFloatEdit(NodeBaseWidget):
             self.on_value_changed()
 
 
+def _to_pascal_case(text: str) -> str:
+    """Convert a lowercase or mixed-case ID to PascalCase for display.
+
+    Already-PascalCase IDs (e.g. ``"TitaniumIngot"``) pass through unchanged.
+    Lowercase IDs (e.g. ``"titaniumingot"``) get their first letter capitalized.
+    """
+    if not text:
+        return text
+    return text[0].upper() + text[1:]
+
+
 def _add_hierarchy_accept_constraints(node: CraftGraphBaseNode, port_name: str) -> None:
     """Constrain a hierarchy/parent port to accept only container children outputs.
 
@@ -441,6 +521,67 @@ def _add_hierarchy_accept_constraints(node: CraftGraphBaseNode, port_name: str) 
 
 
 # ---------------------------------------------------------------------------
+# Warning overlay (issue indicator)
+# ---------------------------------------------------------------------------
+
+
+class _WarningOverlay(QGraphicsItem):
+    """Triangle icon painted at the top-right corner of a node when it has issues.
+
+    Severity controls the fill color: ``"warning"`` is yellow (broken refs,
+    unknown ingredients), ``"error"`` is red (cycle members).
+    """
+
+    SIZE = 18
+    MARGIN = 4
+
+    _ERROR_FILL = QColor(220, 50, 50)
+    _WARNING_FILL = QColor(240, 200, 50)
+    _BORDER = QColor(20, 20, 20)
+    _GLYPH = QColor(20, 20, 20)
+
+    def __init__(self, parent_item: QGraphicsItem) -> None:
+        super().__init__(parent_item)
+        self._severity: str = "warning"
+        self.setZValue(Z_VAL_NODE_WIDGET + 5)
+        self.setAcceptHoverEvents(True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
+
+    def boundingRect(self) -> QRectF:
+        s = self.SIZE
+        return QRectF(0, 0, s, s)
+
+    def set_state(self, severity: str, tooltip: str) -> None:
+        self._severity = "error" if severity == "error" else "warning"
+        self.setToolTip(tooltip)
+        self.update()
+
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionGraphicsItem,
+        widget: QWidget | None = None,
+    ) -> None:
+        s = self.SIZE
+        fill = self._ERROR_FILL if self._severity == "error" else self._WARNING_FILL
+        path = QPainterPath()
+        path.moveTo(s / 2.0, 1.0)
+        path.lineTo(s - 1.0, s - 1.0)
+        path.lineTo(1.0, s - 1.0)
+        path.closeSubpath()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setBrush(QBrush(fill))
+        painter.setPen(QPen(self._BORDER, 1.2))
+        painter.drawPath(path)
+        pen = QPen(self._GLYPH, 1.8)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        cx = s / 2.0
+        painter.drawLine(QPointF(cx, s * 0.32), QPointF(cx, s * 0.62))
+        painter.drawPoint(QPointF(cx, s * 0.78))
+
+
+# ---------------------------------------------------------------------------
 # Base node
 # ---------------------------------------------------------------------------
 
@@ -480,6 +621,10 @@ class CraftGraphBaseNode(BaseNode):
         self._edit_history: EditHistory | None = None
         self._populating: bool = False
         self._stashed_values: dict[str, Any] = {}
+        self._warning_overlay: _WarningOverlay | None = None
+        self._source_file_name: str = ""
+        self._issue_messages: list[str] = []
+        self._cycle_paths: list[str] = []
 
         self.set_color(*self.NODE_COLOR)
         if self.HAS_SPRITE_PORT:
@@ -503,8 +648,8 @@ class CraftGraphBaseNode(BaseNode):
         """Currently assigned sprite file path, or None."""
         return self._sprite_path
 
-    def set_sprite(self, path: Path | None) -> None:
-        """Set a sprite image on this node at SPRITE_SIZE pixels.
+    def set_sprite(self, path: Path | None, size: int | None = None) -> None:
+        """Set a sprite image on this node at *size* pixels.
 
         Bypasses NodeGraphQt's built-in 18px icon scaling by setting
         the pixmap directly on the view's QGraphicsPixmapItem.
@@ -514,13 +659,15 @@ class CraftGraphBaseNode(BaseNode):
         if path is None or not path.exists():
             self.clear_sprite()
             return
+        if size is None:
+            size = get_config().ui.sprite_size
         pixmap = QPixmap(str(path))
         if pixmap.isNull():
             self.clear_sprite()
             return
         pixmap = pixmap.scaled(
-            SPRITE_SIZE,
-            SPRITE_SIZE,
+            size,
+            size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
@@ -533,6 +680,33 @@ class CraftGraphBaseNode(BaseNode):
         """Remove the custom sprite and restore the default icon."""
         self._sprite_path = None
         self.set_icon(None)
+
+    # -- Warning triangle overlay -------------------------------------------
+
+    def set_node_warning(self, severity: str, tooltip: str = "") -> None:
+        """Show a warning triangle on this node.
+
+        ``severity`` is ``"error"`` (red) or ``"warning"`` (yellow).
+        ``tooltip`` is shown on hover.
+        """
+        if self._warning_overlay is None:
+            self._warning_overlay = _WarningOverlay(self.view)
+        self._warning_overlay.set_state(severity, tooltip)
+        self._reposition_warning_overlay()
+        self._warning_overlay.show()
+
+    def clear_node_warning(self) -> None:
+        """Remove the warning triangle, if any."""
+        if self._warning_overlay is not None:
+            self._warning_overlay.hide()
+
+    def _reposition_warning_overlay(self) -> None:
+        if self._warning_overlay is None:
+            return
+        rect = self.view.boundingRect()
+        size = _WarningOverlay.SIZE
+        margin = _WarningOverlay.MARGIN
+        self._warning_overlay.setPos(rect.right() - size - margin, margin)
 
     # -- Registry-driven build methods --------------------------------------
 
@@ -658,6 +832,21 @@ class CraftGraphBaseNode(BaseNode):
             self._populating = False
         self.validate_required_fields()
         self.validate_paired_fields()
+        self.update_title_from_model()
+
+    def update_title_from_model(self) -> None:
+        """Refresh the node title bar from model fields.
+
+        Appends ``(xN)`` when ``amount_crafted > 1``.
+        """
+        if self._model_ref is None:
+            return
+        item_id = getattr(self._model_ref, "item_id", None)
+        if item_id is None:
+            return
+        amount = getattr(self._model_ref, "amount_crafted", 1)
+        title = f"{item_id} (x{amount})" if amount > 1 else item_id
+        self.set_name(title)
 
     def validate_required_fields(self) -> None:
         """Apply or remove red border on required fields based on emptiness."""
@@ -709,6 +898,8 @@ class CraftGraphBaseNode(BaseNode):
         self._enforce_mutual_exclusion(field_name, converted)
         self.validate_required_fields()
         self.validate_paired_fields()
+        if model_attr in ("item_id", "amount_crafted"):
+            self.update_title_from_model()
 
     def _enforce_mutual_exclusion(self, field_name: str, value: Any) -> None:
         """If a boolean field in a mutual-exclusion pair becomes True, uncheck its partner."""
@@ -839,6 +1030,34 @@ class CraftGraphBaseNode(BaseNode):
         self.add_custom_widget(widget)
 
 
+    # -- Ingredient port label helpers ----------------------------------------
+
+    def _set_ingredient_port_label(self, port: object, label: str) -> None:
+        """Set the visible text of an ingredient input port."""
+        port_item = port.view  # type: ignore[attr-defined]
+        node_item = self.view
+        text_item = node_item.get_input_text_item(port_item)
+        if text_item is not None:
+            text_item.setPlainText(label)
+
+    def update_ingredient_labels(self) -> None:
+        """Refresh all ingredient port labels from connected nodes."""
+        for port in self.input_ports():
+            if not port.name().startswith("ingredient_"):
+                continue
+            connected = port.connected_ports()
+            if connected:
+                src_node = connected[0].node()
+                item_id = getattr(getattr(src_node, "model_ref", None), "item_id", None)
+                if item_id:
+                    self._set_ingredient_port_label(port, _to_pascal_case(item_id))
+                    continue
+                if hasattr(src_node, "name"):
+                    self._set_ingredient_port_label(port, _to_pascal_case(src_node.name()))
+                    continue
+            self._set_ingredient_port_label(port, "")
+
+
 # ---------------------------------------------------------------------------
 # Recipe nodes
 # ---------------------------------------------------------------------------
@@ -892,22 +1111,46 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
 
     def on_input_connected(self, in_port, out_port) -> None:  # type: ignore[override]
         """Spawn a new empty ingredient slot when one is filled."""
-        if in_port.name().startswith("ingredient_"):
-            idx = self._ingredient_port_count()
-            self.add_input(
-                f"ingredient_{idx}",
-                multi_input=False,
-                color=PORT_COLOR_INGREDIENT,
-            )
-
-    def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
-        """Remove trailing empty ingredient slots on disconnect."""
         if not in_port.name().startswith("ingredient_"):
             return
-        # Collect ingredient ports, remove empty ones from the tail
+        # NodeGraphQt's _deserialize fires on_input_connected unconditionally
+        # during paste/duplicate, even when allow_connection rejected the
+        # restoration.  Verify the connection is real before spawning a slot.
+        if out_port not in in_port.connected_ports():
+            return
+        idx = self._ingredient_port_count()
+        self.add_input(
+            f"ingredient_{idx}",
+            multi_input=False,
+            color=PORT_COLOR_INGREDIENT,
+        )
+        self._label_ingredient_port(in_port, out_port)
+
+    def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
+        """Remove redundant trailing empty ingredient slots on disconnect.
+
+        Keeps exactly one trailing empty slot so a "next available" pin always
+        exists for new ingredient connections.
+        """
+        if not in_port.name().startswith("ingredient_"):
+            return
+        self._set_ingredient_port_label(in_port, "")
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
-        while len(ing_ports) > 1 and not ing_ports[-1].connected_ports():
+        # Pop only when there are 2+ trailing empties, preserving one as the
+        # next-slot placeholder.
+        while (
+            len(ing_ports) > 1
+            and not ing_ports[-1].connected_ports()
+            and not ing_ports[-2].connected_ports()
+        ):
             self.delete_input(ing_ports.pop())
+
+    def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
+        """Set the ingredient port label from the source node's item ID."""
+        src_node = out_port.node()  # type: ignore[attr-defined]
+        item_id = getattr(getattr(src_node, "model_ref", None), "item_id", None)
+        label = _to_pascal_case(item_id) if item_id else _to_pascal_case(src_node.name())
+        self._set_ingredient_port_label(in_port, label)
 
 
 class AddedRecipeNode(ModifiedRecipeNode):
@@ -1127,21 +1370,44 @@ class FabricatorNode(CraftGraphBaseNode):
 
     def on_input_connected(self, in_port, out_port) -> None:  # type: ignore[override]
         """Spawn a new empty ingredient slot when one is filled."""
-        if in_port.name().startswith("ingredient_"):
-            idx = self._ingredient_port_count()
-            self.add_input(
-                f"ingredient_{idx}",
-                multi_input=False,
-                color=PORT_COLOR_INGREDIENT,
-            )
-
-    def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
-        """Remove trailing empty ingredient slots on disconnect."""
         if not in_port.name().startswith("ingredient_"):
             return
+        # NodeGraphQt's _deserialize fires on_input_connected unconditionally
+        # during paste/duplicate, even when allow_connection rejected the
+        # restoration.  Verify the connection is real before spawning a slot.
+        if out_port not in in_port.connected_ports():
+            return
+        idx = self._ingredient_port_count()
+        self.add_input(
+            f"ingredient_{idx}",
+            multi_input=False,
+            color=PORT_COLOR_INGREDIENT,
+        )
+        self._label_ingredient_port(in_port, out_port)
+
+    def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
+        """Remove redundant trailing empty ingredient slots on disconnect.
+
+        Keeps exactly one trailing empty slot so a "next available" pin always
+        exists for new ingredient connections.
+        """
+        if not in_port.name().startswith("ingredient_"):
+            return
+        self._set_ingredient_port_label(in_port, "")
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
-        while len(ing_ports) > 1 and not ing_ports[-1].connected_ports():
+        while (
+            len(ing_ports) > 1
+            and not ing_ports[-1].connected_ports()
+            and not ing_ports[-2].connected_ports()
+        ):
             self.delete_input(ing_ports.pop())
+
+    def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
+        """Set the ingredient port label from the source node's item ID."""
+        src_node = out_port.node()  # type: ignore[attr-defined]
+        item_id = getattr(getattr(src_node, "model_ref", None), "item_id", None)
+        label = _to_pascal_case(item_id) if item_id else _to_pascal_case(src_node.name())
+        self._set_ingredient_port_label(in_port, label)
 
 
 class CraftingTabNode(CraftGraphBaseNode):
@@ -1457,3 +1723,22 @@ NODE_REGISTRY: dict[NodeKind, type[CraftGraphBaseNode]] = {
 def all_node_classes() -> list[type[CraftGraphBaseNode]]:
     """Return every concrete node class for graph.register_node() calls."""
     return list(NODE_REGISTRY.values())
+
+
+# Maps each concrete node class to the ``NodeColors`` field name that drives
+# its fill color.  Used by the host window's theme-apply path so node header
+# colors update live when the user changes them in the Settings dialog.
+NODE_COLOR_FIELD_FOR_CLASS: dict[type[CraftGraphBaseNode], str] = {
+    ModifiedRecipeNode: "modified_recipe",
+    AddedRecipeNode: "added_recipe",
+    AliasRecipeNode: "alias_recipe",
+    CustomFoodNode: "custom_food",
+    FabricatorNode: "fabricator",
+    CraftingTabNode: "crafting_tab",
+    CustomSizeNode: "custom_size",
+    MovedRecipeNode: "moved_recipe",
+    CustomBioFuelNode: "custom_bio_fuel",
+    CustomFragmentCountNode: "custom_fragment_count",
+    OrphanIngredientNode: "orphan_ingredient",
+    SpriteNode: "sprite",
+}

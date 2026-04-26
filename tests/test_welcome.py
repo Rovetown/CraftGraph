@@ -95,6 +95,28 @@ class TestWelcomeConstruction:
         assert cb.isChecked()  # "Don't show" checked means DON'T show
 
 
+class TestUIScalePropagation:
+    """Hardcoded font-size stylesheets respect the active UI scale at construction."""
+
+    def test_title_font_size_scales(self, qapp: QtWidgets.QApplication) -> None:
+        from craftgraph.theme import ThemeColors, active_theme, set_active_theme
+
+        original = active_theme()
+        try:
+            set_active_theme(ThemeColors(ui_scale=200))
+            widget = _make_widget(qapp)
+            titles = [
+                lbl
+                for lbl in widget.findChildren(QtWidgets.QLabel)
+                if lbl.text() == "CraftGraph"
+            ]
+            assert titles, "expected a CraftGraph title label"
+            # Base 20pt at 200% should produce a stylesheet referencing 40pt.
+            assert "font-size: 40pt" in titles[0].styleSheet()
+        finally:
+            set_active_theme(original)
+
+
 from craftgraph.recent import RecentEntry
 
 

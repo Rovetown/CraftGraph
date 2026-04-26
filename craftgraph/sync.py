@@ -16,6 +16,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from craftgraph.config import get_config
+
 if TYPE_CHECKING:
     from NodeGraphQt import BaseNode, NodeGraph
 
@@ -77,11 +79,12 @@ class SyncGuard:
 # Model-to-UI: node creation
 # ---------------------------------------------------------------------------
 
-# Layout constants
-_Y_STEP = 150.0
-_X_FAB = -400.0
-_X_TAB = -100.0
-_X_RECIPE = 250.0
+# Layout constants (defaults from config.toml [ui.layout]).
+_LAYOUT_CFG = get_config().ui.layout
+_Y_STEP = _LAYOUT_CFG.y_step
+_X_FAB = _LAYOUT_CFG.x_fab
+_X_TAB = _LAYOUT_CFG.x_tab
+_X_RECIPE = _LAYOUT_CFG.x_recipe
 
 
 def _node_type_for_recipe(recipe: object) -> str:
@@ -317,19 +320,19 @@ def populate_graph(
 # Model-to-UI: hierarchy-aware layout
 # ---------------------------------------------------------------------------
 
-# Layout column X positions
-_LAYOUT_X_FAB = -400.0
-_LAYOUT_X_TAB = -100.0
-_LAYOUT_X_RECIPE = 250.0
+# Layout column X positions (defaults from config.toml [ui.layout]).
+_LAYOUT_X_FAB = _LAYOUT_CFG.x_fab
+_LAYOUT_X_TAB = _LAYOUT_CFG.x_tab
+_LAYOUT_X_RECIPE = _LAYOUT_CFG.x_recipe
 
 # Horizontal step per nesting level (matches gap between tab and recipe columns).
 # Depth-0 tabs stay at _LAYOUT_X_TAB, depth-1 child tabs shift right by this
 # amount, and recipes are always one step right of their parent tab.
-_LAYOUT_X_CHILD_OFFSET = _LAYOUT_X_RECIPE - _LAYOUT_X_TAB  # 350.0
+_LAYOUT_X_CHILD_OFFSET = _LAYOUT_CFG.layout_x_child_offset
 
 # Vertical spacing
-_LAYOUT_Y_STEP = 120.0
-_LAYOUT_Y_GROUP_GAP = 80.0
+_LAYOUT_Y_STEP = _LAYOUT_CFG.layout_y_step
+_LAYOUT_Y_GROUP_GAP = _LAYOUT_CFG.layout_y_group_gap
 
 # Height estimation for dynamic vertical spacing
 _NODE_V_PAD = 30.0  # vertical gap between adjacent nodes
@@ -810,6 +813,146 @@ def highlight_cycle_edges(
 
 
 # ---------------------------------------------------------------------------
+# Model-to-UI: per-node issue overlays (warning triangles)
+# ---------------------------------------------------------------------------
+
+
+def _collect_per_recipe_issues(
+    parsed_files: list[ParsedFile],
+    known_ids: frozenset[str],
+) -> dict[int, list[str]]:
+    """Return ``id(model_obj) -> list[issue_str]`` for unknown refs.
+
+    Mirrors the model-level checks in ``validate_parsed_files`` but keys
+    issues by the offending model object's ``id()`` so callers can map
+    issues back to specific UI nodes.
+    """
+    from craftgraph.models import ModifiedRecipe
+
+    by_model: dict[int, list[str]] = {}
+
+    for pf in parsed_files:
+        defined_ids: set[str] = set()
+        all_recipes: list[ModifiedRecipe] = []
+        for r in pf.modified_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.added_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.alias_recipes:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+        for r in pf.custom_foods:
+            defined_ids.add(r.item_id.lower())
+            all_recipes.append(r)
+
+        for fab in pf.custom_fabricators:
+            for r in fab.added_recipes:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+            for r in fab.alias_recipes:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+            for r in fab.custom_foods:
+                defined_ids.add(r.item_id.lower())
+                all_recipes.append(r)
+
+        all_known = known_ids | defined_ids
+
+        for recipe in all_recipes:
+            for ing in recipe.ingredients:
+                if ing.item_id.lower() not in all_known:
+                    by_model.setdefault(id(recipe), []).append(
+                        f"Unknown ingredient '{ing.item_id}'"
+                    )
+
+        for fab in pf.custom_fabricators:
+            tab_ids = {t.tab_id.lower() for t in fab.tabs}
+
+            for tab in fab.tabs:
+                if not tab.parent_tab_path:
+                    continue
+                last_seg = tab.parent_tab_path.rsplit("/", 1)[-1].lower()
+                if last_seg != fab.item_id.lower() and last_seg not in tab_ids:
+                    by_model.setdefault(id(tab), []).append(
+                        f"Parent path '{tab.parent_tab_path}' references missing tab"
+                    )
+
+            for recipe_list in (fab.added_recipes, fab.alias_recipes, fab.custom_foods):
+                for recipe in recipe_list:
+                    path = getattr(recipe, "path", "") or ""
+                    if not path:
+                        continue
+                    last_seg = path.rsplit("/", 1)[-1].lower()
+                    if last_seg != fab.item_id.lower() and last_seg not in tab_ids:
+                        by_model.setdefault(id(recipe), []).append(
+                            f"Path '{path}' references missing tab"
+                        )
+
+    return by_model
+
+
+def update_node_issue_overlays(
+    graph: NodeGraph,
+    parsed_files: list[ParsedFile],
+    model_to_node: ModelNodeMap,
+    known_ids: frozenset[str],
+) -> tuple[int, int]:
+    """Apply warning-triangle overlays on nodes with detected issues.
+
+    Cycle members get a red error overlay; nodes with broken references or
+    unknown ingredients get a yellow warning overlay.  Returns
+    ``(error_count, warning_count)``.
+    """
+    from craftgraph.graph import build_graph, find_cycles
+
+    nx_graph = build_graph(parsed_files)
+    cycles = find_cycles(nx_graph)
+    cycle_ids: set[str] = set()
+    cycle_paths: dict[str, list[str]] = {}
+    for cycle in cycles:
+        path_str = " -> ".join([*cycle, cycle[0]])
+        for item_id in cycle:
+            key = item_id.lower()
+            cycle_ids.add(key)
+            cycle_paths.setdefault(key, []).append(path_str)
+
+    issues_by_model = _collect_per_recipe_issues(parsed_files, known_ids)
+
+    error_count = 0
+    warning_count = 0
+
+    for node in model_to_node.values():
+        ref = node.model_ref
+        item_id = getattr(ref, "item_id", None) or getattr(ref, "tab_id", None)
+        item_key = item_id.lower() if isinstance(item_id, str) else None
+
+        node_issues = list(issues_by_model.get(id(ref), []))
+        in_cycle = item_key is not None and item_key in cycle_ids
+        node_cycle_paths = cycle_paths.get(item_key or "", []) if in_cycle else []
+
+        # Stash for the hover-tooltip composer.
+        node._issue_messages = list(node_issues)
+        node._cycle_paths = list(node_cycle_paths)
+
+        if in_cycle:
+            tooltip_lines = ["In dependency cycle:", *node_cycle_paths]
+            if node_issues:
+                tooltip_lines.append("")
+                tooltip_lines.extend(node_issues)
+            node.set_node_warning("error", "\n".join(tooltip_lines))
+            error_count += 1
+        elif node_issues:
+            node.set_node_warning("warning", "\n".join(node_issues))
+            warning_count += 1
+        else:
+            node.clear_node_warning()
+
+    return error_count, warning_count
+
+
+# ---------------------------------------------------------------------------
 # Model-to-UI: connection wiring
 # ---------------------------------------------------------------------------
 
@@ -1192,6 +1335,7 @@ class UIToModelHandler:
         self._parsed_files = parsed_files
         self._on_cycle_rejected = on_cycle_rejected
         self._on_reassignment_warning = on_reassignment_warning
+        self.warn_before_cycles: bool = True
         # Reverse map: NodeGraphQt node ID -> model object, used to look
         # up models after nodes have been deleted from the graph.
         self._node_id_to_model: dict[str, object] = {}
@@ -1391,13 +1535,14 @@ class UIToModelHandler:
             return
 
         # Pre-link cycle check: reject connections that would create cycles
-        cycle_path = self.find_cycle_path(consumer_id, source_id)
-        if cycle_path is not None:
-            with self._guard():
-                in_port.disconnect_from(out_port)  # type: ignore[attr-defined]
-            if self._on_cycle_rejected is not None:
-                self._on_cycle_rejected(consumer_id, source_id, cycle_path)
-            return
+        if self.warn_before_cycles:
+            cycle_path = self.find_cycle_path(consumer_id, source_id)
+            if cycle_path is not None:
+                with self._guard():
+                    in_port.disconnect_from(out_port)  # type: ignore[attr-defined]
+                if self._on_cycle_rejected is not None:
+                    self._on_cycle_rejected(consumer_id, source_id, cycle_path)
+                return
 
         from craftgraph.commands import AddIngredientCommand
         from craftgraph.models import Ingredient
@@ -1501,7 +1646,7 @@ class UIToModelHandler:
         """Handle connecting a tab under another tab's children port."""
         from craftgraph.models import CraftingTab
 
-        if self._would_create_tab_cycle(child, parent):
+        if self.warn_before_cycles and self._would_create_tab_cycle(child, parent):
             cycle_path = [child.tab_id, parent.tab_id, child.tab_id]
             if self._on_cycle_rejected is not None:
                 self._on_cycle_rejected(child.tab_id, parent.tab_id, cycle_path)

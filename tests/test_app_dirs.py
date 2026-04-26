@@ -175,6 +175,36 @@ class TestSettingsPersistence:
         data = json.loads(settings_file.read_text(encoding="utf-8"))
         assert data["version"] == 1
 
+    def test_save_and_load_bool(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("backup_on_save", True)
+        result = app_dirs.load_setting("backup_on_save", False)
+        assert result is True
+        assert isinstance(result, bool)
+
+    def test_save_and_load_int(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("auto_save_interval", 120)
+        result = app_dirs.load_setting("auto_save_interval", 60)
+        assert result == 120
+        assert isinstance(result, int)
+
+    def test_save_and_load_false(self, tmp_path: Path, monkeypatch: object) -> None:
+        """False must not be confused with a missing key."""
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("check_for_updates", False)
+        result = app_dirs.load_setting("check_for_updates", True)
+        assert result is False
+
+    def test_mixed_types_in_one_file(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("on_launch", "welcome")
+        app_dirs.save_setting("backup_on_save", True)
+        app_dirs.save_setting("auto_save_interval", 90)
+        assert app_dirs.load_setting("on_launch", "") == "welcome"
+        assert app_dirs.load_setting("backup_on_save", False) is True
+        assert app_dirs.load_setting("auto_save_interval", 60) == 90
+
 
 class TestNoQtImports:
     """The module must not depend on Qt."""

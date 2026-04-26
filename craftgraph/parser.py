@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from craftgraph.config import get_config
 from craftgraph.models import (
     AddedRecipe,
     AliasRecipe,
@@ -707,9 +708,6 @@ def parse_directory(path: Path) -> list[ParsedFile]:
 
 # -- Validation ----------------------------------------------------------------
 
-_INGREDIENT_REQUIRED_MIN = 1
-_INGREDIENT_REQUIRED_MAX = 25
-
 
 def validate_parsed_file(parsed: ParsedFile) -> list[str]:
     """Optional post-parse validation. Returns warning strings (empty = clean)."""
@@ -720,22 +718,25 @@ def validate_parsed_file(parsed: ParsedFile) -> list[str]:
 
 def _validate_ingredient_ranges(parsed: ParsedFile, warnings: list[str]) -> None:
     """Check that all ingredient Required values fall within CC3's valid range."""
+    limits = get_config().limits
+    req_min = limits.ingredient_required_min
+    req_max = limits.ingredient_required_max
     for recipe in parsed.all_recipes:
         for ing in recipe.ingredients:
-            if not (_INGREDIENT_REQUIRED_MIN <= ing.required <= _INGREDIENT_REQUIRED_MAX):
+            if not (req_min <= ing.required <= req_max):
                 warnings.append(
                     f"{parsed.source_path.name}: ingredient '{ing.item_id}' "
                     f"in recipe '{recipe.item_id}' has Required={ing.required} "
-                    f"(valid range: {_INGREDIENT_REQUIRED_MIN}-{_INGREDIENT_REQUIRED_MAX})"
+                    f"(valid range: {req_min}-{req_max})"
                 )
     # CustomFabricator build-cost ingredients are NOT in all_recipes
     for fab in parsed.custom_fabricators:
         for ing in fab.ingredients:
-            if not (_INGREDIENT_REQUIRED_MIN <= ing.required <= _INGREDIENT_REQUIRED_MAX):
+            if not (req_min <= ing.required <= req_max):
                 warnings.append(
                     f"{parsed.source_path.name}: ingredient '{ing.item_id}' "
                     f"in fabricator '{fab.item_id}' has Required={ing.required} "
-                    f"(valid range: {_INGREDIENT_REQUIRED_MIN}-{_INGREDIENT_REQUIRED_MAX})"
+                    f"(valid range: {req_min}-{req_max})"
                 )
 
 

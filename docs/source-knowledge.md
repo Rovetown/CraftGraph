@@ -1,11 +1,8 @@
 # CustomCraft3 and EasyMarkup -- Complete Reference
 
-This document explains everything you need to know about writing recipe files for
-the CustomCraft3 (CC3) Subnautica mod. It covers the EasyMarkup syntax, all 10
-block types, their fields, validation rules, and practical examples.
+Doc covers writing recipe files for CustomCraft3 (CC3) Subnautica mod. Covers EasyMarkup syntax, all 10 block types, fields, validation, examples.
 
-Whether you are a player tweaking recipes, a modder building a full fabricator, or
-a developer working on CraftGraph, this guide has you covered.
+Player tweaking recipes, modder building fabricator, dev on CraftGraph — guide got you.
 
 ---
 
@@ -41,25 +38,20 @@ a developer working on CraftGraph, this guide has you covered.
 
 ## What is CustomCraft3?
 
-CustomCraft3 (CC3) is a Subnautica mod by MrPurple6411 that lets you customize
-crafting recipes without writing any code. You create plain text files using a
-format called EasyMarkup, drop them in the mod folder, and CC3 reads them when
-the game starts.
+CC3 — Subnautica mod by MrPurple6411. Customize crafting recipes, no code. Plain text files in EasyMarkup format, drop in mod folder, CC3 reads on game start.
 
-You can:
+Can:
 - Change ingredients for existing recipes
-- Add entirely new craftable items
-- Create custom fabricators with their own tabs and recipes
-- Adjust inventory sizes, bioreactor energy, and fragment scan counts
+- Add new craftable items
+- Create custom fabricators w/ own tabs and recipes
+- Adjust inventory sizes, bioreactor energy, fragment scan counts
 - Move or hide recipes from fabricator menus
 
 ---
 
 ## What is EasyMarkup?
 
-EasyMarkup is the text format CC3 uses. Think of it as a simpler alternative to
-JSON or XML, designed specifically for modders who may not be programmers. It uses
-a small set of special characters to structure data.
+Text format CC3 uses. Simpler alternative to JSON/XML, designed for modders who may not be programmers. Small set of special characters structures data.
 
 ---
 
@@ -69,23 +61,23 @@ a small set of special characters to structure data.
 
 | Character | Name | Purpose |
 |-----------|------|---------|
-| `:` | Colon | Separates a key from its value |
-| `;` | Semicolon | Ends a value |
-| `(` `)` | Parentheses | Wraps a block (group of key-value pairs) |
-| `,` | Comma | Separates items in a list or between entries |
-| `#` | Hash | Opens and closes a comment |
-| `"` | Double quote | Wraps a string that contains spaces |
-| `\` | Backslash | Escapes a special character |
+| `:` | Colon | Separates key from value |
+| `;` | Semicolon | Ends value |
+| `(` `)` | Parentheses | Wraps block (group of key-value pairs) |
+| `,` | Comma | Separates list items or entries |
+| `#` | Hash | Opens/closes comment |
+| `"` | Double quote | Wraps string w/ spaces |
+| `\` | Backslash | Escapes special character |
 
 ### Key-Value Pairs
 
-The basic building block. A key, a colon, a value, and a semicolon:
+Basic building block. Key, colon, value, semicolon:
 
 ```
 ItemID: Titanium;
 ```
 
-Whitespace is flexible. These are all identical:
+Whitespace flexible. All identical:
 
 ```
 ItemID:Titanium;
@@ -95,7 +87,7 @@ ItemID:   Titanium  ;
 
 ### Blocks (Complex Values)
 
-When a value contains multiple key-value pairs, wrap them in parentheses:
+Value w/ multiple key-value pairs — wrap in parentheses:
 
 ```
 ComplexKey:
@@ -113,13 +105,13 @@ ComplexKey: ( SubKey1: Value1; SubKey2: Value2; );
 
 ### Lists
 
-Comma-separated values on the same key:
+Comma-separated values on same key:
 
 ```
 LinkedItemIDs: Titanium, Gold, Silver;
 ```
 
-Lists of blocks use commas between entries and a semicolon after the last one:
+Lists of blocks — commas between entries, semicolon after last:
 
 ```
 Ingredients:
@@ -129,24 +121,24 @@ Ingredients:
 
 ### Comments
 
-Wrap comment text between `#` signs. Comments can appear anywhere:
+Wrap text between `#` signs. Can appear anywhere:
 
 ```
 # This is a comment #
 ItemID: Titanium; # Inline comment #
 ```
 
-Both `#` signs are required. A comment opened with `#` must be closed with `#`.
+Both `#` signs required. Opened `#` must be closed w/ `#`.
 
 ### Quoted Strings
 
-Values that contain spaces must be wrapped in double quotes:
+Values w/ spaces need double quotes:
 
 ```
 DisplayName: "Water Jug - 1 gallon";
 ```
 
-Single-word values do not need quotes:
+Single-word values — no quotes needed:
 
 ```
 DisplayName: Titanium;
@@ -154,31 +146,31 @@ DisplayName: Titanium;
 
 ### Escaping
 
-If a value contains a special character and is not quoted, escape it with `\`:
+Special character in unquoted value — escape w/ `\`:
 
 ```
 SomeValue: Price\: 100;
 ```
 
-Inside quoted strings, no escaping is needed.
+Inside quoted strings, no escaping needed.
 
 ### Case Sensitivity
 
-- **Keys** are case-insensitive: `ItemID`, `itemid`, and `ITEMID` all work.
-- **TechType IDs** (item names) are case-insensitive: `Titanium` = `titanium`.
-- **Boolean values** are case-insensitive: `YES`, `yes`, `True`, `true` all work.
-- **Enum values** (like TechGroup, FoodModel) are case-insensitive.
+- **Keys** case-insensitive: `ItemID`, `itemid`, `ITEMID` all work.
+- **TechType IDs** case-insensitive: `Titanium` = `titanium`.
+- **Booleans** case-insensitive: `YES`, `yes`, `True`, `true` all work.
+- **Enum values** (TechGroup, FoodModel) case-insensitive.
 
 ### Booleans
 
-CC3 recognizes these boolean values:
+CC3 recognized values:
 
 | True values | False values |
 |-------------|-------------|
 | `YES` | `NO` |
 | `TRUE` | `FALSE` |
 
-Booleans are always written as `YES` or `NO` in output.
+Output always `YES` or `NO`.
 
 ---
 
@@ -186,20 +178,16 @@ Booleans are always written as `YES` or `NO` in output.
 
 ### One Block Type Per File
 
-Each `.txt` file must contain exactly **one** primary block type. The first
-non-comment content in the file determines the type.
+Each `.txt` file — exactly **one** primary block type. First non-comment content determines type.
 
-Valid: A file containing only `ModifiedRecipes:` entries.
-Invalid: A file with both `ModifiedRecipes:` and `AddedRecipes:` at the top level.
+Valid: File w/ only `ModifiedRecipes:` entries.
+Invalid: File w/ both `ModifiedRecipes:` and `AddedRecipes:` at top level.
 
-**Exception:** A `CustomFabricator` block can contain nested `CustomCraftingTabs`,
-`AddedRecipes`, `AliasRecipes`, `MovedRecipes`, and `CustomFoods` inside it.
-This nesting is part of the fabricator definition, not separate top-level blocks.
+**Exception:** `CustomFabricator` block can contain nested `CustomCraftingTabs`, `AddedRecipes`, `AliasRecipes`, `MovedRecipes`, `CustomFoods` inside it. Part of fabricator definition, not separate top-level blocks.
 
 ### Multiple Entries Per File
 
-You can have multiple entries of the same type in one file. Separate them with
-commas, and end the last one with a semicolon:
+Multiple entries of same type OK. Comma-separated, semicolon after last:
 
 ```
 ModifiedRecipes:
@@ -217,23 +205,21 @@ ModifiedRecipes:
 
 ### File Encoding
 
-Files should be UTF-8. CC3 handles Windows BOM (byte-order mark) gracefully.
+UTF-8. CC3 handles Windows BOM gracefully.
 
 ### Cross-File References
 
-Items defined in one file can be referenced from another file in the same mod
-folder. CC3 processes the entire folder as a unit. For example, a recipe in
-`recipes.txt` can reference a custom tab defined in `tabs.txt`.
+Items from one file referenceable from another in same mod folder. CC3 processes entire folder as unit. Recipe in `recipes.txt` can reference tab from `tabs.txt`.
 
 ---
 
 ## Block Types Overview
 
-CC3 supports 10 block types, organized into three categories:
+10 block types, three categories:
 
 ### Recipe Types (inheritance chain)
 
-These share fields through inheritance. Each type adds fields on top of its parent.
+Shared fields through inheritance. Each type adds fields on top of parent.
 
 ```
 ModifiedRecipe          (base: change existing recipes)
@@ -249,8 +235,8 @@ ModifiedRecipe          (base: change existing recipes)
 
 | Type | Purpose |
 |------|---------|
-| CustomFabricator | Create a new crafting station |
-| CustomCraftingTab | Add tabs to existing or custom fabricators |
+| CustomFabricator | Create new crafting station |
+| CustomCraftingTab | Add tabs to existing/custom fabricators |
 
 ### Utility Types
 
@@ -259,7 +245,7 @@ ModifiedRecipe          (base: change existing recipes)
 | MovedRecipe | Move, copy, or hide recipes in fabricator menus |
 | CustomSize | Change inventory slot dimensions |
 | CustomBioFuel | Set bioreactor energy values |
-| CustomFragmentCount | Change how many fragments unlock a blueprint |
+| CustomFragmentCount | Change fragment count to unlock blueprint |
 
 ---
 
@@ -267,26 +253,23 @@ ModifiedRecipe          (base: change existing recipes)
 
 ### 1. ModifiedRecipe
 
-**Purpose:** Change the ingredients or unlock conditions of recipes that already
-exist in the base game.
+**Purpose:** Change ingredients or unlock conditions of existing base game recipes.
 
-**When to use:** You want to make an existing item cheaper/more expensive to
-craft, or add unlock conditions to it.
+**When to use:** Make existing item cheaper/more expensive, or add unlock conditions.
 
-**Important:** This only works with items that are already craftable in the
-unmodded game. For items that are not normally craftable, use AddedRecipe instead.
+**Important:** Only works w/ items already craftable in unmodded game. Non-craftable items — use AddedRecipe.
 
 #### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| ItemID | string | Yes | -- | The in-game item to modify (TechType ID) |
-| AmountCrafted | int | No | 1 | How many items one craft produces |
-| Ingredients | list | No | [] | What materials are needed (see [Ingredients](#ingredients)) |
-| LinkedItemIDs | CSV | No | [] | Extra items produced alongside the main item |
-| Unlocks | CSV | No | [] | Items unlocked when this recipe is crafted |
-| UnlockedBy | CSV | No | [] | Items that unlock this recipe when scanned |
-| ForceUnlockAtStart | bool | No | NO | Whether the recipe is available from game start |
+| ItemID | string | Yes | -- | In-game item to modify (TechType ID) |
+| AmountCrafted | int | No | 1 | Items per craft |
+| Ingredients | list | No | [] | Materials needed (see [Ingredients](#ingredients)) |
+| LinkedItemIDs | CSV | No | [] | Extra items produced alongside main |
+| Unlocks | CSV | No | [] | Items unlocked when crafted |
+| UnlockedBy | CSV | No | [] | Items that unlock this when scanned |
+| ForceUnlockAtStart | bool | No | NO | Available from game start |
 
 #### Example
 
@@ -319,11 +302,9 @@ ModifiedRecipes:
 
 ### 2. AddedRecipe
 
-**Purpose:** Add a new crafting recipe for an existing in-game item that is not
-normally craftable.
+**Purpose:** Add crafting recipe for existing in-game item not normally craftable.
 
-**When to use:** You want to make a non-craftable item craftable (like adding a
-recipe for Depleted Reactor Rods), or add an alternative recipe for an existing item.
+**When to use:** Make non-craftable item craftable (e.g. Depleted Reactor Rods), or add alternative recipe.
 
 **Inherits all fields from:** ModifiedRecipe
 
@@ -331,14 +312,13 @@ recipe for Depleted Reactor Rods), or add an alternative recipe for an existing 
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| Path | string | Yes | -- | Where to place the recipe in a fabricator (see [Crafting Paths](#crafting-paths)) |
+| Path | string | Yes | -- | Where in fabricator (see [Crafting Paths](#crafting-paths)) |
 | PdaGroup | enum | No | Uncategorized | PDA encyclopedia group (see [Enum Reference](#enum-reference)) |
 | PdaCategory | enum | No | Misc | PDA encyclopedia category |
 
-**Note:** If you set PdaGroup, you must also set PdaCategory (and vice versa).
+**Note:** Setting PdaGroup requires PdaCategory too (and vice versa).
 
-**Default difference:** `ForceUnlockAtStart` defaults to `YES` for AddedRecipe
-(unlike `NO` for ModifiedRecipe).
+**Default difference:** `ForceUnlockAtStart` defaults `YES` for AddedRecipe (unlike `NO` for ModifiedRecipe).
 
 #### Example
 
@@ -359,24 +339,22 @@ AddedRecipes:
 
 ### 3. AliasRecipe
 
-**Purpose:** Create a completely new item with a custom name and description.
-Can also create alternate recipes that produce existing items.
+**Purpose:** Create new item w/ custom name/description. Also alternate recipes producing existing items.
 
 **When to use:**
-- You want to create a brand-new item that does not exist in the base game.
-- You want an alternate recipe that produces an existing item (using LinkedItemIDs
-  with AmountCrafted set to 0).
+- Brand-new item not in base game.
+- Alternate recipe producing existing item (via `LinkedItemIDs` w/ `AmountCrafted` 0).
 
-**Inherits all fields from:** AddedRecipe (and therefore ModifiedRecipe)
+**Inherits all fields from:** AddedRecipe (and ModifiedRecipe)
 
 #### Additional Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| DisplayName | string | Yes | "" | The name shown in-game (use quotes if it contains spaces) |
-| Tooltip | string | Yes | "" | Description text shown below the name (use quotes for spaces) |
-| FunctionalID | string | No | None | Clone the behavior of an existing item. Without this, the custom item has no function. |
-| SpriteItemID | string | No | None | Use the icon of an existing item as this item's icon |
+| DisplayName | string | Yes | "" | Name shown in-game (quote if spaces) |
+| Tooltip | string | Yes | "" | Description below name (quote if spaces) |
+| FunctionalID | string | No | None | Clone behavior of existing item. Without — item has no function. |
+| SpriteItemID | string | No | None | Use existing item's icon |
 
 #### Example: New custom item
 
@@ -416,44 +394,42 @@ AliasRecipes:
 
 #### Sprite Resolution Order
 
-CC3 resolves the icon for an AliasRecipe in this order:
-1. A PNG file in the `Assets/` folder matching the ItemID (e.g., `Assets/GallonWater.png`)
-2. The `SpriteItemID` field (use another item's icon)
-3. The first item in `LinkedItemIDs`
+CC3 resolves AliasRecipe icon:
+1. PNG in `Assets/` matching ItemID (e.g., `Assets/GallonWater.png`)
+2. `SpriteItemID` field
+3. First item in `LinkedItemIDs`
 4. Fallback: black question-mark icon
 
 ---
 
 ### 4. CustomFood
 
-**Purpose:** Create a custom food or drink item with nutritional values.
+**Purpose:** Create custom food/drink w/ nutritional values.
 
-**When to use:** You want to create a new edible item with specific food, water,
-health, or oxygen effects.
+**When to use:** New edible item w/ specific food, water, health, oxygen effects.
 
-**Inherits all fields from:** AliasRecipe (and therefore AddedRecipe and ModifiedRecipe)
+**Inherits all fields from:** AliasRecipe (and AddedRecipe, ModifiedRecipe)
 
 #### Additional Fields
 
 | Field | Type | Required | Default | Range | Description |
 |-------|------|----------|---------|-------|-------------|
-| FoodValue | int | Yes* | 0 | -200 to 200 | Food points restored on consumption |
-| WaterValue | int | Yes* | 0 | -200 to 200 | Water points restored on consumption |
-| OxygenValue | int | No | 0 | -200 to 200 | Oxygen restored (useful for underwater items) |
-| HealthValue | int | No | 0 | -200 to 200 | Health points restored |
-| DecayRateMod | float | No | 0.0 | 0.0+ | Decomposition speed (0 = never, 1 = normal cooked fish rate, 2 = double) |
+| FoodValue | int | Yes* | 0 | -200 to 200 | Food points on consumption |
+| WaterValue | int | Yes* | 0 | -200 to 200 | Water points on consumption |
+| OxygenValue | int | No | 0 | -200 to 200 | Oxygen restored |
+| HealthValue | int | No | 0 | -200 to 200 | Health restored |
+| DecayRateMod | float | No | 0.0 | 0.0+ | Decomposition speed (0=never, 1=normal cooked fish, 2=double) |
 | FoodType | enum | No | None | -- | Visual model in inventory (see [FoodModel Enum](#foodmodel)) |
-| UseDrinkSound | bool | No | auto | -- | YES = drinking sound, NO = eating sound |
+| UseDrinkSound | bool | No | auto | -- | YES=drink sound, NO=eat sound |
 
-*At least one of FoodValue or WaterValue must be non-zero.
+*At least one of FoodValue/WaterValue must be non-zero.
 
 **Default differences:**
-- `AmountCrafted` defaults to 1
-- `PdaGroup` defaults to Survival
-- `PdaCategory` defaults to CookedFood
+- `AmountCrafted` defaults 1
+- `PdaGroup` defaults Survival
+- `PdaCategory` defaults CookedFood
 
-**Sound auto-detection:** If `UseDrinkSound` is not set, CC3 uses the drinking
-sound when `WaterValue > FoodValue * 5`, otherwise the eating sound.
+**Sound auto-detection:** If `UseDrinkSound` unset, CC3 uses drink sound when `WaterValue > FoodValue * 5`, else eat sound.
 
 #### Example
 
@@ -482,38 +458,33 @@ CustomFoods:
 
 ### 5. CustomFabricator
 
-**Purpose:** Create an entirely new crafting station that the player can build
-and place in their base or Cyclops.
+**Purpose:** Create new crafting station player can build in base or Cyclops.
 
-**When to use:** You have enough custom recipes to warrant their own dedicated
-crafting station, separate from the default Fabricator.
+**When to use:** Enough custom recipes to warrant dedicated station separate from default Fabricator.
 
-A CustomFabricator is both an item (it needs to be built) and a container (it
-holds tabs and recipes inside it).
+CustomFabricator = both item (must be built) and container (holds tabs/recipes).
 
-**Inherits all fields from:** AliasRecipe (so it has DisplayName, Tooltip, Path,
-Ingredients, etc.)
+**Inherits all fields from:** AliasRecipe (has DisplayName, Tooltip, Path, Ingredients, etc.)
 
 #### Additional Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | Model | string | No | Fabricator | Visual model: `Fabricator`, `Workbench`, or `MoonPool` |
-| ColorTint | floats | No | None | RGB color tint (3 values, each 0.0 to 1.0) |
-| AllowedInBase | bool | No | YES | Can the player build this in a base? |
-| AllowedInCyclops | bool | No | YES | Can the player build this in a Cyclops? |
-| CustomCraftingTabs | nested | No | [] | Tabs inside this fabricator |
-| AddedRecipes | nested | No | [] | Recipes added to this fabricator |
-| AliasRecipes | nested | No | [] | Alias recipes in this fabricator |
-| CustomFoods | nested | No | [] | Food recipes in this fabricator |
-| MovedRecipes | nested | No | [] | Moved recipes in this fabricator |
+| ColorTint | floats | No | None | RGB color tint (3 values, 0.0-1.0 each) |
+| AllowedInBase | bool | No | YES | Buildable in base? |
+| AllowedInCyclops | bool | No | YES | Buildable in Cyclops? |
+| CustomCraftingTabs | nested | No | [] | Tabs inside fabricator |
+| AddedRecipes | nested | No | [] | Recipes in fabricator |
+| AliasRecipes | nested | No | [] | Alias recipes in fabricator |
+| CustomFoods | nested | No | [] | Food recipes in fabricator |
+| MovedRecipes | nested | No | [] | Moved recipes in fabricator |
 
-**Constraint:** Both `AllowedInBase` and `AllowedInCyclops` cannot both be `NO`.
+**Constraint:** `AllowedInBase` and `AllowedInCyclops` cannot both be `NO`.
 
 #### Nesting Structure
 
-A CustomFabricator is unique because it contains other block types nested inside
-its definition. The fabricator owns its tabs and recipes:
+CustomFabricator unique — contains other block types nested inside. Fabricator owns its tabs and recipes:
 
 ```
 CustomFabricators:
@@ -578,24 +549,22 @@ CustomFabricator (ItemID: "MyFab")
 
 ### 6. CustomCraftingTab
 
-**Purpose:** Add new organizational tabs to existing fabricators (or custom ones).
+**Purpose:** Add organizational tabs to existing or custom fabricators.
 
-**When to use:** You want to organize your recipes into categories within a
-fabricator's crafting tree.
+**When to use:** Organize recipes into categories within fabricator's crafting tree.
 
 #### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| TabID | string | Yes | -- | Internal identifier for the tab |
-| DisplayName | string | Yes | "" | Name shown in-game (quote if it has spaces) |
-| SpriteItemID | string | No | None | Use an existing item's icon for the tab |
-| ParentTabPath | string | Yes | -- | Where to place the tab (see [Crafting Paths](#crafting-paths)) |
+| TabID | string | Yes | -- | Internal tab identifier |
+| DisplayName | string | Yes | "" | Name in-game (quote if spaces) |
+| SpriteItemID | string | No | None | Existing item's icon for tab |
+| ParentTabPath | string | Yes | -- | Tab placement (see [Crafting Paths](#crafting-paths)) |
 
 #### Ordering Rule
 
-**Parent tabs must be defined before child tabs in the file.** The file is read
-top to bottom. If tab B is a child of tab A, tab A must appear first.
+**Parent tabs must be defined before child tabs in file.** Read top-to-bottom. Tab B child of Tab A — Tab A must appear first.
 
 #### Example
 
@@ -618,8 +587,8 @@ CustomCraftingTabs:
 
 #### Tab Sprite Resolution
 
-1. A PNG file in `Assets/` matching the TabID (e.g., `Assets/Doodads.png`)
-2. The `SpriteItemID` field
+1. PNG in `Assets/` matching TabID (e.g., `Assets/Doodads.png`)
+2. `SpriteItemID` field
 
 ---
 
@@ -630,26 +599,26 @@ CustomCraftingTabs:
 **Purpose:** Move, copy, or hide existing recipes in fabricator menus.
 
 **When to use:**
-- Move a recipe to a different tab or fabricator.
-- Copy a recipe so it appears in multiple locations.
-- Hide a recipe from its current location.
+- Move recipe to different tab/fabricator.
+- Copy recipe to multiple locations.
+- Hide recipe from current location.
 
 #### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| ItemID | string | Yes | -- | The item to move/copy/hide |
-| OldPath | string | Conditional | None | Original location in the fabricator tree |
+| ItemID | string | Yes | -- | Item to move/copy/hide |
+| OldPath | string | Conditional | None | Original fabricator tree location |
 | NewPath | string | Conditional | None | Destination location |
-| Copied | bool | No | NO | YES = copy (keep original), NO = move |
-| Hidden | bool | No | NO | YES = hide from OldPath |
+| Copied | bool | No | NO | YES=copy (keep original), NO=move |
+| Hidden | bool | No | NO | YES=hide from OldPath |
 
 #### Constraints
 
 - `Copied` and `Hidden` cannot both be `YES`.
-- If `Hidden: YES` -- `OldPath` is required, `NewPath` is ignored.
-- If `Copied: YES` -- `NewPath` is required, `OldPath` is optional.
-- If neither -- both `OldPath` and `NewPath` are required (move operation).
+- `Hidden: YES` — `OldPath` required, `NewPath` ignored.
+- `Copied: YES` — `NewPath` required, `OldPath` optional.
+- Neither — both `OldPath` and `NewPath` required (move).
 
 #### Examples
 
@@ -679,7 +648,7 @@ MovedRecipes:
 
 ### 8. CustomSize
 
-**Purpose:** Change how many inventory slots an item takes up.
+**Purpose:** Change inventory slot count for item.
 
 #### Fields
 
@@ -689,7 +658,7 @@ MovedRecipes:
 | Width | int | Yes | 1 | 1-6 | Horizontal slots |
 | Height | int | Yes | 1 | 1-6 | Vertical slots |
 
-Values outside 1-6 are clamped to 1.
+Values outside 1-6 clamped to 1.
 
 #### Example
 
@@ -711,18 +680,16 @@ CustomSizes:
 
 ### 9. CustomBioFuel
 
-**Purpose:** Set how much energy an item provides in a Bioreactor.
+**Purpose:** Set bioreactor energy for item.
 
 #### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | ItemID | string | Yes | -- | Item to configure |
-| Energy | float | Yes | 0.0 | Energy value (0 = disable, higher = more energy) |
+| Energy | float | Yes | 0.0 | Energy value (0=disable, higher=more) |
 
-Setting Energy to 0 for an item that normally works in a bioreactor effectively
-disables it. Setting Energy on an item that normally cannot go in a bioreactor
-adds bioreactor compatibility.
+Energy 0 on normally-compatible item = disables it. Energy on normally-incompatible item = adds bioreactor compatibility.
 
 #### Example
 
@@ -747,14 +714,14 @@ CustomBioFuels:
 
 ### 10. CustomFragmentCount
 
-**Purpose:** Change how many fragments the player must scan to unlock a blueprint.
+**Purpose:** Change fragments needed to unlock blueprint.
 
 #### Fields
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | ItemID | string | Yes | -- | Blueprint item |
-| FragmentsToScan | int | Yes | -- | Number of fragments required |
+| FragmentsToScan | int | Yes | -- | Fragments required |
 
 #### Example
 
@@ -774,13 +741,12 @@ CustomFragmentCounts:
 
 ## Ingredients
 
-Ingredients define what materials a recipe requires. Each ingredient is a block
-with two fields:
+Define materials a recipe requires. Each ingredient = block w/ two fields:
 
 | Field | Type | Required | Default | Range | Description |
 |-------|------|----------|---------|-------|-------------|
-| ItemID | string | Yes | -- | -- | The material needed |
-| Required | int | Yes | 1 | 1-25 | How many of that material |
+| ItemID | string | Yes | -- | -- | Material needed |
+| Required | int | Yes | 1 | 1-25 | Amount needed |
 
 ### Syntax
 
@@ -790,7 +756,7 @@ Single ingredient:
 Ingredients: ( ItemID: Titanium; Required: 2; );
 ```
 
-Multiple ingredients (comma between entries, semicolon after last):
+Multiple (comma between, semicolon after last):
 
 ```
 Ingredients:
@@ -801,7 +767,7 @@ Ingredients:
 
 ### Compact vs. Expanded
 
-Both forms are valid:
+Both valid:
 
 ```
 # Compact #
@@ -823,7 +789,7 @@ Ingredients:
 
 ## Crafting Paths
 
-Paths tell CC3 where to place a recipe or tab in a fabricator's menu tree.
+Paths tell CC3 where to place recipe/tab in fabricator menu tree.
 
 ### Format
 
@@ -831,7 +797,7 @@ Paths tell CC3 where to place a recipe or tab in a fabricator's menu tree.
 FabricatorType/Tab1/Tab2/.../FinalTab
 ```
 
-The first segment is always the fabricator type (or custom fabricator ItemID).
+First segment = fabricator type (or custom fabricator ItemID).
 
 ### Built-in Fabricator Types
 
@@ -852,22 +818,21 @@ The first segment is always the fabricator type (or custom fabricator ItemID).
 |------|---------|
 | `Fabricator/Resources/BasicMaterials` | Standard Fabricator > Resources > Basic Materials |
 | `Fabricator/Survival/Water` | Standard Fabricator > Survival > Water |
-| `SeamothUpgrades` | Vehicle Upgrade Console (root level) |
-| `SeamothUpgrades/SpecialItems` | Vehicle Upgrade Console > Special Items tab |
+| `SeamothUpgrades` | Vehicle Upgrade Console (root) |
+| `SeamothUpgrades/SpecialItems` | Vehicle Upgrade Console > Special Items |
 | `MyFab/ScienceTab` | Custom fabricator "MyFab" > Science tab |
 
 ### Path Rules
 
-- Paths are always **absolute** (start from the fabricator root), even for
-  recipes nested inside a CustomFabricator block.
-- The fabricator type segment is case-insensitive.
-- All tabs in the path must exist before a recipe references them.
+- Always **absolute** (from fabricator root), even for recipes nested inside CustomFabricator.
+- Fabricator type segment case-insensitive.
+- All tabs in path must exist before recipe references them.
 
 ---
 
 ## Unlock System
 
-CC3 provides two fields for controlling when recipes become available:
+Two fields control recipe availability:
 
 ### Unlocks
 
@@ -875,8 +840,7 @@ CC3 provides two fields for controlling when recipes become available:
 Unlocks: DepletedReactorRod, AdvancedWiringKit;
 ```
 
-When the player crafts (or scans) this item, **all listed items** are unlocked.
-This is a batch unlock: craft one thing, unlock many.
+Player crafts/scans this item → **all listed items** unlock. Batch unlock: craft one, unlock many.
 
 ### UnlockedBy
 
@@ -884,8 +848,7 @@ This is a batch unlock: craft one thing, unlock many.
 UnlockedBy: Seaglide, Seamoth;
 ```
 
-This recipe unlocks when **any one** of the listed items is scanned or unlocked.
-This is OR logic: scanning either a Seaglide or a Seamoth would unlock this recipe.
+Recipe unlocks when **any one** listed item scanned/unlocked. OR logic: scanning either unlocks this.
 
 ### ForceUnlockAtStart
 
@@ -893,8 +856,7 @@ This is OR logic: scanning either a Seaglide or a Seamoth would unlock this reci
 ForceUnlockAtStart: YES;
 ```
 
-Makes the recipe available from the start of the game, regardless of scanning
-or crafting progression.
+Available from game start, regardless of scan/craft progression.
 
 ---
 
@@ -902,22 +864,20 @@ or crafting progression.
 
 ### For Recipes (AliasRecipe, CustomFood)
 
-CC3 looks for an icon in this order:
-1. A PNG file in the `Assets/` folder matching the ItemID
-   (e.g., `Assets/GallonWater.png` for ItemID `GallonWater`)
-2. The `SpriteItemID` field (borrows another item's icon)
-3. The first item listed in `LinkedItemIDs`
+Icon resolution order:
+1. PNG in `Assets/` matching ItemID (e.g., `Assets/GallonWater.png` for ItemID `GallonWater`)
+2. `SpriteItemID` field (borrows another item's icon)
+3. First item in `LinkedItemIDs`
 4. Fallback: black question-mark icon
 
 ### For Tabs
 
-1. A PNG file in `Assets/` matching the TabID
-2. The `SpriteItemID` field
+1. PNG in `Assets/` matching TabID
+2. `SpriteItemID` field
 
 ### Asset Folder Convention
 
-Place your custom PNG icons in an `Assets/` subfolder next to your recipe files.
-Name each PNG to match the ItemID or TabID (case-insensitive).
+Custom PNGs in `Assets/` subfolder next to recipe files. Name each PNG matching ItemID or TabID (case-insensitive).
 
 ```
 MyMod/
@@ -936,13 +896,13 @@ MyMod/
 
 | Value | Description |
 |-------|-------------|
-| Fabricator | Standard wall-mounted fabricator (default) |
+| Fabricator | Standard wall-mounted (default) |
 | Workbench | Modification station (ground-placed) |
 | MoonPool | Moon pool fabricator (Subnautica 1 only) |
 
 ### FoodModel
 
-Controls the visual appearance of food items in the inventory.
+Visual appearance of food in inventory.
 
 | Category | Values |
 |----------|--------|
@@ -1003,9 +963,7 @@ Controls the visual appearance of food items in the inventory.
 
 ## Processing Order
 
-CC3 processes block types in a strict global order. This matters because tabs
-must exist before recipes can reference them, and fabricators must exist before
-their tabs are created.
+CC3 processes block types in strict global order. Tabs must exist before recipes reference them, fabricators before their tabs.
 
 ```
 1. CustomFabricators      (create the stations first)
@@ -1020,9 +978,7 @@ their tabs are created.
 10. CustomBioFuels        (adjust bioreactor values)
 ```
 
-This order is enforced across all files in the mod folder. Even if your
-fabricator file is named `zzz_last.txt`, fabricators are still processed
-before recipes in `aaa_first.txt`.
+Order enforced across all files. Even if fabricator file named `zzz_last.txt`, fabricators still processed before recipes in `aaa_first.txt`.
 
 ---
 
@@ -1030,8 +986,7 @@ before recipes in `aaa_first.txt`.
 
 ### Missing semicolons
 
-Every value must end with `;`. Forgetting it causes the parser to run into the
-next line and produce unexpected results.
+Every value must end w/ `;`. Forgetting causes parser to run into next line, unexpected results.
 
 ```
 # Wrong #
@@ -1045,7 +1000,7 @@ AmountCrafted: 1;
 
 ### Wrong entry separator
 
-Use commas between entries and a semicolon after the last one:
+Commas between entries, semicolon after last:
 
 ```
 # Wrong (semicolons between entries) #
@@ -1061,18 +1016,15 @@ ModifiedRecipes:
 
 ### Referencing tabs before they exist
 
-If your recipe uses `Path: Fabricator/MyTab` but `MyTab` is not defined yet
-(either in a CustomCraftingTabs block or a CustomFabricator), the recipe will
-fail silently. Define tabs first.
+Recipe uses `Path: Fabricator/MyTab` but `MyTab` not defined yet — recipe fails silently. Define tabs first.
 
 ### Mixing block types in one file
 
-Each file can only have one top-level block type. Do not put `AddedRecipes:`
-and `ModifiedRecipes:` in the same file.
+One top-level block type per file. No `AddedRecipes:` and `ModifiedRecipes:` in same file.
 
 ### Unquoted display names with spaces
 
-Display names and tooltips with spaces must be quoted:
+Names/tooltips w/ spaces must be quoted:
 
 ```
 # Wrong #
@@ -1084,15 +1036,12 @@ DisplayName: "Water Jug";
 
 ### Both Copied and Hidden set to YES
 
-These are mutually exclusive on MovedRecipe. Setting both is invalid.
+Mutually exclusive on MovedRecipe. Both = invalid.
 
 ### Required value outside 1-25
 
-Ingredient `Required` values must be between 1 and 25. Values outside this
-range may be silently clamped or rejected.
+Ingredient `Required` must be 1-25. Outside range — silently clamped or rejected.
 
 ### Forgetting Path on AddedRecipe/AliasRecipe
 
-Unlike ModifiedRecipe (which modifies an existing recipe in place), Added and
-Alias recipes need a `Path` field to know where in the fabricator to appear.
-Without it, the recipe exists but cannot be found by the player.
+Unlike ModifiedRecipe (modifies in place), Added/Alias need `Path` to know fabricator placement. Without — recipe exists but player can't find it.

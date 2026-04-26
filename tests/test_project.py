@@ -154,9 +154,7 @@ class TestLoadProjectErrors:
     def test_future_version_raises(self, tmp_path: Path) -> None:
         future_file = tmp_path / "future.craftgraph"
         with open(future_file, "wb") as fh:
-            msgpack.pack(
-                {"version": 999, "name": "X", "cc3_path": "/x", "project_path": "/x"}, fh
-            )
+            msgpack.pack({"version": 999, "name": "X", "cc3_path": "/x", "project_path": "/x"}, fh)
         with pytest.raises(ProjectLoadError, match="newer than supported"):
             load_project(future_file)
 

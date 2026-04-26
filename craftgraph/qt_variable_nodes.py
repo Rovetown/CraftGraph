@@ -17,6 +17,7 @@ from __future__ import annotations
 import uuid
 from enum import Enum
 
+from craftgraph.config import get_config
 from craftgraph.pin_registry import FieldPin, OutputPin, PinType
 from craftgraph.qt_nodes import CraftGraphBaseNode
 
@@ -24,9 +25,9 @@ from craftgraph.qt_nodes import CraftGraphBaseNode
 # Constants
 # ---------------------------------------------------------------------------
 
-NODE_COLOR_VARIABLE = (100, 70, 130)
-PORT_COLOR_VAR_OUT = (100, 70, 130)
-_REF_COMBO_MAX_W = 160
+NODE_COLOR_VARIABLE = get_config().ui.colors.ports.variable
+PORT_COLOR_VAR_OUT = get_config().ui.colors.ports.variable
+_REF_COMBO_MAX_W = get_config().ui.variable_nodes.ref_combo_max_w
 
 
 # ---------------------------------------------------------------------------

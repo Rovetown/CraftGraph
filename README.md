@@ -2,16 +2,14 @@
 
 Recipe dependency graphs for [CustomCraft3](https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3) (Subnautica).
 
-CraftGraph parses CC3's EasyMarkup `.txt` recipe files, builds a dependency graph,
-detects circular dependencies, and visualizes everything as an interactive HTML graph.
-It also watches your mod folder for changes and rebuilds automatically.
+Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects circular dependencies, visualizes as interactive HTML graph. Watches mod folder for changes, rebuilds automatically.
 
 ## Features
 
 - **Parse** all 10 CC3 block types (ModifiedRecipes, AddedRecipes, AliasRecipes, CustomFabricators, etc.)
-- **Detect** circular dependencies and report the full cycle path
-- **Visualize** the dependency graph as an interactive HTML page with color-coded nodes
-- **Watch** your recipe directory and auto-rebuild on every save
+- **Detect** circular dependencies, report full cycle path
+- **Visualize** dependency graph as interactive HTML page with color-coded nodes
+- **Watch** recipe directory, auto-rebuild on every save
 
 ## Installation
 
@@ -31,33 +29,33 @@ uv sync
 craftgraph check ./my-mod/WorkingFiles/
 ```
 
-Reports any circular dependencies found, or prints "No circular dependencies found."
+Reports circular dependencies found, or prints "No circular dependencies found."
 Add `-v` for detailed stats (file count, recipe count, node types).
 
 ```bash
 craftgraph check ./my-mod/WorkingFiles/ -v
 ```
 
-### Visualize the dependency graph
+### Visualize dependency graph
 
 ```bash
 craftgraph view ./my-mod/WorkingFiles/
 ```
 
-Generates `craftgraph.html` and opens it in your browser. Use `-o` to change the output path:
+Generates `craftgraph.html` and opens in browser. Use `-o` to change output path:
 
 ```bash
 craftgraph view ./my-mod/WorkingFiles/ -o my-graph.html
 ```
 
-The graph uses a hierarchical top-down layout:
+Graph uses hierarchical top-down layout:
 
 - **Green nodes** = raw materials (not crafted from anything)
 - **Blue nodes** = intermediates (crafted and used as ingredients)
 - **Gold nodes** = end products (crafted but not used by anything else)
 - **Red edges** = circular dependencies
 
-Hover over any node to see its recipe type, source file, ingredients, and what uses it.
+Hover over any node to see recipe type, source file, ingredients, and what uses it.
 
 ### Watch for changes
 
@@ -65,9 +63,7 @@ Hover over any node to see its recipe type, source file, ingredients, and what u
 craftgraph watch ./my-mod/WorkingFiles/
 ```
 
-Opens the graph in your browser, then watches the directory for `.txt` file changes.
-When you save a recipe file, the graph rebuilds automatically within about 1 second.
-Refresh the browser tab to see the updated graph. Press `Ctrl+C` to stop.
+Opens graph in browser, watches directory for `.txt` changes. On recipe file save, graph rebuilds automatically within ~1 second. Refresh browser tab to see updates. `Ctrl+C` to stop.
 
 ```bash
 craftgraph watch ./my-mod/WorkingFiles/ -o live-graph.html -v
@@ -75,7 +71,7 @@ craftgraph watch ./my-mod/WorkingFiles/ -o live-graph.html -v
 
 ## Development
 
-All commands go through the [justfile](https://github.com/casey/just):
+All commands go through [justfile](https://github.com/casey/just):
 
 ```bash
 just --list          # Show all available commands

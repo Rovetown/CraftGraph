@@ -25,10 +25,10 @@ import json
 import logging
 from pathlib import Path
 
+from craftgraph.config import get_config
+
 logger = logging.getLogger(__name__)
 
-_LAYOUT_DIR_NAME = ".craftgraph"
-_LAYOUT_FILE_NAME = "layout.json"
 _CURRENT_VERSION = 1
 
 
@@ -39,7 +39,8 @@ def layout_path_for(recipe_path: Path) -> Path:
     For a directory: ``<dir>/.craftgraph/layout.json``
     """
     base = recipe_path if recipe_path.is_dir() else recipe_path.parent
-    return base / _LAYOUT_DIR_NAME / _LAYOUT_FILE_NAME
+    cfg = get_config().paths
+    return base / cfg.layout_dir_name / cfg.layout_filename
 
 
 def save_layout(

@@ -18,17 +18,36 @@ from typing import TYPE_CHECKING
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+from craftgraph.config import get_config
+
 if TYPE_CHECKING:
     from NodeGraphQt import NodeGraph
 
-_MINIMAP_W = 220
-_MINIMAP_H = 160
-_UPDATE_INTERVAL_MS = 100
-_BG_COLOR = QtGui.QColor(25, 25, 30, 220)
-_BORDER_COLOR = QtGui.QColor(80, 80, 80)
-_NODE_COLOR = QtGui.QColor(100, 140, 180)
-_VIEWPORT_FILL = QtGui.QColor(255, 255, 255, 25)
-_VIEWPORT_BORDER = QtGui.QColor(200, 200, 200, 160)
+_MINIMAP_CFG = get_config().ui.minimap
+_MINIMAP_W = _MINIMAP_CFG.width
+_MINIMAP_H = _MINIMAP_CFG.height
+_BG_COLOR = QtGui.QColor(*_MINIMAP_CFG.bg_color)
+_BORDER_COLOR = QtGui.QColor(*_MINIMAP_CFG.border_color)
+_NODE_COLOR = QtGui.QColor(*_MINIMAP_CFG.node_color)
+_VIEWPORT_FILL = QtGui.QColor(*_MINIMAP_CFG.viewport_fill)
+_VIEWPORT_BORDER = QtGui.QColor(*_MINIMAP_CFG.viewport_border)
+
+# Scene items smaller than this (in scene pixels) are not drawn as minimap
+# dots -- prevents tiny sub-items of nodes from cluttering the overview.
+_MIN_SCENE_ITEM_PX = 5
+# Minimum visible size (in minimap pixels) for drawn node rects, so that
+# heavily zoomed-out scenes still show legible dots.
+_MIN_DOT_PX = 3
+# Fraction of scene width/height used as margin around the minimap content,
+# so nodes never sit flush against the minimap border.
+_CONTENT_MARGIN_FRAC = 0.1
+# Inset (minimap-space pixels) between the minimap border and its content.
+_CONTENT_INSET_PX = 4
+# Per-channel brightness boost applied to node brush colors so they remain
+# legible against the dark minimap background. Alpha is capped separately.
+_COLOR_BOOST = 40
+_COLOR_MAX = 255
+_COLOR_DOT_ALPHA = 200
 
 
 class MinimapWidget(QtWidgets.QWidget):
@@ -41,7 +60,7 @@ class MinimapWidget(QtWidgets.QWidget):
         self._dragging = False
 
         self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(_UPDATE_INTERVAL_MS)
+        self._timer.setInterval(get_config().timings.minimap_update_interval_ms)
         self._timer.timeout.connect(self.update)
 
     def attach(self, graph: NodeGraph) -> None:
@@ -83,11 +102,11 @@ class MinimapWidget(QtWidgets.QWidget):
             return
 
         # Add margin so nodes aren't flush against minimap edges
-        margin = max(scene_rect.width(), scene_rect.height()) * 0.1
+        margin = max(scene_rect.width(), scene_rect.height()) * _CONTENT_MARGIN_FRAC
         padded = scene_rect.adjusted(-margin, -margin, margin, margin)
 
         # Compute scale to fit padded scene rect into minimap area (with border inset)
-        inset = 4
+        inset = _CONTENT_INSET_PX
         available_w = self.width() - 2 * inset
         available_h = self.height() - 2 * inset
         scale_x = available_w / padded.width() if padded.width() > 0 else 1.0
@@ -109,15 +128,18 @@ class MinimapWidget(QtWidgets.QWidget):
             # Only draw top-level items (nodes), skip tiny sub-items
             if item.parentItem() is not None:
                 continue
-            if item_rect.width() < 5 or item_rect.height() < 5:
+            if (
+                item_rect.width() < _MIN_SCENE_ITEM_PX
+                or item_rect.height() < _MIN_SCENE_ITEM_PX
+            ):
                 continue
 
             node_color = _node_color_for(item)
             painter.setBrush(node_color)
             rx = offset_x + (item_rect.x() - padded.x()) * scale
             ry = offset_y + (item_rect.y() - padded.y()) * scale
-            rw = max(item_rect.width() * scale, 3)
-            rh = max(item_rect.height() * scale, 3)
+            rw = max(item_rect.width() * scale, _MIN_DOT_PX)
+            rh = max(item_rect.height() * scale, _MIN_DOT_PX)
             painter.drawRoundedRect(QtCore.QRectF(rx, ry, rw, rh), 1, 1)
 
         # Draw viewport indicator rectangle
@@ -174,9 +196,9 @@ def _node_color_for(item: QtWidgets.QGraphicsItem) -> QtGui.QColor:
             color = brush.color()
             # Brighten slightly for visibility on dark minimap background
             return QtGui.QColor(
-                min(color.red() + 40, 255),
-                min(color.green() + 40, 255),
-                min(color.blue() + 40, 255),
-                200,
+                min(color.red() + _COLOR_BOOST, _COLOR_MAX),
+                min(color.green() + _COLOR_BOOST, _COLOR_MAX),
+                min(color.blue() + _COLOR_BOOST, _COLOR_MAX),
+                _COLOR_DOT_ALPHA,
             )
     return _NODE_COLOR

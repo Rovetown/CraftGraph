@@ -6,6 +6,7 @@ from pathlib import Path
 import networkx
 from pyvis.network import Network
 
+from craftgraph.config import get_config
 from craftgraph.graph import NodeType, classify_nodes
 
 # -- Node styling constants ----------------------------------------------------
@@ -16,16 +17,17 @@ _NODE_COLORS: dict[NodeType, str] = {
     NodeType.END_PRODUCT: "#f1c40f",  # gold
 }
 
-_BASE_NODE_SIZE = 10
-_SIZE_SCALE = 3
+_VIS_CFG = get_config().visualizer
+_BASE_NODE_SIZE = _VIS_CFG.base_node_size
+_SIZE_SCALE = _VIS_CFG.size_scale
 
 
 # -- Edge styling constants ----------------------------------------------------
 
-_NORMAL_EDGE_COLOR = "#888888"
-_CYCLE_EDGE_COLOR = "#e74c3c"  # red
-_NORMAL_EDGE_WIDTH = 1
-_CYCLE_EDGE_WIDTH = 3
+_NORMAL_EDGE_COLOR = _VIS_CFG.normal_edge_color
+_CYCLE_EDGE_COLOR = _VIS_CFG.cycle_edge_color
+_NORMAL_EDGE_WIDTH = _VIS_CFG.normal_edge_width
+_CYCLE_EDGE_WIDTH = _VIS_CFG.cycle_edge_width
 
 
 def _build_cycle_edge_set(cycles: list[list[str]]) -> set[tuple[str, str]]:

@@ -7,20 +7,13 @@ from functools import cache
 from pathlib import Path
 
 from craftgraph import app_dirs
-
-# Segments appended to each Steam library root to reach the CC3 plugin folder.
-_CC3_SEGMENTS = ("steamapps", "common", "Subnautica", "BepInEx", "plugins", "CustomCraft3")
+from craftgraph.config import get_config
 
 
 @cache
 def _default_roots() -> tuple[Path, ...]:
     """Return the standard Windows Steam library root candidates."""
-    return (
-        Path("C:/Program Files (x86)/Steam"),
-        Path("D:/SteamLibrary"),
-        Path("D:/Program Files (x86)/Steam"),
-        Path("C:/SteamLibrary"),
-    )
+    return tuple(Path(p) for p in get_config().paths.steam_root_candidates)
 
 
 def detect_subnautica_cc3_path(
@@ -37,6 +30,7 @@ def detect_subnautica_cc3_path(
     testing).  Returns ``None`` if no complete path is found.
     """
     candidates = roots if roots is not None else _default_roots()
+    segments = get_config().paths.cc3_install_segments
 
     for root in candidates:
         if not root.exists():
@@ -44,7 +38,7 @@ def detect_subnautica_cc3_path(
 
         current = root
         found = True
-        for segment in _CC3_SEGMENTS:
+        for segment in segments:
             current = current / segment
             if not current.is_dir():
                 found = False

@@ -19,13 +19,15 @@ import sys
 from pathlib import Path
 
 from craftgraph import app_dirs
+from craftgraph.config import get_config
 
 logger = logging.getLogger(__name__)
 
-_EXT = ".craftgraph"
-_PROG_ID = "CraftGraph.Project"
-_MIME_TYPE = "application/x-craftgraph"
-_FILE_DESCRIPTION = "CraftGraph Project"
+_APP_CFG = get_config().app
+_EXT = _APP_CFG.file_ext
+_PROG_ID = _APP_CFG.prog_id
+_MIME_TYPE = _APP_CFG.mime_type
+_FILE_DESCRIPTION = _APP_CFG.file_description
 
 
 # -- Public API ----------------------------------------------------------------

@@ -20,6 +20,9 @@ dist/
 .claude/
 CLAUDE.md
 PLAN.md
+*.md
+
+!README.md
 
 craftgraph/cc3_reference_files/
 

@@ -18,7 +18,7 @@ pytest.importorskip(
     reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
 )
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -343,10 +343,10 @@ class TestFileLoading:
         assert len(nodes) == 2
 
         node_names = {n.name() for n in nodes}
-        assert "Titanium" in node_names
+        assert "Titanium (x2)" in node_names
         assert "Gold" in node_names
 
-        recipe_node = next(n for n in nodes if n.name() == "Titanium")
+        recipe_node = next(n for n in nodes if n.name() == "Titanium (x2)")
         assert recipe_node.get_widget("item_id").get_value() == "Titanium"
         assert recipe_node.get_widget("amount_crafted").get_value() == "2"
 
@@ -594,6 +594,223 @@ class TestOrphanTabRegistration:
         tab = window._active_tab
         assert hasattr(tab, "orphan_nodes")
         assert tab.orphan_nodes == {}
+
+
+# ---------------------------------------------------------------------------
+# Go to Definition (cross-tab navigation)
+# ---------------------------------------------------------------------------
+
+
+class TestGoToDefinition:
+    """Double-click and context-menu navigation to a node's defining tab."""
+
+    def _write_two_files(self, root):
+        """Tab 1 defines Gold; tab 2 defines Titanium that needs Gold."""
+        (root / "raw.txt").write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Gold;\n);\n",
+            encoding="utf-8",
+        )
+        (root / "crafted.txt").write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Gold;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+
+    def test_node_lookup_id_uses_model_ref(self, window, tmp_path):
+        """Recipe nodes report their model item_id."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Copper;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        tab = window._active_tab
+        recipe_node = next(iter(tab.model_to_node.values()))
+        assert window._node_lookup_id(recipe_node) == "copper"
+
+    def test_node_lookup_id_uses_property_for_orphan(self, window, tmp_path):
+        """Orphan ingredients (no model_ref) fall back to the displayed item_id."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Gold;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        orphan = window._active_tab.orphan_nodes["gold"]
+        assert window._node_lookup_id(orphan) == "gold"
+
+    def test_find_definition_locates_recipe_in_other_tab(self, window, tmp_path):
+        """`_find_definition` finds the defining recipe across open tabs."""
+        self._write_two_files(tmp_path)
+        window.load_recipes(tmp_path)
+
+        result = window._find_definition("gold")
+        assert result is not None
+        idx, node = result
+        assert window._tab_bar.tabText(idx) == "raw"
+        assert getattr(node.model_ref, "item_id", None) == "Gold"
+
+    def test_find_definition_returns_none_for_unknown(self, window, tmp_path):
+        """Unknown IDs return None."""
+        self._write_two_files(tmp_path)
+        window.load_recipes(tmp_path)
+        assert window._find_definition("Unobtainium") is None
+
+    def test_go_to_definition_switches_tab_and_selects(self, window, tmp_path):
+        """Calling _go_to_definition on an orphan switches tabs and selects."""
+        self._write_two_files(tmp_path)
+        window.load_recipes(tmp_path)
+
+        crafted_idx = next(
+            i for i in range(window._tab_bar.count())
+            if window._tab_bar.tabText(i) == "crafted"
+        )
+        window._tab_bar.setCurrentIndex(crafted_idx)
+        crafted_tab = window._file_tabs[crafted_idx]
+        assert "gold" in crafted_tab.orphan_nodes
+
+        ok = window._go_to_definition(crafted_tab.orphan_nodes["gold"])
+        assert ok is True
+
+        new_idx = window._tab_bar.currentIndex()
+        assert window._tab_bar.tabText(new_idx) == "raw"
+        selected = window._file_tabs[new_idx].graph.selected_nodes()
+        assert any(
+            getattr(n.model_ref, "item_id", None) == "Gold"
+            for n in selected
+        )
+
+    def test_double_click_recipe_in_own_tab_is_noop(self, window, tmp_path):
+        """Double-clicking a recipe defined in the current tab does not switch tabs."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Copper;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        before_idx = window._tab_bar.currentIndex()
+        recipe_node = next(iter(window._active_tab.model_to_node.values()))
+        window._on_node_double_clicked(recipe_node)
+        assert window._tab_bar.currentIndex() == before_idx
+
+
+# ---------------------------------------------------------------------------
+# Hover tooltips with full recipe details
+# ---------------------------------------------------------------------------
+
+
+class TestHoverTooltips:
+    """Verify the rich-detail node hover tooltip."""
+
+    def test_tooltip_includes_type_and_source(self, window, tmp_path):
+        """Tooltip shows the type header and the source file name."""
+        recipe_file = tmp_path / "knife.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: SuperKnife;\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = next(iter(window._active_tab.model_to_node.values()))
+        tooltip = node.view.toolTip()
+        assert "Modified Recipe" in tooltip
+        assert "knife.txt" in tooltip
+        assert "SuperKnife" in tooltip
+
+    def test_tooltip_lists_ingredients(self, window, tmp_path):
+        """Tooltip includes every ingredient with its required count."""
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: SuperKnife;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Titanium;\n"
+            "        Required: 2;\n"
+            "    ),\n"
+            "    (\n"
+            "        ItemID: Gold;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = next(
+            n for n in window._active_tab.model_to_node.values()
+            if getattr(n.model_ref, "item_id", "") == "SuperKnife"
+        )
+        tooltip = node.view.toolTip()
+        assert "Titanium" in tooltip
+        assert "x2" in tooltip
+        assert "Gold" in tooltip
+
+    def test_tooltip_marks_cycle_membership(self, window, tmp_path):
+        """Recipes participating in a cycle have an explicit cycle section."""
+        recipe_file = tmp_path / "cyc.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: A;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: B;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            "),\n"
+            "(\n"
+            "    ItemID: B;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: A;\n"
+            "        Required: 1;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+
+        node = next(iter(window._active_tab.model_to_node.values()))
+        tooltip = node.view.toolTip()
+        assert "dependency cycle" in tooltip.lower()
+        assert "A" in tooltip and "B" in tooltip
+
+    def test_tooltip_orphan_uses_displayed_id(self, window, tmp_path):
+        """Orphan ingredient nodes (no model_ref) still get a useful tooltip."""
+        recipe_file = tmp_path / "orph.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Gold;\n"
+            "        Required: 3;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        orphan = window._active_tab.orphan_nodes["gold"]
+        tooltip = orphan.view.toolTip()
+        assert "Gold" in tooltip
 
 
 # ---------------------------------------------------------------------------
@@ -3057,6 +3274,101 @@ class TestCaseInsensitiveAutocomplete:
         assert len(matches) == 1
 
 
+class TestEasyMarkupKeywordAutocomplete:
+    """Issue 6: code editor autocomplete includes EasyMarkup language keywords
+    alongside TechType IDs, with visual separation between the two groups."""
+
+    def test_easymarkup_keywords_combines_block_types_and_field_keys(self):
+        from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS
+        from craftgraph.qt_gui import _easymarkup_keywords
+
+        keywords = _easymarkup_keywords()
+        assert set(keywords) == BLOCK_TYPES | FIELD_KEYS
+        assert keywords == sorted(keywords)
+
+    def test_easymarkup_keywords_includes_core_field_names(self):
+        from craftgraph.qt_gui import _easymarkup_keywords
+
+        keywords = set(_easymarkup_keywords())
+        for required in (
+            "ItemID",
+            "Path",
+            "AmountCrafted",
+            "Required",
+            "LinkedItemIDs",
+            "DisplayName",
+            "Tooltip",
+            "Ingredients",
+            "ModifiedRecipes",
+            "AddedRecipes",
+            "AliasRecipes",
+            "CustomFabricators",
+        ):
+            assert required in keywords, f"Missing keyword: {required}"
+
+    def test_make_completer_with_keywords_includes_both_groups(self, window):
+        keywords = ["ItemID", "Path", "DisplayName"]
+        ids = ["Titanium", "Gold", "Quartz"]
+        completer = window._make_completer(ids, keywords=keywords)
+        model = completer.model()
+        contents = [model.index(i, 0).data() for i in range(model.rowCount())]
+        for word in keywords + ids:
+            assert word in contents
+
+    def test_make_completer_with_keywords_orders_keywords_first(self, window):
+        """Unfiltered popup clusters keywords at the top so they're easy to scan."""
+        keywords = ["ItemID", "Path", "DisplayName"]
+        ids = ["Titanium", "Gold", "Quartz"]
+        completer = window._make_completer(ids, keywords=keywords)
+        model = completer.model()
+        contents = [model.index(i, 0).data() for i in range(model.rowCount())]
+        keyword_positions = [contents.index(k) for k in keywords]
+        id_positions = [contents.index(w) for w in ids]
+        assert max(keyword_positions) < min(id_positions)
+
+    def test_make_completer_with_keywords_installs_grouped_delegate(self, window):
+        from craftgraph.qt_gui import _GroupedCompleterDelegate
+
+        completer = window._make_completer(
+            ["Titanium"], keywords=["ItemID", "Path"],
+        )
+        delegate = completer.popup().itemDelegate()
+        assert isinstance(delegate, _GroupedCompleterDelegate)
+
+    def test_make_completer_without_keywords_uses_default_delegate(self, window):
+        from craftgraph.qt_gui import _GroupedCompleterDelegate
+
+        completer = window._make_completer(["Titanium", "Gold"])
+        delegate = completer.popup().itemDelegate()
+        assert not isinstance(delegate, _GroupedCompleterDelegate)
+
+    def test_setup_autocomplete_for_attaches_keyword_aware_completer(self, window):
+        from craftgraph.code_editor import CodeEditor
+        from craftgraph.qt_gui import _GroupedCompleterDelegate
+
+        editor = CodeEditor()
+        try:
+            window._setup_autocomplete_for(editor)
+            completer = editor.completer()
+            assert completer is not None
+            delegate = completer.popup().itemDelegate()
+            assert isinstance(delegate, _GroupedCompleterDelegate)
+            model = completer.model()
+            contents = {model.index(i, 0).data() for i in range(model.rowCount())}
+            assert "ItemID" in contents
+            assert "Required" in contents
+        finally:
+            editor.deleteLater()
+
+    def test_grouped_delegate_classifies_keywords_case_insensitively(self, window):
+        from craftgraph.qt_gui import _GroupedCompleterDelegate
+
+        delegate = _GroupedCompleterDelegate({"ItemID", "Path"})
+        assert "itemid" in delegate._kw_lower
+        assert "path" in delegate._kw_lower
+        assert "titanium" not in delegate._kw_lower
+
+
 # ---------------------------------------------------------------------------
 # "New item" autocomplete entry
 # ---------------------------------------------------------------------------
@@ -3571,6 +3883,76 @@ class TestNewProjectDefault:
         assert dialog._dir_edit.text() == str(Path.cwd())
 
 
+class TestEnterToAccept:
+    """Browse buttons in input dialogs do not steal Enter from the Ok button."""
+
+    def test_new_project_browse_not_autodefault(
+        self, window: CraftGraphWindow, tmp_path,
+    ) -> None:
+        from craftgraph.qt_gui import NewProjectDialog
+
+        dialog = NewProjectDialog(parent=window, default_dir=tmp_path)
+        browse_buttons = [
+            b for b in dialog.findChildren(QtWidgets.QPushButton)
+            if b.text() == "Browse..."
+        ]
+        assert browse_buttons, "expected a Browse... button"
+        assert all(not b.autoDefault() for b in browse_buttons)
+
+    def test_new_project_ok_is_default(
+        self, window: CraftGraphWindow, tmp_path,
+    ) -> None:
+        from craftgraph.qt_gui import NewProjectDialog
+
+        dialog = NewProjectDialog(parent=window, default_dir=tmp_path)
+        box = dialog.findChild(QtWidgets.QDialogButtonBox)
+        ok = box.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        assert ok.isDefault()
+
+    def test_new_file_browse_not_autodefault(
+        self, window: CraftGraphWindow, tmp_path,
+    ) -> None:
+        from craftgraph.qt_gui import NewFileDialog
+
+        dialog = NewFileDialog(parent=window, default_dir=tmp_path)
+        browse_buttons = [
+            b for b in dialog.findChildren(QtWidgets.QPushButton)
+            if b.text() == "Browse..."
+        ]
+        assert browse_buttons
+        assert all(not b.autoDefault() for b in browse_buttons)
+
+    def test_new_file_ok_is_default(
+        self, window: CraftGraphWindow, tmp_path,
+    ) -> None:
+        from craftgraph.qt_gui import NewFileDialog
+
+        dialog = NewFileDialog(parent=window, default_dir=tmp_path)
+        box = dialog.findChild(QtWidgets.QDialogButtonBox)
+        ok = box.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        assert ok.isDefault()
+
+
+class TestMenuSpawnPosCapture:
+    """Context-menu spawn position comes from capture, not live cursor."""
+
+    def test_menu_spawn_uses_captured_pos(self, window: CraftGraphWindow) -> None:
+        viewer = window._active_tab.graph.viewer()
+        window._menu_invoke_scene_pos = QtCore.QPointF(123.0, 456.0)
+        x, y = window._menu_spawn_scene_pos(viewer)
+        assert x == 123.0
+        assert y == 456.0
+
+    def test_menu_spawn_falls_back_when_no_capture(
+        self, window: CraftGraphWindow,
+    ) -> None:
+        viewer = window._active_tab.graph.viewer()
+        window._menu_invoke_scene_pos = None
+        x, y = window._menu_spawn_scene_pos(viewer)
+        assert isinstance(x, float)
+        assert isinstance(y, float)
+
+
 class TestSpriteLoadingCc3Assets:
     """Sprite loading uses CC3 Assets/ as primary source when configured."""
 
@@ -3794,6 +4176,55 @@ class TestSettingsDialogCheckForUpdates:
         assert dialog.check_for_updates is False
 
 
+class TestSettingsDialogRestoreAllDefaults:
+    """Global Restore All Defaults button on the settings dialog footer."""
+
+    def test_dialog_has_restore_all_button(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        labels = [b.text() for b in dialog.findChildren(QtWidgets.QPushButton)]
+        assert "Restore All Defaults" in labels
+
+    def test_reset_all_cancel_keeps_values(self, qapp, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import KeybindingSettings
+
+        custom_kb = KeybindingSettings(save="Ctrl+Alt+S")
+        dialog = _SettingsDialog(None, keybindings=custom_kb, check_for_updates=False)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *a, **kw: QtWidgets.QMessageBox.StandardButton.No,
+        )
+        dialog._reset_all()
+        assert dialog._kb_edits["save"].keySequence().toString() == "Ctrl+Alt+S"
+        assert dialog._update_check_cb is not None
+        assert dialog._update_check_cb.isChecked() is False
+
+    def test_reset_all_confirm_restores_defaults(self, qapp, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import KeybindingSettings, ThemeColors
+
+        custom_theme = ThemeColors(accent="#E57373")
+        custom_kb = KeybindingSettings(save="Ctrl+Alt+S")
+        dialog = _SettingsDialog(
+            None,
+            theme=custom_theme,
+            keybindings=custom_kb,
+            check_for_updates=False,
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *a, **kw: QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+        dialog._reset_all()
+        assert dialog._kb_edits["save"].keySequence().toString() == "Ctrl+S"
+        assert dialog._update_check_cb is not None
+        assert dialog._update_check_cb.isChecked() is True
+
+
 class TestUpdateChecker:
     def test_run_update_check_no_update(self, window):
         """Stub always returns None -- status bar should not show update text."""
@@ -3923,6 +4354,67 @@ class TestAppearanceSyntaxSwatches:
         sc = SyntaxColors()
         assert dialog._syntax_swatches["block_type"].color_hex == sc.block_type  # type: ignore[attr-defined]
         assert dialog._syntax_swatches["comment"].color_hex == sc.comment  # type: ignore[attr-defined]
+
+
+class TestColorPickerSwatchChrome:
+    """Issue 7: swatch chrome stays theme-neutral; picked color is shown
+    as an inner indicator, not as the button background."""
+
+    def test_swatch_is_color_picker_subclass(self, qapp):
+        from craftgraph.qt_gui import _ColorPickerSwatch, _SettingsDialog
+
+        dialog = _SettingsDialog()
+        for btn in dialog._node_swatches.values():
+            assert isinstance(btn, _ColorPickerSwatch)
+        for btn in dialog._syntax_swatches.values():
+            assert isinstance(btn, _ColorPickerSwatch)
+
+    def test_swatch_stylesheet_independent_of_picked_color(self, qapp):
+        from craftgraph.qt_gui import _ColorPickerSwatch
+
+        light = _ColorPickerSwatch("#ffffff")
+        dark = _ColorPickerSwatch("#000000")
+        saturated = _ColorPickerSwatch("#ff00ff")
+        # All instances share the same neutral chrome stylesheet so the
+        # outer button never paints in the picked color.
+        assert light.styleSheet() == dark.styleSheet() == saturated.styleSheet()
+        assert "rgb(60, 60, 60)" in light.styleSheet()
+        assert "background: #ffffff" not in light.styleSheet()
+        assert "background: #000000" not in dark.styleSheet()
+
+    def test_setting_color_does_not_change_chrome(self, qapp):
+        from craftgraph.qt_gui import _ColorPickerSwatch
+
+        btn = _ColorPickerSwatch("#404040")
+        before = btn.styleSheet()
+        btn.color_hex = "#000000"
+        assert btn.styleSheet() == before
+        btn.color_hex = "#ffffff"
+        assert btn.styleSheet() == before
+
+    def test_set_swatch_color_updates_state_only(self, qapp):
+        from craftgraph.qt_gui import _ColorPickerSwatch, _SettingsDialog
+
+        dialog = _SettingsDialog()
+        btn = next(iter(dialog._node_swatches.values()))
+        assert isinstance(btn, _ColorPickerSwatch)
+        before_style = btn.styleSheet()
+        dialog._set_swatch_color(btn, "#123456")
+        assert btn.color_hex == "#123456"
+        assert btn.styleSheet() == before_style
+
+    def test_color_hex_setter_triggers_repaint(self, qapp):
+        from craftgraph.qt_gui import _ColorPickerSwatch
+
+        btn = _ColorPickerSwatch("#123456")
+        # Force show to make update() generate a paint event in CI.
+        btn.show()
+        qapp.processEvents()
+        old = btn.color_hex
+        btn.color_hex = "#abcdef"
+        assert btn.color_hex == "#abcdef"
+        assert old != btn.color_hex
+        btn.deleteLater()
 
 
 class TestAppearanceThemeProperty:
@@ -4816,6 +5308,126 @@ class TestCodeEditorSettingsApplication:
         assert tab.parse_timer is not None
         assert tab.parse_timer.interval() == 1200
 
+    def test_debounce_timer_disabled(self, window, tmp_path):
+        """When parse_debounce_enabled is False, timer interval is 0."""
+        from craftgraph.theme import CodeEditorSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+
+        s = CodeEditorSettings(parse_debounce_enabled=False, parse_debounce_ms=1200)
+        window._apply_code_editor_settings(s)
+        tab = window._file_tabs[-1]
+        assert tab.parse_timer is not None
+        assert tab.parse_timer.interval() == 0
+
+    def test_debounce_timer_reenabled(self, window, tmp_path):
+        """Re-enabling debounce restores the configured interval."""
+        from craftgraph.theme import CodeEditorSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+
+        # Disable first
+        s = CodeEditorSettings(parse_debounce_enabled=False, parse_debounce_ms=900)
+        window._apply_code_editor_settings(s)
+        tab = window._file_tabs[-1]
+        assert tab.parse_timer.interval() == 0
+
+        # Re-enable
+        s = CodeEditorSettings(parse_debounce_enabled=True, parse_debounce_ms=900)
+        window._apply_code_editor_settings(s)
+        assert tab.parse_timer.interval() == 900
+
+
+# ---------------------------------------------------------------------------
+# Watcher rebuild notifications
+# ---------------------------------------------------------------------------
+
+
+class TestWatcherNotifications:
+    """Watcher rebuild triggers notifications based on settings."""
+
+    def test_status_bar_on_reload(self, window, tmp_path):
+        """Status bar shows reload message when notify_status_bar is True."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        window._fw_settings = FileWatchingSettings(notify_status_bar=True)
+
+        window._on_watcher_rebuild([])
+        assert "Reloaded" in window.statusBar().currentMessage()
+
+    def test_no_status_bar_when_disabled(self, window, tmp_path):
+        """Status bar keeps load message when notify_status_bar is False."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        window._fw_settings = FileWatchingSettings(notify_status_bar=False)
+
+        window._on_watcher_rebuild([])
+        assert "Reloaded" not in window.statusBar().currentMessage()
+
+    def test_flash_tab_bar(self, window, tmp_path):
+        """Tab bar gets a temporary highlight style when flash is enabled."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        window._fw_settings = FileWatchingSettings(notify_flash_tab=True)
+
+        window._on_watcher_rebuild([])
+        # During the flash, the tab bar should have a highlight style
+        assert "ffcc00" in window._tab_bar.styleSheet()
+
+    def test_no_flash_when_disabled(self, window, tmp_path):
+        """Tab bar stays unchanged when flash is disabled."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        original_style = window._tab_bar.styleSheet()
+        window._fw_settings = FileWatchingSettings(notify_flash_tab=False)
+
+        window._on_watcher_rebuild([])
+        assert window._tab_bar.styleSheet() == original_style
+
+    def test_no_sound_without_cycles(self, window, tmp_path, monkeypatch):
+        """No beep when there are no cycles even if sound is enabled."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        window._fw_settings = FileWatchingSettings(notify_sound_on_cycle=True)
+
+        beep_calls: list[bool] = []
+        monkeypatch.setattr(QtWidgets.QApplication, "beep", lambda: beep_calls.append(True))
+        window._on_watcher_rebuild([])
+        assert len(beep_calls) == 0
+
+    def test_sound_on_cycle(self, window, tmp_path, monkeypatch):
+        """Beep fires when cycles exist and sound is enabled."""
+        from craftgraph.theme import FileWatchingSettings
+
+        recipe = tmp_path / "test.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8")
+        window.load_recipes(tmp_path)
+        window._fw_settings = FileWatchingSettings(notify_sound_on_cycle=True)
+
+        beep_calls: list[bool] = []
+        monkeypatch.setattr(QtWidgets.QApplication, "beep", lambda: beep_calls.append(True))
+        window._on_watcher_rebuild([["A", "B", "A"]])
+        assert len(beep_calls) == 1
+
 
 # ---------------------------------------------------------------------------
 # Custom ID scope awareness
@@ -4932,3 +5544,286 @@ class TestProjectCustomIdPersistence:
         window._project.settings_overrides["custom_ids"] = ["ProjectOnly"]
         window._update_project_state()
         assert window._project.settings_overrides["custom_ids"] == ["ProjectOnly"]
+
+
+class TestSettingsDialogWidgetHeights:
+    """Spinboxes/combos on the Node Editor tab must have enough vertical room."""
+
+    @staticmethod
+    def _node_editor_tab(dialog):
+        """Return the Node Editor tab page from the dialog."""
+        tabs = dialog.findChildren(QtWidgets.QTabWidget)
+        outer = tabs[0]
+        for i in range(outer.count()):
+            if outer.tabText(i) == "Node Editor":
+                return outer.widget(i)
+        raise AssertionError("Node Editor tab not found")
+
+    def test_spinbox_height_matches_neighbour_checkboxes(self, qapp):
+        """Tall spinboxes overflow into neighbouring rows; cap their sizeHint
+        so a row with a spinbox is no taller than a row with a checkbox.
+        """
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        dialog.show()
+        try:
+            qapp.processEvents()
+            tab = self._node_editor_tab(dialog)
+            spinboxes = tab.findChildren(QtWidgets.QAbstractSpinBox)
+            checkboxes = tab.findChildren(QtWidgets.QCheckBox)
+            assert spinboxes and checkboxes
+            checkbox_h = max(c.sizeHint().height() for c in checkboxes)
+            for sb in spinboxes:
+                # Spinbox height must be reasonably close to checkbox height
+                # to avoid row overlap, while still being tall enough (>=20)
+                # for the rendered value.
+                h = sb.sizeHint().height()
+                assert 20 <= h <= checkbox_h + 4, (
+                    f"{type(sb).__name__} sizeHint height {h} not in "
+                    f"[20, {checkbox_h + 4}]"
+                )
+        finally:
+            dialog.close()
+
+    def test_combo_height_matches_neighbour_checkboxes(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        dialog.show()
+        try:
+            qapp.processEvents()
+            tab = self._node_editor_tab(dialog)
+            combos = tab.findChildren(QtWidgets.QComboBox)
+            checkboxes = tab.findChildren(QtWidgets.QCheckBox)
+            assert combos and checkboxes
+            checkbox_h = max(c.sizeHint().height() for c in checkboxes)
+            for cb in combos:
+                h = cb.sizeHint().height()
+                assert 18 <= h <= checkbox_h + 4, (
+                    f"QComboBox sizeHint height {h} not in "
+                    f"[18, {checkbox_h + 4}]"
+                )
+        finally:
+            dialog.close()
+
+    def test_form_layouts_have_consistent_vertical_spacing(self, qapp):
+        """Every QFormLayout in the dialog uses the same vertical spacing
+        so taller fields can't crowd labels of neighbouring rows.
+        """
+        from craftgraph.qt_gui import _SETTINGS_FORM_VSPACING, _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        dialog.show()
+        try:
+            qapp.processEvents()
+            forms = dialog.findChildren(QtWidgets.QFormLayout)
+            assert forms, "expected QFormLayouts inside settings dialog"
+            for form in forms:
+                assert form.verticalSpacing() == _SETTINGS_FORM_VSPACING
+        finally:
+            dialog.close()
+
+    def test_dialog_minimum_size_keeps_chrome_functional(self, qapp):
+        """Minimum size only needs to keep the tab bar + button row usable;
+        scroll areas inside each tab handle the rest of the resize range.
+        """
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        try:
+            # Wide enough for Restore-All / Apply / Close without collision
+            # and tall enough for tab bar + button row + ~1 row of content.
+            assert dialog.minimumSize().width() >= 400
+            assert dialog.minimumSize().height() >= 300
+        finally:
+            dialog.close()
+
+    def test_dialog_default_size_shows_content_without_scrolling(self, qapp):
+        """A freshly opened dialog should still be tall enough for full
+        content of every tab at default scale.
+        """
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        try:
+            assert dialog.size().height() >= 700
+        finally:
+            dialog.close()
+
+    def test_each_main_tab_wraps_a_scroll_area(self, qapp):
+        """Every main settings tab routes its content through a QScrollArea
+        so users can shrink the dialog without losing widgets behind chrome.
+        """
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        dialog.show()
+        try:
+            qapp.processEvents()
+            outer = dialog.findChildren(QtWidgets.QTabWidget)[0]
+            for i in range(outer.count()):
+                page = outer.widget(i)
+                scrolls = page.findChildren(QtWidgets.QScrollArea)
+                assert scrolls, (
+                    f"tab {outer.tabText(i)!r} has no QScrollArea wrapper"
+                )
+        finally:
+            dialog.close()
+
+
+class TestSearchAndSelectCentering:
+    """Find Node + multi-line editor selection should center / multi-select."""
+
+    _RECIPE_TXT = (
+        "ModifiedRecipes:\n"
+        "(\n"
+        "    ItemID: Titanium;\n"
+        "    AmountCrafted: 2;\n"
+        "    Ingredients:\n"
+        "    (\n"
+        "        ItemID: Gold;\n"
+        "        Required: 3;\n"
+        "    ),\n"
+        "    (\n"
+        "        ItemID: Silver;\n"
+        "        Required: 1;\n"
+        "    );\n"
+        "),\n"
+        "(\n"
+        "    ItemID: Copper;\n"
+        "    AmountCrafted: 1;\n"
+        "    Ingredients:\n"
+        "    (\n"
+        "        ItemID: Tin;\n"
+        "        Required: 2;\n"
+        "    );\n"
+        ");\n"
+    )
+
+    def _load(self, window, tmp_path):
+        recipe_file = tmp_path / "search.txt"
+        recipe_file.write_text(self._RECIPE_TXT, encoding="utf-8")
+        window.load_recipes(recipe_file)
+
+    def test_center_view_on_nodes_translates_scene_range(self, window, tmp_path):
+        self._load(window, tmp_path)
+        nodes = [n for n in window.graph.all_nodes() if n.name() == "Titanium (x2)"]
+        assert nodes, "expected Titanium recipe node"
+        viewer = window.graph.viewer()
+        # Pre-translate scene_range away from the node so we can detect a real pan.
+        viewer._scene_range.translate(5000.0, 5000.0)
+        target = nodes[0].view.sceneBoundingRect().center()
+        window._center_view_on_nodes(window.graph, nodes)
+        new_center = viewer._scene_range.center()
+        # The scene_range centre must now match the node's centre (within 1px).
+        assert abs(new_center.x() - target.x()) < 1.0
+        assert abs(new_center.y() - target.y()) < 1.0
+
+    def test_center_view_preserves_scene_range_size(self, window, tmp_path):
+        """Panning must not change zoom -- the rect's dimensions stay fixed."""
+        self._load(window, tmp_path)
+        nodes = [n for n in window.graph.all_nodes() if n.name() == "Titanium (x2)"]
+        viewer = window.graph.viewer()
+        before = (viewer._scene_range.width(), viewer._scene_range.height())
+        window._center_view_on_nodes(window.graph, nodes)
+        after = (viewer._scene_range.width(), viewer._scene_range.height())
+        assert after == before
+
+    def test_center_view_on_empty_list_is_noop(self, window, tmp_path):
+        self._load(window, tmp_path)
+        viewer = window.graph.viewer()
+        before_rect = QtCore.QRectF(viewer._scene_range)
+        window._center_view_on_nodes(window.graph, [])
+        assert viewer._scene_range == before_rect
+
+    def test_search_match_centers_view(self, window, tmp_path, qapp):
+        self._load(window, tmp_path)
+        window._find_node_by_id()
+        bar = window._search_bar
+        assert bar is not None
+        viewer = window.graph.viewer()
+        # Move the scene range far away so any successful pan is observable.
+        viewer._scene_range.translate(10000.0, 10000.0)
+        bar._edit.setText("Copper")
+        qapp.processEvents()
+        window._update_search_matches()
+        copper_node = next(
+            n for n in window.graph.all_nodes() if n.name() == "Copper"
+        )
+        target = copper_node.view.sceneBoundingRect().center()
+        new_center = viewer._scene_range.center()
+        assert abs(new_center.x() - target.x()) < 1.0
+        assert abs(new_center.y() - target.y()) < 1.0
+
+    def test_multi_line_selection_selects_all_referenced_nodes(
+        self, window, tmp_path, qapp,
+    ):
+        from PySide6.QtGui import QTextCursor
+
+        self._load(window, tmp_path)
+        tab = window._active_tab
+        editor = tab.editor
+        text = editor.toPlainText()
+        # Select from the start of the file to past the second recipe's ItemID
+        # (covers Titanium, Gold, Silver, Copper).
+        copper_pos = text.find("ItemID: Copper")
+        assert copper_pos > 0
+        end_pos = text.find("\n", copper_pos)
+        cursor = editor.textCursor()
+        cursor.setPosition(0)
+        cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
+        editor.setTextCursor(cursor)
+        qapp.processEvents()
+
+        selected_names = {n.name() for n in tab.graph.selected_nodes()}
+        # Recipe nodes carry "(xN)" suffix in their display name.
+        # Orphan ingredients use bare ItemID.
+        assert "Titanium (x2)" in selected_names
+        assert "Gold" in selected_names
+        assert "Silver" in selected_names
+        assert "Copper" in selected_names
+
+    def test_single_line_selection_does_not_trigger_sync(
+        self, window, tmp_path, qapp,
+    ):
+        from PySide6.QtGui import QTextCursor
+
+        self._load(window, tmp_path)
+        tab = window._active_tab
+        editor = tab.editor
+        text = editor.toPlainText()
+        # Select just the "ItemID: Titanium;" portion of one line.
+        start = text.find("ItemID: Titanium")
+        end = text.find(";", start)
+        cursor = editor.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        # Pre-clear selection state by selecting nothing in the graph.
+        tab.graph.clear_selection()
+        editor.setTextCursor(cursor)
+        qapp.processEvents()
+        assert tab.graph.selected_nodes() == []
+
+    def test_editor_selection_skipped_during_sync_guard(
+        self, window, tmp_path, qapp,
+    ):
+        """Programmatic selection from graph->editor must not bounce back."""
+        from PySide6.QtGui import QTextCursor
+
+        self._load(window, tmp_path)
+        tab = window._active_tab
+        editor = tab.editor
+        text = editor.toPlainText()
+        copper_pos = text.find("ItemID: Copper")
+        end_pos = text.find("\n", copper_pos)
+
+        cursor = editor.textCursor()
+        cursor.setPosition(0)
+        cursor.setPosition(end_pos, QTextCursor.MoveMode.KeepAnchor)
+        with tab.sync_guard():
+            editor.setTextCursor(cursor)
+            qapp.processEvents()
+        # Inside the guard, the editor->graph handler short-circuits, so
+        # nothing was selected.
+        assert tab.graph.selected_nodes() == []

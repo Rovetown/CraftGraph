@@ -1462,3 +1462,64 @@ class TestViewerDragDropFilter:
         event, _mime = self._make_drag_enter(["/some/IMAGE.PNG"])
         result = filt.eventFilter(viewer, event)
         assert result is True
+
+
+class TestLivePipeViewportUpdateMode:
+    """Live drag should switch the viewport to FullViewportUpdate to clear ghost arrows."""
+
+    def _begin_drag(self, graph, viewer):
+        from PySide6.QtCore import QPoint
+
+        viewer._origin_pos = QPoint(0, 0)
+        port = self._first_port(graph)
+        viewer.start_live_connection(port)
+
+    def test_starts_in_full_update_mode_during_drag(self, graph):
+        from PySide6.QtWidgets import QGraphicsView
+
+        viewer = graph.viewer()
+        viewer.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
+        self._begin_drag(graph, viewer)
+        try:
+            assert (
+                viewer.viewportUpdateMode()
+                == QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+            )
+        finally:
+            viewer.end_live_connection()
+
+    def test_restores_previous_mode_after_drag(self, graph):
+        from PySide6.QtWidgets import QGraphicsView
+
+        viewer = graph.viewer()
+        viewer.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
+        self._begin_drag(graph, viewer)
+        viewer.end_live_connection()
+        assert (
+            viewer.viewportUpdateMode()
+            == QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
+        )
+
+    def test_handles_smart_update_mode(self, graph):
+        """A non-default starting mode is also restored verbatim."""
+        from PySide6.QtWidgets import QGraphicsView
+
+        viewer = graph.viewer()
+        viewer.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
+        self._begin_drag(graph, viewer)
+        viewer.end_live_connection()
+        assert (
+            viewer.viewportUpdateMode()
+            == QGraphicsView.ViewportUpdateMode.SmartViewportUpdate
+        )
+
+    @staticmethod
+    def _first_port(graph):
+        """Spawn a node and return one of its input/output ports."""
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        # Prefer the output port (live connections normally start from outputs).
+        ports = node.output_ports() or node.input_ports()
+        assert ports, "expected at least one port on a ModifiedRecipeNode"
+        return ports[0].view

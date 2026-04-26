@@ -12,8 +12,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from craftgraph.config import get_config
+
 CURRENT_VERSION = 1
-DEFAULT_MAX_ENTRIES = 10
 
 
 @dataclass
@@ -28,7 +29,9 @@ class RecentEntry:
 class RecentFiles:
     """Manages the recent-files list, backed by a JSON file on disk."""
 
-    def __init__(self, path: Path, *, max_entries: int = DEFAULT_MAX_ENTRIES) -> None:
+    def __init__(self, path: Path, *, max_entries: int | None = None) -> None:
+        if max_entries is None:
+            max_entries = get_config().limits.recent_files_default_max
         self._path = path
         self._max_entries = max_entries
         self._entries: list[RecentEntry] = []

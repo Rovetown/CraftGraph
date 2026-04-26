@@ -1,8 +1,6 @@
 # CraftGraph Node System Architecture
 
-> A guide for anyone -- including people unfamiliar with GUI programming or
-> node editors -- explaining how CraftGraph's visual node system works, what
-> limits it, and why certain bugs keep happening.
+> Guide for anyone -- including GUI/node editor newcomers -- on how CraftGraph's visual node system works, its limits, and recurring bug patterns.
 
 ---
 
@@ -23,9 +21,7 @@
 
 ## What is a Node Editor?
 
-A node editor is a visual programming interface where concepts are represented as
-**boxes (nodes)** connected by **wires (links)**. Each box has **pins** on its left
-and right sides:
+Visual programming interface: **boxes (nodes)** connected by **wires (links)**. Each box has **pins** on left/right:
 
 ```
                     ┌──────────────────┐
@@ -35,25 +31,17 @@ and right sides:
                     └──────────────────┘
 ```
 
-- **Output pins** (right): "I produce something." An ingredient node's output
-  represents the item itself.
-- **Input pins** (left): "I need something." A recipe node's input pins represent
-  the ingredients it requires.
-- **Links/wires**: A line drawn from an output pin to an input pin, meaning
-  "this item is used as an ingredient in that recipe."
+- **Output pins** (right): "I produce something." Ingredient node output = item itself.
+- **Input pins** (left): "I need something." Recipe node inputs = required ingredients.
+- **Links/wires**: Line from output to input pin = "this item used as ingredient in that recipe."
 
-Think of it like a flowchart where arrows show what feeds into what. In
-CraftGraph, this visualizes Subnautica crafting recipes: which items are needed
-to build which other items, and how they all chain together.
+Flowchart where arrows show what feeds into what. In CraftGraph: visualizes Subnautica crafting recipes -- which items needed to build others, how they chain.
 
 ---
 
 ## Our Architecture: Class-Based Data-Driven
 
-CraftGraph uses a **single class** (`RecipeNode`) to represent every kind of
-node in the editor. There is no inheritance tree of node subclasses. Instead,
-each `RecipeNode` carries a `kind` field (a `NodeKind` enum) that tells the
-system what type of CC3 concept the node represents:
+CraftGraph uses **single class** (`RecipeNode`) for every node. No inheritance tree of subclasses. Each `RecipeNode` carries `kind` field (`NodeKind` enum) telling system what CC3 concept node represents:
 
 ```
 RecipeNode
@@ -70,22 +58,17 @@ RecipeNode
 └── kind: NodeKind.CUSTOM_FRAGMENT_COUNT (override fragment scan count)
 ```
 
-When a `RecipeNode` is created, its `create()` method looks at `kind` and
-decides **at creation time** which pins, labels, and visual elements to add.
-This is not runtime composition -- it's **branching inside a single method**.
+`create()` method checks `kind` and decides **at creation time** which pins, labels, visuals to add. Not runtime composition -- **branching inside single method**.
 
 ### Why "data-driven"?
 
-Because the node's visual appearance is determined entirely by data fields
-(`kind`, `ingredients`, `non_recipe`, `recipe`), not by which subclass it is.
-There is one class. The data tells it what to become.
+Node visual appearance determined entirely by data fields (`kind`, `ingredients`, `non_recipe`, `recipe`), not by subclass. One class. Data tells it what to become.
 
 ---
 
 ## The Three Layers
 
-CraftGraph separates concerns into three layers. Understanding these layers is
-critical to understanding why the node system works the way it does.
+Three separated layers. Understanding these = understanding why node system works this way.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -125,30 +108,26 @@ critical to understanding why the node system works the way it does.
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### The flow of an edit
+### Edit flow
 
-When a user drags a wire from one node to another:
+When user drags wire from one node to another:
 
-1. DPG fires a callback with two numeric attribute IDs (just numbers).
-2. `InteractiveNodeEditor.on_link()` resolves those numbers to actual
-   `RecipeNode` objects and their pin roles (ingredient name, `__empty__`,
-   `__hierarchy__`, `__output__`).
-3. Based on the pin roles, it decides what command to create:
+1. DPG fires callback with two numeric attribute IDs (just numbers).
+2. `InteractiveNodeEditor.on_link()` resolves those to actual `RecipeNode` objects + pin roles (ingredient name, `__empty__`, `__hierarchy__`, `__output__`).
+3. Based on pin roles, decides command:
    - Ingredient addition? -> `AddIngredientCommand`
    - Hierarchy nesting? -> `NestTabInFabricatorCommand`
    - Link swap? -> `ChangeIngredientCommand`
-4. The command mutates the data model (`models.py` objects).
-5. The visual is **completely rebuilt** from scratch using the updated model.
+4. Command mutates data model (`models.py` objects).
+5. Visual **completely rebuilt** from scratch using updated model.
 
-That last point is the key. **Every model change triggers a full visual
-rebuild.** Every node is destroyed and recreated. Every link is destroyed and
-recreated. This is not by choice -- it's because of how DPG/imnodes works.
+Key point: **every model change triggers full visual rebuild.** All nodes destroyed + recreated. All links destroyed + recreated. Not by choice -- how DPG/imnodes works.
 
 ---
 
 ## How a Node Gets Created
 
-Here is what happens inside `RecipeNode.create()`, step by step:
+Inside `RecipeNode.create()`, step by step:
 
 ```python
 def create(self, editor, pos, theme, texture_cache=None):
@@ -186,16 +165,13 @@ def create(self, editor, pos, theme, texture_cache=None):
             dpg.add_text("+ drop ingredient")  # or item_id for non-recipes
 ```
 
-Notice: **everything is decided inside this one method.** There's no "attach a
-SpriteComponent" or "add a HierarchyInputPlugin." It's all sequential
-if/else branching within a single function.
+**Everything decided inside this one method.** No "attach SpriteComponent" or "add HierarchyInputPlugin." All sequential if/else branching within single function.
 
 ---
 
 ## Pin Types and What They Mean
 
-Every node can have up to 5 categories of pins/elements. Here is what each
-one means and how the dispatch system interprets connections to them:
+Every node can have up to 5 pin/element categories. What each means and how dispatch interprets connections:
 
 | Pin                  | Side   | Role in Code     | What It Means                             | Who Has It               |
 |----------------------|--------|------------------|-------------------------------------------|--------------------------|
@@ -205,9 +181,7 @@ one means and how the dispatch system interprets connections to them:
 | **Empty Input**      | Left   | `__empty__`      | "Drop something new here"                 | All nodes                |
 | **Static**           | None   | (not tracked)    | Display-only (sprites, info text)         | All nodes                |
 
-When a user drags a wire, `on_link()` receives two attribute IDs. It resolves
-each to a `(RecipeNode, role)` pair. Then it uses the roles to decide what to
-do:
+When user drags wire, `on_link()` receives two attribute IDs, resolves each to `(RecipeNode, role)` pair, then uses roles to decide action:
 
 ```
 source_role     target_role        Action
@@ -218,17 +192,15 @@ __output__      ingredient_name    Swap existing ingredient connection
 __output__      __output__         Recipe-to-recipe dependency (output chaining)
 ```
 
-If none of these patterns match, the connection is silently rejected. This is
-the source of most connection bugs: valid user actions that fall through all
-the dispatch cases without matching anything.
+No match = silently rejected. Source of most connection bugs: valid user actions falling through all dispatch cases.
 
 ---
 
 ## Why Not OOP Inheritance / ECS / Components?
 
-### "Can't we have a base Node class and subclass it for each type?"
+### "Base Node class with subclass per type?"
 
-That's OOP inheritance. You'd have:
+OOP inheritance:
 
 ```
 BaseNode
@@ -240,91 +212,48 @@ BaseNode
 └── ...
 ```
 
-**Why we don't do this:** DPG (Dear PyGui) uses an immediate-mode pattern
-borrowed from ImGui. You build widgets by calling functions in sequence inside
-a `with` block. The "object" is just an integer ID that DPG assigned to the
-widget. There is no Python object backing the DPG node -- the `RecipeNode`
-dataclass we created is our own wrapper, not something DPG understands.
+**Why not:** DPG uses immediate-mode pattern from ImGui. Widgets built by calling functions in sequence inside `with` block. "Object" = just integer ID from DPG. `RecipeNode` dataclass = our wrapper, not something DPG understands.
 
-Using subclasses would mean each subclass overrides `create()` to build
-different pin layouts. This is certainly possible, but it creates a problem:
-the dispatch logic in `on_link()` would need to know what subclass the target
-is to decide what command to create. You'd end up with the same
-`if isinstance(node, FabricatorNode)` checks that we currently do with
-`if node.kind == NodeKind.CUSTOM_FABRICATOR`. The subclass hierarchy adds
-ceremony without reducing complexity.
+Subclasses would override `create()` for different pin layouts. Possible, but dispatch in `on_link()` still needs to know subclass to decide command. Same `if isinstance(node, FabricatorNode)` checks as current `if node.kind == NodeKind.CUSTOM_FABRICATOR`. Hierarchy adds ceremony without reducing complexity.
 
-### "What about Entity-Component-System (ECS)?"
+### "Entity-Component-System (ECS)?"
 
-ECS is a pattern from game engines (Unity DOTS, Bevy, etc.) where:
-- **Entities** are just IDs (no data, no behavior)
-- **Components** are pure data bags (Position, Sprite, InputPins)
-- **Systems** are functions that process entities with specific component combos
+ECS pattern (Unity DOTS, Bevy):
+- **Entities** = just IDs (no data, no behavior)
+- **Components** = pure data bags (Position, Sprite, InputPins)
+- **Systems** = functions processing entities with specific component combos
 
-In theory, you'd define components like `HasIngredientInputs`,
-`HasHierarchyInput`, `HasSpriteDisplay`, and systems that process them.
+**Why not:** DPG is not ECS. Node editor expects all attributes (pins) declared at creation time inside `with` block. Can't "query all nodes with HierarchyInput component" -- DPG lacks that concept. Would build ECS abstraction on non-ECS toolkit, adding complexity without performance benefits (cache locality, parallelism over 10,000+ entities).
 
-**Why we don't do this:** DPG is not an ECS framework. Its node editor expects
-you to declare all attributes (pins) at node creation time inside a `with`
-block. You can't "query all nodes that have a HierarchyInput component" --
-DPG doesn't have that concept. You'd be building an ECS abstraction layer
-on top of a non-ECS toolkit, adding complexity without the performance benefits
-that make ECS worthwhile (cache locality, parallelism over 10,000+ entities).
+### "Template/preset system -- one base, compose features per type?"
 
-### "What about a template/preset system -- one base, compose features per type?"
+Closest to what CraftGraph does, without formal abstraction. `RecipeNode.create()` IS the "template" -- base skeleton conditionally adding features based on `kind`. Branching IS composition, expressed as if/else instead of pluggable components.
 
-This is closest to what CraftGraph actually does, just without the formal
-abstraction. The `RecipeNode.create()` method IS the "template" -- it's the
-base node skeleton that conditionally adds features based on `kind`. The
-branching IS the composition, just expressed as if/else rather than as
-pluggable component objects.
-
-**The honest answer for why we don't formalize it further:** The constraint
-is DPG/imnodes, not our Python architecture. Even if we had a beautiful
-component system in Python, we'd still need to flatten everything into a
-linear sequence of `dpg.node_attribute()` calls inside a single `with dpg.node()`
-block. The GUI toolkit doesn't support post-creation modification of nodes.
-A formal component system would add abstraction without changing what actually
-happens at the DPG level.
+**Real answer:** Constraint is DPG/imnodes, not Python architecture. Even with beautiful component system, still must flatten everything into linear sequence of `dpg.node_attribute()` calls inside single `with dpg.node()` block. GUI toolkit doesn't support post-creation node modification. Formal component system adds abstraction without changing DPG-level behavior.
 
 ---
 
 ## The Big Constraint: imnodes
 
-Everything about this system's design traces back to one fundamental limitation
-of the underlying C++ library.
+Everything about this design traces to one fundamental limitation of underlying C++ library.
 
 ### What is imnodes?
 
-Dear PyGui's node editor is a Python wrapper around **imnodes**, a C++ library
-for ImGui that provides the visual node-and-wire editing surface. DPG exposes
-it via `dpg.node_editor()`, `dpg.node()`, `dpg.node_attribute()`, and
-`dpg.add_node_link()`.
+Dear PyGui's node editor = Python wrapper around **imnodes**, C++ library for ImGui providing visual node-and-wire editing surface. DPG exposes via `dpg.node_editor()`, `dpg.node()`, `dpg.node_attribute()`, `dpg.add_node_link()`.
 
 ### What imnodes cannot do
 
-1. **You cannot add or remove pins after a node is created.** Once the
-   `with dpg.node()` block exits, the node's attribute list is frozen. Want
-   to add a new ingredient pin when the user drops a connection? You must
-   destroy the ENTIRE node editor and rebuild ALL nodes from scratch.
+1. **Cannot add/remove pins after node creation.** Once `with dpg.node()` block exits, attribute list frozen. Adding new ingredient pin = destroy ENTIRE node editor + rebuild ALL nodes from scratch.
 
-2. **You cannot modify a pin's type after creation.** A pin that was created
-   as `mvNode_Attr_Input` stays an input forever. You can't convert it to
-   an output or static pin.
+2. **Cannot modify pin type after creation.** `mvNode_Attr_Input` stays input forever. No conversion to output or static.
 
-3. **Widget IDs are transient.** Every time you rebuild, DPG assigns new
-   integer IDs. Any code holding references to old IDs is now broken. This
-   is why we maintain a `_attr_to_node` reverse lookup that gets repopulated
-   on every rebuild.
+3. **Widget IDs are transient.** Every rebuild = new integer IDs from DPG. Old ID references break. Why we maintain `_attr_to_node` reverse lookup repopulated on every rebuild.
 
-4. **Links reference pins by ID.** If the pin IDs change (because of a
-   rebuild), all links become invalid. So links must also be recreated from
-   scratch.
+4. **Links reference pins by ID.** Pin IDs change on rebuild = all links invalid. Links must also be recreated from scratch.
 
-### What this means in practice
+### In practice
 
-**Every model change = full visual teardown + rebuild.** There's no
-"add one pin to an existing node." The cycle is:
+**Every model change = full visual teardown + rebuild.** No "add one pin to existing node." Cycle:
 
 ```
 User drags a wire
@@ -340,46 +269,34 @@ User drags a wire
   -> re-register all attribute-to-node mappings
 ```
 
-This is why the "dynamic input slots" concept (the `__empty__` pin that spawns
-new pins when connected to) requires a full rebuild. You can't just insert a
-new pin into an existing node. You have to destroy everything and recreate it
-with the new pin included.
+Why "dynamic input slots" (`__empty__` pin spawning new pins on connect) requires full rebuild. Can't insert new pin into existing node. Destroy everything, recreate with new pin included.
 
-### Why the "swap" optimization exists
+### Why "swap" optimization exists
 
-The full rebuild is expensive with hundreds of nodes (the reference files
-produce 894). The `_swap_link()` method is a shortcut for one specific case:
-replacing an ingredient connection. Instead of a full rebuild, it:
-1. Mutates the model silently (no rebuild callback)
-2. Manually severs the old DPG link
-3. Relabels the existing input pin's text
-4. Wires a new link to the same pin
+Full rebuild expensive with hundreds of nodes (reference files produce 894). `_swap_link()` = shortcut for one case: replacing ingredient connection. Instead of full rebuild:
+1. Mutates model silently (no rebuild callback)
+2. Manually severs old DPG link
+3. Relabels existing input pin text
+4. Wires new link to same pin
 
-This avoids a full rebuild for the common case of re-routing a wire. But it
-only works because the PIN STILL EXISTS -- we're just changing which output
-it's connected to. We're not adding or removing pins, which would require the
-full rebuild.
+Avoids full rebuild for common wire re-routing. Only works because PIN STILL EXISTS -- just changing which output it connects to. Not adding/removing pins (that needs full rebuild).
 
 ---
 
 ## The Connection Dispatch Problem
 
-This is the root cause of most connection-related bugs, including the current
-hierarchy regression.
+Root cause of most connection-related bugs, including hierarchy regression.
 
 ### The Problem
 
-When a user drags a wire between two pins, DPG fires `on_link(sender, (attr1, attr2))`.
-We receive **two integer IDs** and must figure out:
+User drags wire between pins -> DPG fires `on_link(sender, (attr1, attr2))`. We receive **two integer IDs** and must figure out:
 
-1. Which node does each attribute belong to?
-2. What role does each attribute play (output, ingredient input, hierarchy
-   input, empty slot)?
-3. What is the user's intent (add ingredient, create hierarchy link, swap
-   an existing connection)?
-4. Which command should we create?
+1. Which node each attribute belongs to?
+2. What role each attribute plays (output, ingredient input, hierarchy input, empty slot)?
+3. User's intent (add ingredient, create hierarchy link, swap existing)?
+4. Which command to create?
 
-This is a **classification problem** with many possible combinations:
+**Classification problem** with many combos:
 
 ```
 Combinations = (roles of attr1) x (roles of attr2) x (node kinds of both)
@@ -387,9 +304,7 @@ Combinations = (roles of attr1) x (roles of attr2) x (node kinds of both)
              = ~1,936 theoretical combinations
 ```
 
-We handle maybe 10-15 of these explicitly. Everything else is silently rejected.
-Each time we add a new node kind or pin type, the number of combinations grows,
-and the chance of missing a valid case increases.
+~10-15 handled explicitly. Everything else silently rejected. Each new node kind or pin type grows combinations; chance of missing valid case increases.
 
 ### How on_link() dispatches (simplified)
 
@@ -426,12 +341,7 @@ on_link(attr1, attr2)
 └── Fallback: AddIngredientCommand (full rebuild)
 ```
 
-The complexity here is that each new pin type (we now have `__output__`,
-`__empty__`, `__hierarchy__`, and named ingredient pins) adds another branch
-to this dispatch tree. The hierarchy dispatch was added in Step 11i, and it
-introduced an early-return path that takes priority over ingredient dispatch.
-If any valid connection pattern falls through the hierarchy check but doesn't
-match any ingredient pattern, it gets silently dropped.
+Each new pin type (`__output__`, `__empty__`, `__hierarchy__`, named ingredient pins) adds branch to dispatch tree. Hierarchy dispatch (Step 11i) introduced early-return path taking priority over ingredient dispatch. Valid connection patterns falling through hierarchy check but not matching ingredient patterns get silently dropped.
 
 ---
 
@@ -439,15 +349,11 @@ match any ingredient pattern, it gets silently dropped.
 
 ### What broke
 
-After Step 11i added the hierarchy pin system (the `__hierarchy__` input pin for
-parent-child containment links), drag-and-drop connections from fabricators/tabs
-to other tabs stopped working. The connection is silently rejected.
+After Step 11i added hierarchy pin system (`__hierarchy__` input for parent-child containment), drag-and-drop from fabricators/tabs to other tabs stopped working. Connection silently rejected.
 
-### Root cause analysis
+### Root cause
 
-The issue is in how `on_link()` dispatches hierarchy connections. When the
-user drags from a fabricator's output pin to a tab's hierarchy input pin,
-the dispatch path is:
+Issue in `on_link()` hierarchy dispatch. User drags from fabricator output to tab hierarchy input:
 
 ```
 source: (fabricator_node, "__output__")
@@ -463,65 +369,38 @@ on_link() sees target_role == "__hierarchy__"
   -> calls _try_fabricator_hierarchy(fab_node, tab_node)
 ```
 
-The `_try_fabricator_hierarchy()` method checks conditions using `isinstance()`
-on the `non_recipe` field. The likely failure points:
+`_try_fabricator_hierarchy()` checks conditions using `isinstance()` on `non_recipe` field. Likely failure points:
 
-1. **The nested-tab key collision:** Tabs spawned by `_spawn_nested_fab_contents()`
-   use a different node key format (`custom_crafting_tab::TabId::fab::FabId`)
-   than top-level tabs (`custom_crafting_tab::TabId`). If the tab node being
-   connected was already spawned as a nested node, its `non_recipe` reference
-   points to a different `CraftingTab` instance than the one in the top-level
-   `parsed_file.crafting_tabs` list.
+1. **Nested-tab key collision:** Tabs from `_spawn_nested_fab_contents()` use different node key format (`custom_crafting_tab::TabId::fab::FabId`) than top-level tabs (`custom_crafting_tab::TabId`). Connected tab node's `non_recipe` may point to different `CraftingTab` instance than one in top-level `parsed_file.crafting_tabs`.
 
-2. **Output-to-empty fallback path:** When a user drags from a tab's output
-   to a fabricator's `__empty__` pin (instead of the "correct" direction), the
-   dispatch treats the tab as the parent and the fabricator as the child.
-   `_try_fabricator_hierarchy()` has no case for "Tab is parent, Fabricator
-   is child" -- fabricators don't nest inside tabs. So it returns `None`.
-   But the user's INTENT was to nest the tab inside the fabricator; they just
-   dragged in the "wrong" direction.
+2. **Output-to-empty fallback:** User drags tab output to fabricator `__empty__` pin (reverse of "correct" direction) -> dispatch treats tab as parent, fabricator as child. `_try_fabricator_hierarchy()` has no "Tab parent, Fabricator child" case -- fabricators don't nest inside tabs. Returns `None`. But user INTENT was nesting tab inside fabricator, just wrong drag direction.
 
-3. **The early-return trap:** When `target_role == "__hierarchy__"`, the code
-   always returns after the hierarchy dispatch, even if it returned `None`.
-   There's no fallback to the ingredient logic, no error message, no log line.
-   The connection just vanishes.
+3. **Early-return trap:** When `target_role == "__hierarchy__"`, code always returns after hierarchy dispatch, even if it returned `None`. No fallback to ingredient logic, no error message, no log. Connection vanishes.
 
-### Why this class of bug keeps happening
+### Why this bug class recurs
 
-Every time we add a new pin type or connection semantic, we're adding branches
-to a dispatch tree that was originally designed for just two cases (output-to-input
-ingredient connections). The tree doesn't have an exhaustive match -- there's no
-equivalent of a Rust `match` that forces you to handle every case. Unhandled
-combinations fall through silently.
+Each new pin type or connection semantic adds branches to dispatch tree originally designed for two cases (output-to-input ingredient connections). Tree lacks exhaustive match -- no Rust `match` forcing all-case handling. Unhandled combos fall through silently.
 
-The fix for any individual case is usually small (add another condition to the
-dispatch), but the underlying problem is architectural: the dispatch tree grows
-linearly with each new feature while the combination space grows quadratically.
+Fix for any individual case = small (add condition to dispatch), but underlying problem is architectural: dispatch tree grows linearly per feature while combination space grows quadratically.
 
 ---
 
 ## What Would a Better System Look Like?
 
-If we were starting from scratch (or if DPG/imnodes supported it), a better
-architecture might look like:
+Starting from scratch (or if DPG/imnodes supported it):
 
-### Option A: Component-based nodes with a custom renderer
+### Option A: Component-based nodes with custom renderer
 
-Instead of using DPG's node editor, render nodes ourselves using DPG's draw
-list API. This gives full control over:
-- Adding/removing pins dynamically (no rebuild needed)
+Instead of DPG node editor, render nodes via DPG draw list API. Full control over:
+- Adding/removing pins dynamically (no rebuild)
 - Custom hit-testing for connections
 - Component-based node construction
 
-But this means reimplementing: node rendering, pin rendering, link rendering,
-link dragging, minimap, scrolling, selection, multi-select, keyboard
-navigation... essentially writing our own node editor from scratch. That's
-months of work for marginal benefit.
+But means reimplementing: node rendering, pin rendering, link rendering, link dragging, minimap, scrolling, selection, multi-select, keyboard navigation... writing own node editor from scratch. Months of work for marginal benefit.
 
 ### Option B: Explicit connection type registration
 
-Instead of the current dispatch tree, define all valid connection types as
-a table:
+Instead of dispatch tree, define all valid connection types as table:
 
 ```python
 VALID_CONNECTIONS = [
@@ -541,22 +420,13 @@ VALID_CONNECTIONS = [
 ]
 ```
 
-This makes the dispatch exhaustive, self-documenting, and testable. New
-connection types are added as data, not as new branches in a nested if/else.
-It also makes it trivial to add "reverse direction" support (just add both
-directions as separate rules).
+Dispatch becomes exhaustive, self-documenting, testable. New connection types added as data, not new if/else branches. Trivial to add "reverse direction" support (both directions as separate rules).
 
-### Option C: Accept the current design, improve error reporting
+### Option C: Accept current design, improve error reporting
 
-The pragmatic path. The current architecture works. The dispatch tree is
-complex but manageable. The key improvement would be adding visible feedback
-when a connection is rejected (a toast/notification saying "Cannot connect X
-to Y: reason") instead of silent rejection. This makes debugging much easier
-and gives users clear feedback when they try an invalid connection.
+Pragmatic path. Current architecture works. Dispatch tree complex but manageable. Key improvement: visible feedback on connection rejection (toast saying "Cannot connect X to Y: reason") instead of silent rejection. Easier debugging + clear user feedback for invalid connections.
 
-**CraftGraph currently follows a hybrid of B and C** -- the dispatch is
-moving toward a more structured pattern (separate methods per hierarchy type),
-and Step 11j will add user-facing validation warnings.
+**CraftGraph currently follows hybrid B + C** -- dispatch moving toward structured pattern (separate methods per hierarchy type), Step 11j adds user-facing validation warnings.
 
 ---
 
@@ -573,7 +443,4 @@ and Step 11j will add user-facing validation warnings.
 | What's the hierarchy regression?  | New pin type added dispatch paths that don't cover all valid user actions |
 | Can we fix the architecture?      | Not without replacing imnodes or building a custom renderer |
 
-The system is pragmatic: it works within DPG's constraints and keeps the data
-model completely decoupled from the GUI. The cost is a complex dispatch layer
-that grows with each new feature. The mitigation is better error reporting
-(Step 11j) and more structured dispatch (connection rule tables).
+System is pragmatic: works within DPG constraints, keeps data model fully decoupled from GUI. Cost = complex dispatch layer growing with each feature. Mitigation = better error reporting (Step 11j) + structured dispatch (connection rule tables).

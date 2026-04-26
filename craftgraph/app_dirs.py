@@ -21,6 +21,8 @@ from pathlib import Path
 
 from platformdirs import PlatformDirs
 
+from craftgraph.config import get_config
+
 logger = logging.getLogger(__name__)
 
 _APP_NAME = "CraftGraph"
@@ -106,23 +108,32 @@ def settings_path() -> Path:
     return config_dir() / "settings.json"
 
 
-def load_setting(key: str, default: str) -> str:
+_SettingValue = str | int | float | bool
+
+
+def load_setting(key: str, default: _SettingValue) -> _SettingValue:
     """Read a single setting from ``settings.json``.
 
-    Returns *default* if the file is missing, corrupt, or lacks the key.
+    Returns the native JSON value (str, int, float, bool) stored under
+    *key*, or *default* if the file is missing, corrupt, or lacks the key.
     """
     path = settings_path()
     if not path.is_file():
         return default
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return str(data.get(key, default))
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         logger.warning("settings.json is corrupt, returning default for %r: %s", key, exc)
         return default
+    if not isinstance(data, dict) or key not in data:
+        return default
+    value = data[key]
+    if isinstance(value, str | int | float | bool):
+        return value
+    return default
 
 
-def save_setting(key: str, value: str) -> None:
+def save_setting(key: str, value: _SettingValue) -> None:
     """Write a single setting to ``settings.json``, preserving other keys."""
     path = settings_path()
     data: dict[str, object] = {"version": 1}
@@ -138,8 +149,6 @@ def save_setting(key: str, value: str) -> None:
 
 
 # -- Icon paths ----------------------------------------------------------------
-
-_ICONS_PKG_DIR = Path(__file__).parent / "data" / "icons"
 
 
 def _icon_name() -> str:
@@ -159,12 +168,12 @@ def bundled_icon_path() -> Path:
     Returns the path even if the file does not yet exist (the caller
     should check ``.exists()`` before using it).
     """
-    return _ICONS_PKG_DIR / _icon_name()
+    return bundled_icon_dir() / _icon_name()
 
 
 def bundled_icon_dir() -> Path:
     """Directory containing bundled icon files."""
-    return _ICONS_PKG_DIR
+    return Path(__file__).parent / get_config().paths.icons_subdir
 
 
 # -- Legacy migration -----------------------------------------------------------
