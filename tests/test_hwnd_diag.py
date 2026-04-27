@@ -6,6 +6,16 @@ import sys
 
 import pytest
 
+from PySide6 import QtWidgets
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
+    return app
+
 
 class TestHandleCounters:
     def test_gui_handle_count_returns_int(self):
@@ -34,3 +44,50 @@ class TestHandleCounters:
         from craftgraph.hwnd_diag import gui_handle_count
 
         assert gui_handle_count() == 0
+
+
+class TestHandleSnapshot:
+    def test_snapshot_fields(self):
+        from craftgraph.hwnd_diag import HandleSnapshot, take_snapshot
+
+        snap = take_snapshot()
+        assert isinstance(snap, HandleSnapshot)
+        assert isinstance(snap.gui_objects, int)
+        assert isinstance(snap.gdi_objects, int)
+        assert isinstance(snap.widget_count, int)
+
+    def test_snapshot_delta_against(self):
+        from craftgraph.hwnd_diag import HandleSnapshot
+
+        before = HandleSnapshot(gui_objects=100, gdi_objects=50, widget_count=10)
+        after = HandleSnapshot(gui_objects=130, gdi_objects=55, widget_count=14)
+        delta = after.delta_against(before)
+        assert delta.gui_objects == 30
+        assert delta.gdi_objects == 5
+        assert delta.widget_count == 4
+
+
+class TestWidgetInventory:
+    def test_widget_inventory_returns_class_counts(self, qapp):
+        from PySide6 import QtWidgets
+
+        from craftgraph.hwnd_diag import widget_inventory
+
+        held: list[QtWidgets.QWidget] = []
+        try:
+            for _ in range(3):
+                held.append(QtWidgets.QPushButton())
+            inv = widget_inventory()
+            assert inv.get("QPushButton", 0) >= 3
+        finally:
+            for w in held:
+                w.deleteLater()
+            qapp.processEvents()
+
+    def test_widget_inventory_no_qapp(self, monkeypatch):
+        from PySide6 import QtWidgets
+
+        from craftgraph import hwnd_diag
+
+        monkeypatch.setattr(QtWidgets.QApplication, "instance", staticmethod(lambda: None))
+        assert hwnd_diag.widget_inventory() == {}
