@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import Callable, Iterator, Optional
 
 _GR_GDIOBJECTS = 0
 _GR_USEROBJECTS = 1
@@ -102,3 +104,74 @@ def take_snapshot() -> HandleSnapshot:
         gdi_objects=gdi_handle_count(),
         widget_count=widget_count,
     )
+
+
+@dataclass
+class Measurement:
+    action: str
+    before: HandleSnapshot
+    after: HandleSnapshot | None = None
+
+    @property
+    def delta(self) -> HandleSnapshot:
+        if self.after is None:
+            raise RuntimeError("Measurement not yet completed")
+        return self.after.delta_against(self.before)
+
+
+_threshold: int = 20
+_on_threshold_exceeded: Optional[Callable[[str, int], None]] = None
+
+
+def install_logger(
+    *,
+    threshold: int = 20,
+    on_threshold_exceeded: Optional[Callable[[str, int], None]] = None,
+) -> None:
+    """Configure how measure() reports large deltas.
+
+    threshold is the gui_objects delta beyond which the callback fires.
+    Pass on_threshold_exceeded=None to disable the callback.
+    """
+    global _threshold, _on_threshold_exceeded
+    _threshold = threshold
+    _on_threshold_exceeded = on_threshold_exceeded
+
+
+def _append_log(line: str) -> None:
+    from craftgraph import app_dirs
+
+    log_dir = app_dirs.log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with (log_dir / "hwnd.log").open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+@contextmanager
+def measure(action: str, *, log: bool = True) -> Iterator[Measurement]:
+    """Capture a before/after HandleSnapshot around a block of work.
+
+    If log is true (default), writes a one-line summary to
+    app_dirs.log_dir() / "hwnd.log". If the gui_objects delta exceeds
+    the configured threshold, also invokes any callback registered
+    through install_logger.
+    """
+    m = Measurement(action=action, before=take_snapshot())
+    try:
+        yield m
+    finally:
+        m.after = take_snapshot()
+        delta = m.delta
+        if log:
+            _append_log(
+                f"action={action} "
+                f"before={m.before.gui_objects} "
+                f"after={m.after.gui_objects} "
+                f"delta={delta.gui_objects:+d} "
+                f"widgets={delta.widget_count:+d}",
+            )
+        if (
+            _on_threshold_exceeded is not None
+            and delta.gui_objects > _threshold
+        ):
+            _on_threshold_exceeded(action, delta.gui_objects)

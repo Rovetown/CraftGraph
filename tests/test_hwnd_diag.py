@@ -91,3 +91,58 @@ class TestWidgetInventory:
 
         monkeypatch.setattr(QtWidgets.QApplication, "instance", staticmethod(lambda: None))
         assert hwnd_diag.widget_inventory() == {}
+
+
+class TestMeasureContextManager:
+    def test_measure_yields_before_snapshot(self):
+        from craftgraph.hwnd_diag import HandleSnapshot, measure
+
+        with measure("noop", log=False) as ctx:
+            assert isinstance(ctx.before, HandleSnapshot)
+        # After the block, .after and .delta are populated.
+        assert isinstance(ctx.after, HandleSnapshot)
+        assert ctx.delta.gui_objects == ctx.after.gui_objects - ctx.before.gui_objects
+
+    def test_measure_records_action_name(self):
+        from craftgraph.hwnd_diag import measure
+
+        with measure("custom_action", log=False) as ctx:
+            pass
+        assert ctx.action == "custom_action"
+
+    def test_measure_writes_log_line_when_logging_enabled(self, tmp_path, monkeypatch):
+        from craftgraph import app_dirs, hwnd_diag
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        with hwnd_diag.measure("dialog_open"):
+            pass
+        log_path = tmp_path / "hwnd.log"
+        assert log_path.is_file()
+        contents = log_path.read_text(encoding="utf-8")
+        assert "action=dialog_open" in contents
+        assert "delta=" in contents
+
+    def test_measure_does_not_write_log_when_disabled(self, tmp_path, monkeypatch):
+        from craftgraph import app_dirs, hwnd_diag
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        with hwnd_diag.measure("silent", log=False):
+            pass
+        assert not (tmp_path / "hwnd.log").exists()
+
+
+class TestThresholdLogger:
+    def test_install_logger_attaches_callback(self):
+        from craftgraph import hwnd_diag
+
+        events: list[tuple[str, int]] = []
+        hwnd_diag.install_logger(
+            threshold=10,
+            on_threshold_exceeded=lambda action, delta: events.append((action, delta)),
+        )
+        try:
+            with hwnd_diag.measure("ok", log=False):
+                pass
+            assert events == []  # no widgets created -> no threshold breach
+        finally:
+            hwnd_diag.install_logger(threshold=10, on_threshold_exceeded=None)
