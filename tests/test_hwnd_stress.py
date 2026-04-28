@@ -174,3 +174,23 @@ class TestTabSwitchStress:
             f"Tab switch leaked {delta} HWNDs over 30 switches "
             f"(threshold {THRESHOLDS['tab_switch_x30']})"
         )
+
+
+class TestWatcherRebuildStress:
+    def test_watcher_rebuild_x10(self, window):
+        window.load_recipes(SAMPLE_FOLDER)
+        if not window._file_tabs:
+            pytest.skip("Sample folder did not yield any file tabs")
+
+        # Trigger the watcher rebuild handler directly so the test does not
+        # depend on real filesystem event timing. The handler signature takes
+        # the cycles list (here empty -- no cycles in EquipmentSalvage).
+        def scenario():
+            for _ in range(10):
+                window._on_watcher_rebuild([])
+
+        delta = _delta_around(window, scenario)
+        assert delta < THRESHOLDS["watcher_rebuild_x10"], (
+            f"Watcher rebuild leaked {delta} HWNDs over 10 cycles "
+            f"(threshold {THRESHOLDS['watcher_rebuild_x10']})"
+        )
