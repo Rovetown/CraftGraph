@@ -7451,6 +7451,16 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
 
     _install_message_filter()
 
+    def _hwnd_threshold_warning(action: str, delta: int) -> None:
+        # Surface a non-blocking warning on the active window's status bar.
+        active = QtWidgets.QApplication.activeWindow()
+        if isinstance(active, QtWidgets.QMainWindow):
+            active.statusBar().showMessage(
+                f"HWND spike: {action} +{delta} handles", 5000,
+            )
+
+    hwnd_diag.install_logger(threshold=20, on_threshold_exceeded=_hwnd_threshold_warning)
+
     window = CraftGraphWindow()
 
     if recipe_path is not None:

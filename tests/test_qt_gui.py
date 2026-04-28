@@ -5980,3 +5980,30 @@ class TestSnapshotMenuAction:
         files = list(diag_dir.glob("hwnd_*.txt"))
         assert len(files) == 1
         assert "gui_objects=" in files[0].read_text(encoding="utf-8")
+
+
+class TestLauncherInstallsLogger:
+    def test_launcher_installs_threshold_logger(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs, hwnd_diag
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        captured: dict[str, object] = {}
+        original = hwnd_diag.install_logger
+
+        def spy(*, threshold: int = 20, on_threshold_exceeded=None) -> None:
+            captured["threshold"] = threshold
+            captured["callback"] = on_threshold_exceeded
+            original(threshold=threshold, on_threshold_exceeded=on_threshold_exceeded)
+
+        monkeypatch.setattr(hwnd_diag, "install_logger", spy)
+
+        # Stub QApplication.exec so the launcher returns immediately.
+        monkeypatch.setattr(QtWidgets.QApplication, "exec", lambda self: 0)
+
+        from craftgraph.qt_gui import launch_qt_gui
+        launch_qt_gui(None)
+
+        assert captured.get("threshold") == 20
+        assert captured.get("callback") is not None
