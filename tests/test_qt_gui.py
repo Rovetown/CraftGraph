@@ -5956,3 +5956,27 @@ class TestMeasureWrappers:
         window._on_watcher_rebuild([])
         log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
         assert "action=watcher_rebuild" in log
+
+
+class TestSnapshotMenuAction:
+    def test_help_menu_has_snapshot_action(self, window):
+        bar = window.menuBar()
+        help_menu = None
+        for action in bar.actions():
+            menu = action.menu()
+            if menu is not None and action.text().replace("&", "") == "Help":
+                help_menu = menu
+                break
+        assert help_menu is not None
+        labels = [a.text().replace("&", "") for a in help_menu.actions()]
+        assert any("Dump Handle Snapshot" in t for t in labels)
+
+    def test_dump_snapshot_writes_file(self, window, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        window._on_dump_handle_snapshot()
+        diag_dir = tmp_path / "diagnostics"
+        files = list(diag_dir.glob("hwnd_*.txt"))
+        assert len(files) == 1
+        assert "gui_objects=" in files[0].read_text(encoding="utf-8")

@@ -3451,6 +3451,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._settings_action.triggered.connect(self._on_settings)
         help_menu.addAction(self._settings_action)
 
+        self._dump_hwnd_action = QtGui.QAction("Dump Handle &Snapshot...", self)
+        self._dump_hwnd_action.triggered.connect(self._on_dump_handle_snapshot)
+        help_menu.addAction(self._dump_hwnd_action)
+
         help_menu.addSeparator()
 
         about_action = QtGui.QAction("&About CraftGraph", self)
@@ -3610,6 +3614,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _on_toggle_hwnd_counter(self, checked: bool) -> None:
         self._hwnd_counter.setVisible(checked)
         app_dirs.save_setting("show_hwnd_counter", checked)
+
+    def _on_dump_handle_snapshot(self) -> None:
+        path = hwnd_diag.snapshot_to_file()
+        self.statusBar().showMessage(f"Handle snapshot written to {path}", 5000)
 
     def _attach_minimap_to_current_tab(self) -> None:
         """Bind the minimap to the active tab's graph."""
