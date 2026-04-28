@@ -3619,6 +3619,19 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         path = hwnd_diag.snapshot_to_file()
         self.statusBar().showMessage(f"Handle snapshot written to {path}", 5000)
 
+    def _spawn_main_context_menu_for_test(self) -> None:
+        """Test hook: pop up and immediately dismiss the main graph context menu.
+
+        Used by ``tests/test_hwnd_stress.py`` to exercise the same QMenu the
+        viewer pops up on right-click without synthesising a real mouse event.
+        """
+        viewer = self.graph.viewer()
+        viewport = viewer.viewport()
+        menu = self.graph.get_context_menu("graph").qmenu
+        global_pos = viewport.mapToGlobal(viewport.rect().center())
+        menu.popup(global_pos)
+        menu.close()
+
     def _attach_minimap_to_current_tab(self) -> None:
         """Bind the minimap to the active tab's graph."""
         idx = self._tab_bar.currentIndex()

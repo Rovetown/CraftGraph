@@ -106,3 +106,19 @@ class TestSettingsDialogStress:
             f"Settings dialog leaked {delta} HWNDs over 20 opens "
             f"(threshold {THRESHOLDS['open_close_settings_x20']})"
         )
+
+
+class TestContextMenuStress:
+    def test_context_menu_x50(self, window):
+        # The graph viewer must exist before context menus can target it.
+        assert window.graph is not None
+
+        def scenario():
+            for _ in range(50):
+                window._spawn_main_context_menu_for_test()
+
+        delta = _delta_around(window, scenario)
+        assert delta < THRESHOLDS["context_menu_x50"], (
+            f"Context menu leaked {delta} HWNDs over 50 spawns "
+            f"(threshold {THRESHOLDS['context_menu_x50']})"
+        )
