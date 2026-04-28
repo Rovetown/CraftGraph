@@ -153,3 +153,24 @@ class TestFolderOpenCloseStress:
             f"Folder open/close leaked {delta} HWNDs over 10 cycles "
             f"(threshold {THRESHOLDS['open_close_folder_x10']})"
         )
+
+
+class TestTabSwitchStress:
+    def test_tab_switch_x30(self, window):
+        window.load_recipes(SAMPLE_FOLDER)
+        # Need at least 2 file tabs to make tab switching meaningful.
+        if len(window._file_tabs) < 2:
+            pytest.skip("Sample folder has fewer than 2 files")
+
+        tab_bar = window._tab_bar  # QTabBar driving _graph_stack/_editor_stack
+        n_tabs = tab_bar.count()
+
+        def scenario():
+            for i in range(30):
+                tab_bar.setCurrentIndex(i % n_tabs)
+
+        delta = _delta_around(window, scenario)
+        assert delta < THRESHOLDS["tab_switch_x30"], (
+            f"Tab switch leaked {delta} HWNDs over 30 switches "
+            f"(threshold {THRESHOLDS['tab_switch_x30']})"
+        )
