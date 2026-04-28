@@ -4485,8 +4485,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 ),
             )
             dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
-            dialog.exec_()
-            self._apply_settings_from_dialog(dialog)
+            try:
+                dialog.exec_()
+                self._apply_settings_from_dialog(dialog)
+            finally:
+                # Without this, the dialog stays as a child of the main window
+                # and its 473-widget subtree (per Phase 1 measurements) leaks
+                # on every open. deleteLater queues destruction for after the
+                # event loop returns, so any in-flight applied-signal callbacks
+                # finish first.
+                dialog.deleteLater()
 
     def _apply_settings_from_dialog(self, dialog: "_SettingsDialog") -> None:
         """Read current values from *dialog* and apply + persist them.

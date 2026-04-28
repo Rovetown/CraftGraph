@@ -88,13 +88,22 @@ def window(qapp, monkeypatch, tmp_path):
     return CraftGraphWindow()
 
 
+def _drain_deferred_delete():
+    """Pump the deferred-delete queue so widget counts measure convergence."""
+    QtWidgets.QApplication.processEvents()
+    QtWidgets.QApplication.sendPostedEvents(
+        None, QtCore.QEvent.Type.DeferredDelete,
+    )
+    QtWidgets.QApplication.processEvents()
+
+
 def _delta_around(window, callable_):
     from craftgraph.hwnd_diag import take_snapshot
 
-    QtWidgets.QApplication.processEvents()
+    _drain_deferred_delete()
     before = take_snapshot()
     callable_()
-    QtWidgets.QApplication.processEvents()
+    _drain_deferred_delete()
     after = take_snapshot()
     return after.delta_against(before)
 
@@ -126,12 +135,6 @@ class TestSettingsDialogStress:
         def scenario():
             for _ in range(20):
                 window._on_settings()
-                # Drain the deleteLater queue between cycles so the test
-                # measures convergence, not just instantaneous widget count.
-                QtWidgets.QApplication.processEvents()
-                QtWidgets.QApplication.sendPostedEvents(
-                    None, QtCore.QEvent.Type.DeferredDelete,
-                )
 
         delta_snap = _delta_around(window, scenario)
         assert delta_snap.gui_objects < THRESHOLDS["open_close_settings_x20"], (
