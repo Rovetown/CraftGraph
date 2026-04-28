@@ -5857,3 +5857,44 @@ class TestHwndCounterWidget:
         monkeypatch.setattr(hwnd_diag, "gui_handle_count", lambda: 3000)
         window._refresh_hwnd_counter()
         assert "color: #cccccc" in window._hwnd_counter.styleSheet()  # neutral
+
+
+class TestHwndCounterMenuToggle:
+    def test_view_menu_has_counter_toggle(self, window):
+        view_menu = window.menuBar().findChild(QtWidgets.QMenu, "view_menu")
+        assert view_menu is not None
+        action_texts = [a.text() for a in view_menu.actions()]
+        assert any("Handle Counter" in t for t in action_texts)
+
+    def test_toggle_shows_and_hides_counter(self, window):
+        action = window._hwnd_counter_action
+        assert action.isChecked() is False
+        action.trigger()
+        # `isHidden()` reflects the explicit visible flag without requiring
+        # the window to be shown (the test fixture does not call show()).
+        assert window._hwnd_counter.isHidden() is False
+        action.trigger()
+        assert window._hwnd_counter.isHidden() is True
+
+    def test_toggle_persists_setting(self, window):
+        from craftgraph import app_dirs
+
+        # The window fixture already redirects settings_path to tmp_path.
+        action = window._hwnd_counter_action
+        action.setChecked(True)
+        action.trigger()  # toggles to False, persists
+        assert app_dirs.load_setting("show_hwnd_counter", True) is False
+
+    def test_initial_state_loaded_from_settings(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        app_dirs.save_setting("show_hwnd_counter", True)
+        win = CraftGraphWindow()
+        try:
+            assert win._hwnd_counter.isHidden() is False
+            assert win._hwnd_counter_action.isChecked() is True
+        finally:
+            win.close()
+            win.deleteLater()

@@ -3267,9 +3267,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._recipe_watcher: RecipeWatcher | None = None
 
         # -- Build UI ---------------------------------------------------------
+        # Status bar must be set up before the menu bar so the
+        # `View > Show Handle Counter` toggle can wire its initial visibility
+        # against the existing `_hwnd_counter` widget.
+        self._setup_status_bar()
         self._setup_menu_bar()
         self._setup_central_widget()
-        self._setup_status_bar()
         self._setup_id_reference_panel()
 
         # Apply theme stylesheet (dark/light/system + accent + high-contrast)
@@ -3431,6 +3434,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._reset_layout_action = QtGui.QAction("&Reset Layout", self)
         self._reset_layout_action.triggered.connect(self._on_reset_layout)
         view_menu.addAction(self._reset_layout_action)
+
+        view_menu.addSeparator()
+        self._hwnd_counter_action = QtGui.QAction("Show &Handle Counter", self)
+        self._hwnd_counter_action.setCheckable(True)
+        initial_visible = bool(app_dirs.load_setting("show_hwnd_counter", False))
+        self._hwnd_counter_action.setChecked(initial_visible)
+        self._hwnd_counter.setVisible(initial_visible)
+        self._hwnd_counter_action.toggled.connect(self._on_toggle_hwnd_counter)
+        view_menu.addAction(self._hwnd_counter_action)
 
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
@@ -3594,6 +3606,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_toggle_minimap(self, checked: bool) -> None:
         self._minimap.setVisible(checked)
+
+    def _on_toggle_hwnd_counter(self, checked: bool) -> None:
+        self._hwnd_counter.setVisible(checked)
+        app_dirs.save_setting("show_hwnd_counter", checked)
 
     def _attach_minimap_to_current_tab(self) -> None:
         """Bind the minimap to the active tab's graph."""
