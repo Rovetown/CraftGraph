@@ -5827,3 +5827,33 @@ class TestSearchAndSelectCentering:
         # Inside the guard, the editor->graph handler short-circuits, so
         # nothing was selected.
         assert tab.graph.selected_nodes() == []
+
+
+class TestHwndCounterWidget:
+    def test_window_has_handle_counter_label(self, window):
+        # The label is created up front; visibility is controlled by setting.
+        assert hasattr(window, "_hwnd_counter")
+        assert isinstance(window._hwnd_counter, QtWidgets.QLabel)
+
+    def test_handle_counter_hidden_by_default(self, window):
+        assert window._hwnd_counter.isVisible() is False
+
+    def test_handle_counter_shows_count_text(self, window):
+        window._hwnd_counter.setVisible(True)
+        window._refresh_hwnd_counter()
+        assert "HWND" in window._hwnd_counter.text()
+
+    def test_handle_counter_color_changes_with_threshold(self, window, monkeypatch):
+        from craftgraph import hwnd_diag
+
+        monkeypatch.setattr(hwnd_diag, "gui_handle_count", lambda: 9000)
+        window._refresh_hwnd_counter()
+        assert "color: #cc4444" in window._hwnd_counter.styleSheet()  # red
+
+        monkeypatch.setattr(hwnd_diag, "gui_handle_count", lambda: 6000)
+        window._refresh_hwnd_counter()
+        assert "color: #cc8844" in window._hwnd_counter.styleSheet()  # amber
+
+        monkeypatch.setattr(hwnd_diag, "gui_handle_count", lambda: 3000)
+        window._refresh_hwnd_counter()
+        assert "color: #cccccc" in window._hwnd_counter.styleSheet()  # neutral

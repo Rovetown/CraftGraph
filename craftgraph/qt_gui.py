@@ -3623,6 +3623,35 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self.statusBar().showMessage("Ready")
+        # HWND counter (Surface A). Hidden by default; toggled via View menu.
+        self._hwnd_counter = QtWidgets.QLabel("")
+        self._hwnd_counter.setVisible(False)
+        self.statusBar().addPermanentWidget(self._hwnd_counter)
+        self._hwnd_last_count: int | None = None
+        self._hwnd_counter_timer = QtCore.QTimer(self)
+        self._hwnd_counter_timer.setInterval(2000)
+        self._hwnd_counter_timer.timeout.connect(self._refresh_hwnd_counter)
+        self._hwnd_counter_timer.start()
+
+    def _refresh_hwnd_counter(self) -> None:
+        from craftgraph import hwnd_diag
+
+        count = hwnd_diag.gui_handle_count()
+        if self._hwnd_last_count is None:
+            delta_str = ""
+        else:
+            d = count - self._hwnd_last_count
+            delta_str = f" ({d:+d})" if d != 0 else ""
+        self._hwnd_last_count = count
+
+        if count > 8000:
+            color = "#cc4444"   # red
+        elif count > 5000:
+            color = "#cc8844"   # amber
+        else:
+            color = "#cccccc"   # neutral
+        self._hwnd_counter.setStyleSheet(f"color: {color};")
+        self._hwnd_counter.setText(f"HWND: {count}{delta_str}")
 
     # -- ItemID reference panel (dockable) ------------------------------------
 
