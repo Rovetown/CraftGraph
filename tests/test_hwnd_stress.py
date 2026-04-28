@@ -26,13 +26,25 @@ pytestmark = [
 ]
 
 
-# Per-scenario thresholds. Tuned loose initially; tighten in Phase 2.
+# Per-scenario thresholds. Tuned loose initially; tighten as Phase 2 fixes land.
 THRESHOLDS = {
     "open_close_settings_x20": 100,
     "context_menu_x50": 50,
     "open_close_folder_x10": 200,
     "tab_switch_x30": 50,
     "watcher_rebuild_x10": 100,
+}
+
+# Widget-count thresholds. The Settings dialog leak surfaced as widget
+# growth long before USER object growth, because most settings sub-widgets
+# are non-toplevel. Keep both so future leaks are caught regardless of
+# which counter they show up in.
+WIDGET_THRESHOLDS = {
+    "open_close_settings_x20": 200,
+    "context_menu_x50": 100,
+    "open_close_folder_x10": 500,
+    "tab_switch_x30": 100,
+    "watcher_rebuild_x10": 200,
 }
 
 
@@ -44,7 +56,7 @@ def _skip_when_no_stress(request):
 
 from pathlib import Path
 
-from PySide6 import QtWidgets
+from PySide6 import QtCore, QtWidgets
 
 # Smallest reference folder with multiple block types (3 .txt files).
 SAMPLE_FOLDER = (
@@ -84,12 +96,12 @@ def _delta_around(window, callable_):
     callable_()
     QtWidgets.QApplication.processEvents()
     after = take_snapshot()
-    return after.delta_against(before).gui_objects
+    return after.delta_against(before)
 
 
 class TestStressScaffold:
     def test_thresholds_are_defined(self):
-        # Sentinel test: every scenario in this module must have a threshold.
+        # Sentinel test: every scenario in this module must have an HWND threshold.
         expected = {
             "open_close_settings_x20",
             "context_menu_x50",
@@ -98,6 +110,7 @@ class TestStressScaffold:
             "watcher_rebuild_x10",
         }
         assert set(THRESHOLDS.keys()) == expected
+        assert set(WIDGET_THRESHOLDS.keys()) == expected
 
 
 class TestSettingsDialogStress:
@@ -113,11 +126,21 @@ class TestSettingsDialogStress:
         def scenario():
             for _ in range(20):
                 window._on_settings()
+                # Drain the deleteLater queue between cycles so the test
+                # measures convergence, not just instantaneous widget count.
+                QtWidgets.QApplication.processEvents()
+                QtWidgets.QApplication.sendPostedEvents(
+                    None, QtCore.QEvent.Type.DeferredDelete,
+                )
 
-        delta = _delta_around(window, scenario)
-        assert delta < THRESHOLDS["open_close_settings_x20"], (
-            f"Settings dialog leaked {delta} HWNDs over 20 opens "
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["open_close_settings_x20"], (
+            f"Settings dialog leaked {delta_snap.gui_objects} HWNDs over 20 opens "
             f"(threshold {THRESHOLDS['open_close_settings_x20']})"
+        )
+        assert delta_snap.widget_count < WIDGET_THRESHOLDS["open_close_settings_x20"], (
+            f"Settings dialog leaked {delta_snap.widget_count} widgets over 20 opens "
+            f"(threshold {WIDGET_THRESHOLDS['open_close_settings_x20']})"
         )
 
 
@@ -130,9 +153,9 @@ class TestContextMenuStress:
             for _ in range(50):
                 window._spawn_main_context_menu_for_test()
 
-        delta = _delta_around(window, scenario)
-        assert delta < THRESHOLDS["context_menu_x50"], (
-            f"Context menu leaked {delta} HWNDs over 50 spawns "
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["context_menu_x50"], (
+            f"Context menu leaked {delta_snap.gui_objects} HWNDs over 50 spawns "
             f"(threshold {THRESHOLDS['context_menu_x50']})"
         )
 
@@ -148,9 +171,9 @@ class TestFolderOpenCloseStress:
                 # folders -- clears the per-file tab state without re-parsing.
                 window._tear_down_tabs()
 
-        delta = _delta_around(window, scenario)
-        assert delta < THRESHOLDS["open_close_folder_x10"], (
-            f"Folder open/close leaked {delta} HWNDs over 10 cycles "
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["open_close_folder_x10"], (
+            f"Folder open/close leaked {delta_snap.gui_objects} HWNDs over 10 cycles "
             f"(threshold {THRESHOLDS['open_close_folder_x10']})"
         )
 
@@ -169,9 +192,9 @@ class TestTabSwitchStress:
             for i in range(30):
                 tab_bar.setCurrentIndex(i % n_tabs)
 
-        delta = _delta_around(window, scenario)
-        assert delta < THRESHOLDS["tab_switch_x30"], (
-            f"Tab switch leaked {delta} HWNDs over 30 switches "
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["tab_switch_x30"], (
+            f"Tab switch leaked {delta_snap.gui_objects} HWNDs over 30 switches "
             f"(threshold {THRESHOLDS['tab_switch_x30']})"
         )
 
@@ -189,8 +212,8 @@ class TestWatcherRebuildStress:
             for _ in range(10):
                 window._on_watcher_rebuild([])
 
-        delta = _delta_around(window, scenario)
-        assert delta < THRESHOLDS["watcher_rebuild_x10"], (
-            f"Watcher rebuild leaked {delta} HWNDs over 10 cycles "
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["watcher_rebuild_x10"], (
+            f"Watcher rebuild leaked {delta_snap.gui_objects} HWNDs over 10 cycles "
             f"(threshold {THRESHOLDS['watcher_rebuild_x10']})"
         )
