@@ -146,3 +146,27 @@ class TestThresholdLogger:
             assert events == []  # no widgets created -> no threshold breach
         finally:
             hwnd_diag.install_logger(threshold=10, on_threshold_exceeded=None)
+
+
+class TestSnapshotToFile:
+    def test_snapshot_to_file_writes_summary(self, qapp, tmp_path):
+        from craftgraph.hwnd_diag import snapshot_to_file
+
+        out = tmp_path / "snap.txt"
+        path = snapshot_to_file(out)
+        assert path == out
+        text = out.read_text(encoding="utf-8")
+        assert "gui_objects=" in text
+        assert "gdi_objects=" in text
+        assert "widget_count=" in text
+        assert "Top widget classes:" in text
+
+    def test_snapshot_to_file_default_path(self, qapp, tmp_path, monkeypatch):
+        from craftgraph import app_dirs, hwnd_diag
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        path = hwnd_diag.snapshot_to_file()
+        assert path.parent == tmp_path / "diagnostics"
+        assert path.exists()
+        assert path.name.startswith("hwnd_")
+        assert path.suffix == ".txt"

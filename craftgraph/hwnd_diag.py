@@ -14,6 +14,8 @@ import sys
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import Callable, Iterator, Optional
 
 _GR_GDIOBJECTS = 0
@@ -175,3 +177,46 @@ def measure(action: str, *, log: bool = True) -> Iterator[Measurement]:
             and delta.gui_objects > _threshold
         ):
             _on_threshold_exceeded(action, delta.gui_objects)
+
+
+def snapshot_to_file(path: Path | None = None, *, top_n: int = 20) -> Path:
+    """Write a human-readable diagnostic snapshot to *path* (or default).
+
+    Default location is ``app_dirs.log_dir() / "diagnostics" / "hwnd_<ts>.txt"``.
+    Includes USER/GDI counts, total Qt widget count, top-N widget class
+    breakdown, and the last 50 lines of ``hwnd.log`` if it exists.
+    """
+    if path is None:
+        from craftgraph import app_dirs
+
+        diag_dir = app_dirs.log_dir() / "diagnostics"
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = diag_dir / f"hwnd_{timestamp}.txt"
+
+    snap = take_snapshot()
+    inv = widget_inventory()
+    top = sorted(inv.items(), key=lambda kv: kv[1], reverse=True)[:top_n]
+
+    lines = [
+        f"# CraftGraph HWND snapshot {datetime.now().isoformat(timespec='seconds')}",
+        f"gui_objects={snap.gui_objects}",
+        f"gdi_objects={snap.gdi_objects}",
+        f"widget_count={snap.widget_count}",
+        "",
+        "Top widget classes:",
+    ]
+    for class_name, count in top:
+        lines.append(f"  {class_name}: {count}")
+
+    from craftgraph import app_dirs
+
+    log_path = app_dirs.log_dir() / "hwnd.log"
+    if log_path.is_file():
+        tail = log_path.read_text(encoding="utf-8").splitlines()[-50:]
+        lines.append("")
+        lines.append("Recent hwnd.log entries:")
+        lines.extend(tail)
+
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
