@@ -42,7 +42,20 @@ def _skip_when_no_stress(request):
         pytest.skip("--no-stress flag set")
 
 
+from pathlib import Path
+
 from PySide6 import QtWidgets
+
+# Smallest reference folder with multiple block types (3 .txt files).
+SAMPLE_FOLDER = (
+    Path(__file__).resolve().parent.parent
+    / "craftgraph"
+    / "cc3_reference_files"
+    / "original-source"
+    / "CustomCraft3"
+    / "SampleFiles"
+    / "EquipmentSalvage"
+)
 
 
 @pytest.fixture(scope="session")
@@ -121,4 +134,22 @@ class TestContextMenuStress:
         assert delta < THRESHOLDS["context_menu_x50"], (
             f"Context menu leaked {delta} HWNDs over 50 spawns "
             f"(threshold {THRESHOLDS['context_menu_x50']})"
+        )
+
+
+class TestFolderOpenCloseStress:
+    def test_open_close_folder_x10(self, window):
+        assert SAMPLE_FOLDER.is_dir(), f"Sample folder missing: {SAMPLE_FOLDER}"
+
+        def scenario():
+            for _ in range(10):
+                window.load_recipes(SAMPLE_FOLDER)
+                # `_tear_down_tabs` mirrors what users see when they switch
+                # folders -- clears the per-file tab state without re-parsing.
+                window._tear_down_tabs()
+
+        delta = _delta_around(window, scenario)
+        assert delta < THRESHOLDS["open_close_folder_x10"], (
+            f"Folder open/close leaked {delta} HWNDs over 10 cycles "
+            f"(threshold {THRESHOLDS['open_close_folder_x10']})"
         )
