@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from craftgraph import app_dirs, config
+from craftgraph import app_dirs, config, hwnd_diag
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
@@ -4073,29 +4073,31 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._show_editor()
 
     def _on_open_folder(self) -> None:
-        directory = QtWidgets.QFileDialog.getExistingDirectory(
-            self,
-            "Open Recipe Directory",
-            self._cc3_working_dir(),
-        )
-        if directory:
-            self.load_recipes(Path(directory))
-            self._recent.add(Path(directory), "folder")
-            self._rebuild_recent_menu()
-            self._show_editor()
+        with hwnd_diag.measure("open_folder"):
+            directory = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                "Open Recipe Directory",
+                self._cc3_working_dir(),
+            )
+            if directory:
+                self.load_recipes(Path(directory))
+                self._recent.add(Path(directory), "folder")
+                self._rebuild_recent_menu()
+                self._show_editor()
 
     def _on_open_file(self) -> None:
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Open Recipe File",
-            self._cc3_working_dir(),
-            "CC3 Recipe Files (*.txt);;All Files (*)",
-        )
-        if file_path:
-            self.load_recipes(Path(file_path))
-            self._recent.add(Path(file_path).parent, "folder")
-            self._rebuild_recent_menu()
-            self._show_editor()
+        with hwnd_diag.measure("open_file"):
+            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Open Recipe File",
+                self._cc3_working_dir(),
+                "CC3 Recipe Files (*.txt);;All Files (*)",
+            )
+            if file_path:
+                self.load_recipes(Path(file_path))
+                self._recent.add(Path(file_path).parent, "folder")
+                self._rebuild_recent_menu()
+                self._show_editor()
 
     def _on_open_project(self) -> None:
         """Show a file dialog and open the selected .craftgraph project."""
@@ -4440,29 +4442,30 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_settings(self) -> None:
         """Show the Settings dialog and apply changed settings."""
-        dialog = _SettingsDialog(
-            self,
-            backup_on_save=self._backup_on_save,
-            auto_save_enabled=self._auto_save_enabled,
-            auto_save_interval=self._auto_save_interval,
-            default_project_folder=self._default_project_folder,
-            subnautica_cc3_path=self._subnautica_cc3_path,
-            recent_max_entries=self._recent.max_entries,
-            on_launch=str(app_dirs.load_setting("on_launch", "welcome")),
-            check_for_updates=self._check_for_updates,
-            theme=active_theme(),
-            node_editor=self._ne_settings,
-            code_editor=self._ce_settings,
-            autocomplete=self._ac_settings,
-            file_watching=self._fw_settings,
-            keybindings=self._kb_settings,
-            project_custom_ids=(
-                self._effective_custom_ids() if self._project is not None else None
-            ),
-        )
-        dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
-        dialog.exec_()
-        self._apply_settings_from_dialog(dialog)
+        with hwnd_diag.measure("open_settings"):
+            dialog = _SettingsDialog(
+                self,
+                backup_on_save=self._backup_on_save,
+                auto_save_enabled=self._auto_save_enabled,
+                auto_save_interval=self._auto_save_interval,
+                default_project_folder=self._default_project_folder,
+                subnautica_cc3_path=self._subnautica_cc3_path,
+                recent_max_entries=self._recent.max_entries,
+                on_launch=str(app_dirs.load_setting("on_launch", "welcome")),
+                check_for_updates=self._check_for_updates,
+                theme=active_theme(),
+                node_editor=self._ne_settings,
+                code_editor=self._ce_settings,
+                autocomplete=self._ac_settings,
+                file_watching=self._fw_settings,
+                keybindings=self._kb_settings,
+                project_custom_ids=(
+                    self._effective_custom_ids() if self._project is not None else None
+                ),
+            )
+            dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
+            dialog.exec_()
+            self._apply_settings_from_dialog(dialog)
 
     def _apply_settings_from_dialog(self, dialog: "_SettingsDialog") -> None:
         """Read current values from *dialog* and apply + persist them.
@@ -5100,39 +5103,40 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_watcher_rebuild(self, cycles: list[list[str]]) -> None:
         """Handle a watcher-triggered reload with notification settings."""
-        fw = self._fw_settings
+        with hwnd_diag.measure("watcher_rebuild"):
+            fw = self._fw_settings
 
-        if fw.on_external_change == "ignore":
-            return
-
-        if fw.on_external_change == "prompt":
-            reply = QtWidgets.QMessageBox.question(
-                self,
-                "External Change Detected",
-                "Recipe files changed on disk. Reload?",
-                QtWidgets.QMessageBox.StandardButton.Yes
-                | QtWidgets.QMessageBox.StandardButton.No,
-                QtWidgets.QMessageBox.StandardButton.Yes,
-            )
-            if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+            if fw.on_external_change == "ignore":
                 return
 
-        self.load_recipes(self._source_path)
+            if fw.on_external_change == "prompt":
+                reply = QtWidgets.QMessageBox.question(
+                    self,
+                    "External Change Detected",
+                    "Recipe files changed on disk. Reload?",
+                    QtWidgets.QMessageBox.StandardButton.Yes
+                    | QtWidgets.QMessageBox.StandardButton.No,
+                    QtWidgets.QMessageBox.StandardButton.Yes,
+                )
+                if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                    return
 
-        fw = self._fw_settings
-        if fw.notify_status_bar:
-            total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
-            total_cycles = sum(t.cycle_count for t in self._file_tabs)
-            cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ""
-            self.statusBar().showMessage(
-                f"Reloaded {total_nodes} nodes from {len(self._file_tabs)} file(s){cycle_msg}"
-            )
+            self.load_recipes(self._source_path)
 
-        if fw.notify_flash_tab:
-            self._flash_tab_bar()
+            fw = self._fw_settings
+            if fw.notify_status_bar:
+                total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
+                total_cycles = sum(t.cycle_count for t in self._file_tabs)
+                cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ""
+                self.statusBar().showMessage(
+                    f"Reloaded {total_nodes} nodes from {len(self._file_tabs)} file(s){cycle_msg}"
+                )
 
-        if fw.notify_sound_on_cycle and cycles:
-            QtWidgets.QApplication.beep()
+            if fw.notify_flash_tab:
+                self._flash_tab_bar()
+
+            if fw.notify_sound_on_cycle and cycles:
+                QtWidgets.QApplication.beep()
 
     def _flash_tab_bar(self) -> None:
         """Briefly highlight the tab bar to signal an external change."""

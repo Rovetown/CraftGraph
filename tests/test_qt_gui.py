@@ -5898,3 +5898,61 @@ class TestHwndCounterMenuToggle:
         finally:
             win.close()
             win.deleteLater()
+
+
+class TestMeasureWrappers:
+    def test_open_settings_writes_log_entry(self, window, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import _SettingsDialog
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        # Stub both `exec` and the deprecated `exec_` so the test does not
+        # block on QDialog.exec.
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: 0)
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: 0)
+
+        window._on_settings()
+        log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
+        assert "action=open_settings" in log
+
+    def test_open_folder_writes_log_entry(self, window, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        recipes = tmp_path / "recipes"
+        recipes.mkdir()
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getExistingDirectory",
+            staticmethod(lambda *a, **kw: str(recipes)),
+        )
+        window._on_open_folder()
+        log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
+        assert "action=open_folder" in log
+
+    def test_open_file_writes_log_entry(self, window, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        # Cancel the dialog (returns ("", "")) so no real file load happens.
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            staticmethod(lambda *a, **kw: ("", "")),
+        )
+        window._on_open_file()
+        log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
+        assert "action=open_file" in log
+
+    def test_watcher_rebuild_writes_log_entry(self, window, tmp_path, monkeypatch):
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        # Force the "ignore" branch so no real reload happens; the wrapper
+        # still records the entry/exit.
+        window._fw_settings = window._fw_settings.__class__(
+            **{**window._fw_settings.__dict__, "on_external_change": "ignore"},
+        )
+        window._on_watcher_rebuild([])
+        log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
+        assert "action=watcher_rebuild" in log
