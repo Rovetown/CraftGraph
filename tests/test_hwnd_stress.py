@@ -85,3 +85,24 @@ class TestStressScaffold:
             "watcher_rebuild_x10",
         }
         assert set(THRESHOLDS.keys()) == expected
+
+
+class TestSettingsDialogStress:
+    def test_open_close_settings_x20(self, window, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        # Auto-accept each dialog instead of blocking. Both `exec` and the
+        # deprecated `exec_` are stubbed because the real handler still uses
+        # the legacy form.
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: 1)
+        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: 1)
+
+        def scenario():
+            for _ in range(20):
+                window._on_settings()
+
+        delta = _delta_around(window, scenario)
+        assert delta < THRESHOLDS["open_close_settings_x20"], (
+            f"Settings dialog leaked {delta} HWNDs over 20 opens "
+            f"(threshold {THRESHOLDS['open_close_settings_x20']})"
+        )
