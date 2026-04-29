@@ -46,14 +46,8 @@ Each fix is small, scoped, lands behind a Phase 1 stress test.
 
 ### Phase 3 -- Preventive hardening
 
-- [ ] **A. `AA_DontCreateNativeWidgetSiblings` flag.** One line in `craftgraph/cli.py` (`launch_qt_gui` entry) before `QApplication(sys.argv)`:
-  ```python
-  QtCore.QCoreApplication.setAttribute(
-      QtCore.Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings,
-  )
-  ```
-  Verify no regression on existing widgets (most embed via `QGraphicsProxyWidget` which does not trigger native sibling creation anyway, but confirm via Phase 1 stress tests).
-- [ ] **B. Parenting audit.** Grep `craftgraph/qt_*.py`, `welcome.py`, `tooltips.py`, `minimap.py` for `Q[A-Z][a-zA-Z]*\(` constructors not stored on `self.*` and not passed `parent=`. For each hit: either `self._field = ...` with explicit parent, or document why local lifetime is intentional. Mostly mechanical; deliverable is one commit + a brief audit table noting which were already fine vs. fixed.
+- [DONE] **A. `AA_DontCreateNativeWidgetSiblings` flag.** _Set on `QtCore.QCoreApplication` in `launch_qt_gui()` immediately before constructing the first `QApplication`. Removes a class of accidental native HWND growth at scale. Existing stress tests pass at the previously ratcheted thresholds; live snapshot for a fresh window with EquipmentSalvage loaded reports 395 USER / 206 GDI / 602 widgets, well within Windows soft caps._
+- [DONE] **B. Parenting audit.** _Targeted review of leak-prone QObject constructors across `qt_gui.py`, `qt_nodes.py`, `qt_variable_nodes.py`, `welcome.py`, `tooltips.py`, `minimap.py`. Findings: zero `QMenu()` direct constructions; all `QDialog`/`QMessageBox`/`QInputDialog` calls pass an explicit parent (1 site); all 5 `QTimer` constructions pass `self` as parent; both `QCompleter` calls pass `parent or self`. The remaining ~326 `Qt*.Q*` hits in `qt_gui.py` are dominated by value objects (`QColor`, `QPen`, `QRectF`, `QPointF`, `QPixmap`) or widgets that are immediately added to a layout via `addWidget`/`addLayout` (which reparents). The single intentional unparented `QWidget()` is the module-level `_GROUPBOX_PARENT` singleton in `qt_nodes.py:102`, used as a hidden parent for `_NodeGroupBox` instances; it has process lifetime and is correctly annotated. No code changes were needed -- the existing patterns are sound._
 
 ### After HWND: performance / multithreading
 
