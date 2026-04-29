@@ -29,7 +29,7 @@ pytestmark = [
 # Per-scenario thresholds. Tuned loose initially; tighten as Phase 2 fixes land.
 THRESHOLDS = {
     "open_close_settings_x20": 100,
-    "context_menu_x50": 50,
+    "context_menu_x50": 25,
     "open_close_folder_x10": 200,
     "tab_switch_x30": 50,
     "watcher_rebuild_x10": 100,
@@ -41,7 +41,7 @@ THRESHOLDS = {
 # which counter they show up in.
 WIDGET_THRESHOLDS = {
     "open_close_settings_x20": 150,
-    "context_menu_x50": 100,
+    "context_menu_x50": 25,
     "open_close_folder_x10": 275,
     "tab_switch_x30": 100,
     "watcher_rebuild_x10": 200,
@@ -160,6 +160,10 @@ class TestContextMenuStress:
         assert delta_snap.gui_objects < THRESHOLDS["context_menu_x50"], (
             f"Context menu leaked {delta_snap.gui_objects} HWNDs over 50 spawns "
             f"(threshold {THRESHOLDS['context_menu_x50']})"
+        )
+        assert delta_snap.widget_count < WIDGET_THRESHOLDS["context_menu_x50"], (
+            f"Context menu leaked {delta_snap.widget_count} widgets over 50 spawns "
+            f"(threshold {WIDGET_THRESHOLDS['context_menu_x50']})"
         )
 
 
