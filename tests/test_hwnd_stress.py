@@ -40,7 +40,7 @@ THRESHOLDS = {
 # are non-toplevel. Keep both so future leaks are caught regardless of
 # which counter they show up in.
 WIDGET_THRESHOLDS = {
-    "open_close_settings_x20": 200,
+    "open_close_settings_x20": 150,
     "context_menu_x50": 100,
     "open_close_folder_x10": 500,
     "tab_switch_x30": 100,
