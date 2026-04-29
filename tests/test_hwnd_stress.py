@@ -179,6 +179,10 @@ class TestFolderOpenCloseStress:
             f"Folder open/close leaked {delta_snap.gui_objects} HWNDs over 10 cycles "
             f"(threshold {THRESHOLDS['open_close_folder_x10']})"
         )
+        assert delta_snap.widget_count < WIDGET_THRESHOLDS["open_close_folder_x10"], (
+            f"Folder open/close leaked {delta_snap.widget_count} widgets over 10 cycles "
+            f"(threshold {WIDGET_THRESHOLDS['open_close_folder_x10']})"
+        )
 
 
 class TestTabSwitchStress:
