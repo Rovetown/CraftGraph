@@ -7094,6 +7094,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 tab.parse_timer.deleteLater()
                 tab.parse_timer = None
 
+            # NodeGraphQt's per-viewer TabSearch popup is parented to nothing,
+            # so the natural QWidget destruction chain leaves it orphaned.
+            viewer = tab.graph.viewer()
+            search_widget = getattr(viewer, "_search_widget", None)
+            if search_widget is not None:
+                search_widget.setParent(None)
+                search_widget.deleteLater()
+
             tab.model_to_node.clear()
             tab.orphan_nodes.clear()
             tab.user_positions.clear()

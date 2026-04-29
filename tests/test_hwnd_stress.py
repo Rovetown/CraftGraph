@@ -31,6 +31,7 @@ THRESHOLDS = {
     "open_close_settings_x20": 100,
     "context_menu_x50": 25,
     "open_close_folder_x10": 200,
+    "multi_folder_swap_x3": 200,
     "tab_switch_x30": 50,
     "watcher_rebuild_x10": 100,
 }
@@ -42,7 +43,8 @@ THRESHOLDS = {
 WIDGET_THRESHOLDS = {
     "open_close_settings_x20": 150,
     "context_menu_x50": 25,
-    "open_close_folder_x10": 275,
+    "open_close_folder_x10": 200,
+    "multi_folder_swap_x3": 150,
     "tab_switch_x30": 100,
     "watcher_rebuild_x10": 200,
 }
@@ -58,16 +60,19 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtWidgets
 
-# Smallest reference folder with multiple block types (3 .txt files).
-SAMPLE_FOLDER = (
+_SAMPLE_FILES_DIR = (
     Path(__file__).resolve().parent.parent
     / "craftgraph"
     / "cc3_reference_files"
     / "original-source"
     / "CustomCraft3"
     / "SampleFiles"
-    / "EquipmentSalvage"
 )
+
+# Smallest reference folder with multiple block types (3 .txt files).
+SAMPLE_FOLDER = _SAMPLE_FILES_DIR / "EquipmentSalvage"
+# Second folder used by the multi-folder swap stress test.
+SAMPLE_FOLDER_B = _SAMPLE_FILES_DIR / "VModFabricator"
 
 
 @pytest.fixture(scope="session")
@@ -115,6 +120,7 @@ class TestStressScaffold:
             "open_close_settings_x20",
             "context_menu_x50",
             "open_close_folder_x10",
+            "multi_folder_swap_x3",
             "tab_switch_x30",
             "watcher_rebuild_x10",
         }
@@ -186,6 +192,29 @@ class TestFolderOpenCloseStress:
         assert delta_snap.widget_count < WIDGET_THRESHOLDS["open_close_folder_x10"], (
             f"Folder open/close leaked {delta_snap.widget_count} widgets over 10 cycles "
             f"(threshold {WIDGET_THRESHOLDS['open_close_folder_x10']})"
+        )
+
+
+class TestMultiFolderSwapStress:
+    def test_multi_folder_swap_x3(self, window):
+        assert SAMPLE_FOLDER.is_dir(), f"Sample folder A missing: {SAMPLE_FOLDER}"
+        assert SAMPLE_FOLDER_B.is_dir(), f"Sample folder B missing: {SAMPLE_FOLDER_B}"
+
+        def scenario():
+            for _ in range(3):
+                window.load_recipes(SAMPLE_FOLDER)
+                window.load_recipes(SAMPLE_FOLDER_B)
+                window.load_recipes(SAMPLE_FOLDER)
+            window._tear_down_tabs()
+
+        delta_snap = _delta_around(window, scenario)
+        assert delta_snap.gui_objects < THRESHOLDS["multi_folder_swap_x3"], (
+            f"Multi-folder swap leaked {delta_snap.gui_objects} HWNDs over 3 swaps "
+            f"(threshold {THRESHOLDS['multi_folder_swap_x3']})"
+        )
+        assert delta_snap.widget_count < WIDGET_THRESHOLDS["multi_folder_swap_x3"], (
+            f"Multi-folder swap leaked {delta_snap.widget_count} widgets over 3 swaps "
+            f"(threshold {WIDGET_THRESHOLDS['multi_folder_swap_x3']})"
         )
 
 
