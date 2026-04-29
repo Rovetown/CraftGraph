@@ -33,7 +33,7 @@ THRESHOLDS = {
     "open_close_folder_x10": 200,
     "multi_folder_swap_x3": 200,
     "tab_switch_x30": 50,
-    "watcher_rebuild_x10": 100,
+    "watcher_rebuild_x10": 25,
 }
 
 # Widget-count thresholds. The Settings dialog leak surfaced as widget
@@ -46,7 +46,7 @@ WIDGET_THRESHOLDS = {
     "open_close_folder_x10": 200,
     "multi_folder_swap_x3": 150,
     "tab_switch_x30": 100,
-    "watcher_rebuild_x10": 200,
+    "watcher_rebuild_x10": 225,
 }
 
 
@@ -256,4 +256,8 @@ class TestWatcherRebuildStress:
         assert delta_snap.gui_objects < THRESHOLDS["watcher_rebuild_x10"], (
             f"Watcher rebuild leaked {delta_snap.gui_objects} HWNDs over 10 cycles "
             f"(threshold {THRESHOLDS['watcher_rebuild_x10']})"
+        )
+        assert delta_snap.widget_count < WIDGET_THRESHOLDS["watcher_rebuild_x10"], (
+            f"Watcher rebuild leaked {delta_snap.widget_count} widgets over 10 cycles "
+            f"(threshold {WIDGET_THRESHOLDS['watcher_rebuild_x10']})"
         )
