@@ -7484,6 +7484,9 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
     """
     app = QtWidgets.QApplication.instance()
     if app is None:
+        QtCore.QCoreApplication.setAttribute(
+            QtCore.Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings,
+        )
         app = QtWidgets.QApplication(sys.argv)
 
     # Set application icon (taskbar, title bar, ALT+TAB).
