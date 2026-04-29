@@ -7082,15 +7082,22 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     # -- Recipe loading -------------------------------------------------------
 
     def _tear_down_tabs(self) -> None:
-        """Disconnect and remove all existing file tabs."""
+        """Disconnect, destroy, and remove all existing file tabs."""
+        if hasattr(self, "_minimap") and self._minimap is not None:
+            self._minimap.detach()
+
         for tab in self._file_tabs:
             if tab.ui_handler is not None:
                 tab.ui_handler.disconnect()
             if tab.parse_timer is not None:
                 tab.parse_timer.stop()
-            tab.graph.clear_session()
+                tab.parse_timer.deleteLater()
+                tab.parse_timer = None
 
-        self._file_tabs.clear()
+            tab.model_to_node.clear()
+            tab.orphan_nodes.clear()
+            tab.user_positions.clear()
+
         self._tab_bar.blockSignals(True)
         while self._tab_bar.count():
             self._tab_bar.removeTab(0)
@@ -7099,10 +7106,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         while self._graph_stack.count():
             w = self._graph_stack.widget(0)
             self._graph_stack.removeWidget(w)
+            w.setParent(None)
+            w.deleteLater()
 
         while self._editor_stack.count():
             w = self._editor_stack.widget(0)
             self._editor_stack.removeWidget(w)
+            w.setParent(None)
+            w.deleteLater()
+
+        self._file_tabs.clear()
 
     @staticmethod
     def _apply_node_header_tooltip(node: object) -> None:
