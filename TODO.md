@@ -51,7 +51,108 @@ Each fix is small, scoped, lands behind a Phase 1 stress test.
 
 ### After HWND: performance / multithreading
 
-Tracked separately. Not started until Phases 1-3 land and stress tests stay green.
+Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. This section captures the full menu of optimization vectors so brainstorming can pick up where it left off.
+
+**Tier reference workloads:**
+- **Tier B (small):** EquipmentSalvage (~165 lines)
+- **Tier A (typical):** real-mod-examples (~50 recipes, 1240 lines)
+- **Tier C (worst):** the 894-node reference set
+
+#### v1 scope decisions (resolved)
+
+- **Acceptance target:** **tier A only** (real-mod-examples). Tier B comes along for free; tier C is informational measurement only, no hard pass/fail gate.
+- **Sections in scope:** 1-8, with three items demoted to Section 9 because their wins are tier-C-justified and don't pay off at tier A: **2.5 rustworkx**, **5.3 LOD on zoom**, **6.2 lazy widget allocation**. They keep escalation triggers in Section 9.
+- **Risk-tiered phasing within v1:**
+  - **Phase 1 -- No-brainers:** measurement infra + cheap wins that can't harm. 13 items spread across all sections. Lands first to establish baseline + ship safe gains.
+  - **Phase 2 -- Tier-A targets:** real concurrency, native compile, architectural changes. 9 items. Lands after Phase 1 so each is gated on profiler data justifying the cost.
+  - 3.4 (free-threaded Python 3.14) is **tracked only**, not implemented -- monitor PySide6 wheel compatibility.
+- **DONE-marking convention:** v1 tables get a `Status` column. Values: `--` not started, `WIP` in progress, `DONE` landed with profiler-verified improvement. Mirrors HWND Phase 2 style. Section 9 entries do not get the column.
+
+#### 1. Foundation — measure first  _(Phase 1 -- all entries)_
+
+| # | Item | Where in CraftGraph | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1.1 | cProfile harness with tiered workloads (B/A/C) | tests/test_perf_*.py analog of test_hwnd_stress.py | low | establishes truth before tuning | -- |
+| 1.2 | perf_diag.measure(action) analog of hwnd_diag.measure | wraps _open_folder, _on_watcher_rebuild, code-edit handler | low | per-action wall-clock + frame budget | -- |
+| 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | -- |
+| 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | -- |
+| 1.5 | Release-vs-dev baseline: pyinstaller --onefile build, run same workload | one-time | medium | quantifies how much "feels slow" is the dev interpreter | -- |
+
+#### 2. Algorithmic / data structure
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 2.1 | Hash-based file change detection (mtime + size + sha1 fast path) before reparse | 1 | watcher.py -> parser.py boundary | low | watcher rebuild only re-parses changed files | -- |
+| 2.2 | Incremental graph rebuild (model diff, not full reload) | 2 | graph.py, _on_watcher_rebuild | high | watcher hitch on save vanishes | -- |
+| 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | -- |
+| 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | -- |
+| 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | -- |
+
+#### 3. Concurrency (Python-level)
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 3.1 | QThread + worker for parser signals (anchor) | 2 | _open_folder, _on_watcher_rebuild | medium | folder open no longer freezes UI | -- |
+| 3.2 | QThreadPool + QRunnable for parallel parse | 2 | parser.py | medium | tier A folder load parallelizes | -- |
+| 3.3 | ProcessPoolExecutor with persistent worker pool | 2 | parser orchestrator | medium | bypasses GIL on multi-core | -- |
+| 3.4 | Python 3.14 free-threaded build (no-GIL) | track | runtime selection | high | parallel parse without process overhead -- track only, gated on PySide6 wheel compat | -- |
+| 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | -- |
+| 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | -- |
+
+#### 4. Native code / compiled extensions
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | -- |
+| 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | -- |
+
+> **Parser native-compilation ladder.** 4.1, 9.3, 9.4, 9.5 all attack the same target (parser CPU time). Pick **at most one** rung. The escalation rule lives in Section 9: only climb if profiler proves the previous rung was not enough. Replace, don't stack -- one parser implementation at a time.
+
+#### 5. GPU / rendering
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | -- |
+| 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | -- |
+
+#### 6. Qt/UI-specific
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | -- |
+| 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | -- |
+
+#### 7. Architectural
+
+| # | Item | Phase | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | -- |
+| 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | -- |
+
+#### 8. Build / runtime mode  _(Phase 1 -- all entries)_
+
+| # | Item | Where | Cost | Benefit | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 8.1 | PYTHONOPTIMIZE=2 for release builds | PyInstaller spec | low | strips assertions, docstrings | -- |
+| 8.2 | uv run with --no-dev for smoke tests | dev workflow | low | catches dev-mode-only artifacts | -- |
+
+#### 9. Post-optimization ideas (revisit after sections 1-8 land)
+
+Items here are explicitly *out of scope* for the first performance pass. They go in only if the corresponding pathology shows up in profiler data after the main work lands. Documented so the option is not lost.
+
+| # | Item | Where | Cost | Benefit | Trigger to revisit |
+|---|---|---|---|---|---|
+| 9.1 | Spatial index (R-tree via `rtree`) for hit-testing nodes _(was 2.8, optional)_ | NodeGraphQt scene | medium | O(log N) hit-test vs O(N) at tier C | Only if Qt's built-in `BspTreeIndex` proves insufficient on the 894-node reference set after section 5/6 land. Verify `setItemIndexMethod(BspTreeIndex)` first. |
+| 9.2 | Async I/O for file reads (`asyncio.to_thread`, `aiofiles`) _(was 3.7, optional)_ | parser entry | low | helps when scanning many files | Only if profiler shows file I/O dominates parse cost on tier C (>50 files). Prefer `concurrent.futures.ThreadPoolExecutor` if revisited -- avoids the asyncio/Qt event-loop bridge. |
+| 9.3 | Cython annotation of parser hot loops _(was 4.2, parser ladder rung 2)_ | `parser.py` `parse_blocks()` | medium | granular control over typed locals on inner-most loops | Only escalate from 4.1 (mypyc) if mypyc rejects code or measurable parser time remains after compile. Source files become `.pyx`, divergent from rest of codebase. Replaces 4.1, does not stack. |
+| 9.4 | Rust parser via PyO3 + maturin _(was 4.3, parser ladder rung 3)_ | new `craftgraph_parser_rs/` | high | 10-50x parse speed; cross-platform wheels via `cibuildwheel` | Only escalate if 4.1 and 9.3 are insufficient and profiler still pins parser as >50% of folder-load wall-clock at tier C. Replaces the Python parser entirely -- do not maintain two implementations in parallel. |
+| 9.5 | C++ extension via pybind11 _(was 4.4, last-resort rung)_ | parser hot path | high | comparable speedup to Rust | **Last resort** if 4.1, 9.3, and 9.4 all fail to deliver (e.g. Rust toolchain proves untenable for distribution). C++ has no memory safety, no clear advantage over Rust today; only consider if every other rung is blocked. |
+| 9.6 | Floating-input refactor _(was 6.1, inline-widget ladder rung 2)_ | `qt_nodes.py` + every node subclass | high | ~90% widget reduction at tier C; faster paint as bonus | Escalate from 6.2 (lazy widgets) only if profiler/HWND data still shows proxy widgets dominating cost. Major rewrite of focus, autocomplete, undo, drag-drop. **Belongs in its own design cycle** -- reference, do not bundle into perf spec. Already documented in TODO.md "HWND Scaling -- Future Architectural Options". |
+| 9.7 | Diff-based code-edit reapply _(was 6.4, optional)_ | parser | medium | only re-parses changed lines; tier-C typing in big files no longer rebuilds whole tab | Trigger to revisit: profiler shows full reparse > 50ms on tier C typing after 6.3 (throttle) and 3.6 (time-slicing) land. Requires partial-reparse support in parser; serializer round-trip becomes harder. |
+| 9.8 | Background pre-build of inactive tab graphs _(was 7.1, optional)_ | `qt_gui.py` tab manager | medium | tab switch instant after pre-build completes | NodeGraphQt is not thread-safe -- nodes must be created on the main thread, so this isn't true off-thread work. Covered in v1 by 2.7 (background prefetch parse). Revisit only if tab switches still hitch after that lands. |
+| 9.9 | Replace NetworkX with rustworkx _(was 2.5, demoted from v1)_ | `graph.py` | medium | 5-50x on cycle/topo at tier C | Demoted because at tier A (~50 nodes) NetworkX is plenty fast and gain is negligible. Revisit if Phase 1 profiler shows graph algos are a meaningful fraction of folder-load wall-clock at tier A, or if tier C becomes a real acceptance target. |
+| 9.10 | Level-of-detail: hide widgets when zoomed out _(was 5.3, demoted from v1)_ | `qt_nodes.py` paint() | medium | tier C pan/zoom dramatic improvement | Demoted because at tier A node count, pan/zoom is bounded by total widget count, not LOD. Revisit if Phase 1 frame-time log shows pan/zoom exceeding budget at tier A, or if tier C becomes a real acceptance target. |
+| 9.11 | Lazy widget allocation _(was 6.2, demoted from v1; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | Demoted because at tier A widget count is bounded and proxy-widget cost does not dominate. Revisit if Phase 1 widget-count delta or HWND counter shows proxy widgets dominating cost at tier A. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2. |
 
 ---
 
