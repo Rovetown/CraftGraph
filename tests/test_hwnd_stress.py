@@ -42,7 +42,7 @@ THRESHOLDS = {
 WIDGET_THRESHOLDS = {
     "open_close_settings_x20": 150,
     "context_menu_x50": 100,
-    "open_close_folder_x10": 500,
+    "open_close_folder_x10": 275,
     "tab_switch_x30": 100,
     "watcher_rebuild_x10": 200,
 }
