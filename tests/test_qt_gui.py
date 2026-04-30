@@ -6007,3 +6007,44 @@ class TestLauncherInstallsLogger:
 
         assert captured.get("threshold") == 20
         assert captured.get("callback") is not None
+
+
+class TestFrameTimeOverlay:
+    def test_overlay_starts_hidden_and_shows_when_toggled(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        assert win._frame_time_overlay is None
+        win._toggle_frame_time_overlay(True)
+        assert win._frame_time_overlay is not None
+        # isVisibleTo(parent) reports the widget's own shown state
+        # without requiring the unshown parent window to be on screen.
+        assert win._frame_time_overlay.isVisibleTo(win)
+        win._toggle_frame_time_overlay(False)
+        assert not win._frame_time_overlay.isVisibleTo(win)
+
+    def test_overlay_renders_metrics(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        win._toggle_frame_time_overlay(True)
+        win._frame_time_overlay.update_metrics(fps=60.0, last_ms=10.0, p99_ms=15.0)
+        text = win._frame_time_overlay.text()
+        assert "60" in text
+        assert "10" in text
+
+    def test_view_menu_has_show_frame_time_action(self, window):
+        view_menu = window.menuBar().findChild(QtWidgets.QMenu, "view_menu")
+        assert view_menu is not None
+        labels = [a.text().replace("&", "") for a in view_menu.actions()]
+        assert any("Show Frame Time" in t for t in labels)

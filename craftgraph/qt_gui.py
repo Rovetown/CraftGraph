@@ -3200,6 +3200,29 @@ class NodeSearchBar(QtWidgets.QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Frame-time overlay (perf diagnostics, View > Show Frame Time)
+# ---------------------------------------------------------------------------
+
+
+class _FrameTimeOverlay(QtWidgets.QLabel):
+    """Floating label that shows fps / last_ms / 99p_ms in the corner."""
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setStyleSheet(
+            "background: rgba(0, 0, 0, 180); color: rgb(220, 220, 220);"
+            " padding: 4px 8px; border-radius: 3px;"
+        )
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setText("-- fps  last -- ms  99p -- ms")
+        self.adjustSize()
+
+    def update_metrics(self, *, fps: float, last_ms: float, p99_ms: float) -> None:
+        self.setText(f"{fps:.0f} fps  last {last_ms:.1f} ms  99p {p99_ms:.1f} ms")
+        self.adjustSize()
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -3239,6 +3262,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # (which has drifted to the menu item the user clicked by the time
         # the callback runs).
         self._menu_invoke_scene_pos: QtCore.QPointF | None = None
+
+        # Frame-time perf overlay (View > Show Frame Time). Lazily built.
+        self._frame_time_overlay: _FrameTimeOverlay | None = None
 
         # Node search state (inline search bar, built lazily on first use).
         self._search_bar: NodeSearchBar | None = None
@@ -3444,6 +3470,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_counter_action.toggled.connect(self._on_toggle_hwnd_counter)
         view_menu.addAction(self._hwnd_counter_action)
 
+        self._frame_overlay_action = QtGui.QAction("Show Frame &Time", self)
+        self._frame_overlay_action.setCheckable(True)
+        frame_overlay_initial = bool(
+            app_dirs.load_setting("show_frame_time_overlay", False)
+        )
+        self._frame_overlay_action.setChecked(frame_overlay_initial)
+        self._frame_overlay_action.toggled.connect(self._toggle_frame_time_overlay)
+        view_menu.addAction(self._frame_overlay_action)
+        if frame_overlay_initial:
+            self._toggle_frame_time_overlay(True)
+
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
 
@@ -3614,6 +3651,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _on_toggle_hwnd_counter(self, checked: bool) -> None:
         self._hwnd_counter.setVisible(checked)
         app_dirs.save_setting("show_hwnd_counter", checked)
+
+    def _toggle_frame_time_overlay(self, on: bool) -> None:
+        if on:
+            if self._frame_time_overlay is None:
+                self._frame_time_overlay = _FrameTimeOverlay(self)
+            self._frame_time_overlay.move(8, 8)
+            self._frame_time_overlay.show()
+            self._frame_time_overlay.raise_()
+        elif self._frame_time_overlay is not None:
+            self._frame_time_overlay.hide()
+        app_dirs.save_setting("show_frame_time_overlay", on)
 
     def _on_dump_handle_snapshot(self) -> None:
         path = hwnd_diag.snapshot_to_file()
