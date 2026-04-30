@@ -31,6 +31,19 @@ class PerfSnapshot:
         return (self.perf_counter_ns - other.perf_counter_ns) / 1_000_000.0
 
 
+FRAME_BUDGET_MS = 33.0
+
+
+def report_frame(frame_ms: float, *, budget_ms: float = FRAME_BUDGET_MS) -> None:
+    """Log a WARNING when *frame_ms* exceeds *budget_ms*; no-op otherwise."""
+    if frame_ms > budget_ms:
+        logger.warning(
+            "frame_budget_violation frame_ms=%.3f budget_ms=%.3f",
+            frame_ms,
+            budget_ms,
+        )
+
+
 @contextmanager
 def measure(action: str) -> Iterator[PerfSnapshot]:
     """Log wall-clock delta around a block.
