@@ -1543,3 +1543,33 @@ class TestDecorationOverlayCache:
         parent = QGraphicsRectItem()
         overlay = _WarningOverlay(parent)
         assert overlay.cacheMode() == QGraphicsItem.CacheMode.ItemCoordinateCache
+
+
+# ---------------------------------------------------------------------------
+# Cached pixmap renderer
+# ---------------------------------------------------------------------------
+
+
+class TestRenderSpritePixmapCache:
+    """_render_sprite_pixmap memoizes by (path, size) so repeat calls are free."""
+
+    def test_repeated_render_returns_cached_pixmap(self, qapp, tmp_path):
+        from PySide6.QtGui import QImage
+
+        from craftgraph.qt_nodes import _render_sprite_pixmap
+
+        # Write a real PNG so QPixmap actually decodes something.
+        png = tmp_path / "icon.png"
+        QImage(8, 8, QImage.Format.Format_RGB32).save(str(png), "PNG")
+        assert png.exists()
+
+        # Reset cache so this test starts clean even if other tests pre-warmed it.
+        _render_sprite_pixmap.cache_clear()
+
+        a = _render_sprite_pixmap(png, 32)
+        b = _render_sprite_pixmap(png, 32)
+
+        info = _render_sprite_pixmap.cache_info()
+        assert info.hits >= 1, f"expected cache hit on second call, got {info}"
+        # Same cached object identity proves no rerender.
+        assert a is b

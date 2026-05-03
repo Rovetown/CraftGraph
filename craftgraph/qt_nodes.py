@@ -14,6 +14,7 @@ Architecture notes:
 
 from __future__ import annotations
 
+import functools
 import uuid
 from enum import Enum
 from pathlib import Path
@@ -216,6 +217,27 @@ _REQUIRED_VALID_STYLE = _VAR_NODES.required_valid_style
 # Node type strings for port constraints (identifier + "." + ClassName)
 _FABRICATOR_TYPE = f"{IDENTIFIER}.FabricatorNode"
 _CRAFTING_TAB_TYPE = f"{IDENTIFIER}.CraftingTabNode"
+
+
+@functools.lru_cache(maxsize=256)
+def _render_sprite_pixmap(path: Path, size_px: int) -> QPixmap:
+    """Load and scale a sprite PNG, memoizing by (path, size_px).
+
+    Loading + smooth-scaling a PNG is ~1 ms each; the same icon often
+    appears on dozens of nodes (every recipe that uses Titanium gets
+    the same Titanium pixmap). Caching the rendered result skips the
+    decode + scale on repeats. Bounded at 256 entries -- well above
+    typical sprite count and trims to LRU on overflow.
+    """
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return pixmap
+    return pixmap.scaled(
+        size_px,
+        size_px,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
 
 
 class _IntEditWidget(QWidget):
@@ -664,16 +686,10 @@ class CraftGraphBaseNode(BaseNode):
             return
         if size is None:
             size = get_config().ui.sprite_size
-        pixmap = QPixmap(str(path))
+        pixmap = _render_sprite_pixmap(path, size)
         if pixmap.isNull():
             self.clear_sprite()
             return
-        pixmap = pixmap.scaled(
-            size,
-            size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
         self.view._icon_item.setPixmap(pixmap)
         self._sprite_path = path
         if self.view.scene():
