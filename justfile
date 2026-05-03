@@ -116,3 +116,19 @@ build:
 # Clean build artifacts
 clean:
     rm -rf build/ dist/ *.spec __pycache__ .mypy_cache .pytest_cache .ruff_cache
+
+# ---------------------------------------------------------------------------
+# Performance
+# ---------------------------------------------------------------------------
+
+# Run perf stress tests (Tier A asserts; B smoke; C skipped)
+perf-test *ARGS:
+    uv run --extra qt pytest tests/test_perf_stress.py -v {{ARGS}}
+
+# Run --no-dev smoke: parse Tier A workload with runtime deps only
+smoke-no-dev:
+    uv run --no-dev --extra qt python -c "from pathlib import Path; from craftgraph.parser import parse_directory; parse_directory(Path('craftgraph/cc3_reference_files/real-mod-examples')); print('smoke ok')"
+
+# Capture pre/post Phase-1 baseline numbers (no output capture)
+baseline-perf:
+    uv run --extra qt pytest tests/test_perf_stress.py -v --capture=no
