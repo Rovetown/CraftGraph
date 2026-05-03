@@ -38,6 +38,15 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Quiet third-party deprecation noise we cannot fix here. See:
+# https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+# - distutils LooseVersion: NodeGraphQt internal use, removed in Python 3.12+
+# - QMouseEvent positional args: PySide6 API moved to QPointF-only constructors
+# Our own deprecations stay visible so we catch them in CI.
+filterwarnings = [
+    "ignore:distutils Version classes are deprecated.*:DeprecationWarning",
+    "ignore:.*QMouseEvent.*marked as deprecated.*:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py314"

@@ -4015,7 +4015,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             return False
 
         dialog = QuickProjectDialog(parent=self)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return False
 
         docs_dir = app_dirs.documents_dir()
@@ -4120,7 +4120,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             cc3_dir = self._cc3_working_dir()
             default_dir = Path(cc3_dir) if cc3_dir else Path.cwd()
         dialog = NewFileDialog(parent=self, default_dir=default_dir)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         pf = ParsedFile(source_path=dialog.file_path, block_type=dialog.block_type)
@@ -4151,7 +4151,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         cc3_dir = self._cc3_working_dir()
         default_dir = Path(cc3_dir) if cc3_dir else None
         dialog = NewProjectDialog(parent=self, default_dir=default_dir)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         project_dir = dialog.project_path
@@ -4600,7 +4600,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             )
             dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
             try:
-                dialog.exec_()
+                dialog.exec()
                 self._apply_settings_from_dialog(dialog)
             finally:
                 # Without this, the dialog stays as a child of the main window
@@ -6672,7 +6672,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         visual-only (no model_ref) and has a muted grey style.
         """
         dialog = ItemIdPickerDialog(self._get_id_words(), parent=self)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         item_id = dialog.selected_id
         if not item_id:
