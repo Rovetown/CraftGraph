@@ -1523,3 +1523,23 @@ class TestLivePipeViewportUpdateMode:
         ports = node.output_ports() or node.input_ports()
         assert ports, "expected at least one port on a ModifiedRecipeNode"
         return ports[0].view
+
+
+
+# ---------------------------------------------------------------------------
+# Decoration overlay item caching
+# ---------------------------------------------------------------------------
+
+
+class TestDecorationOverlayCache:
+    """Decoration overlays use ItemCoordinateCache to skip repaint churn."""
+
+    def test_warning_overlay_uses_item_coordinate_cache(self, qapp):
+        from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+
+        from craftgraph.qt_nodes import _WarningOverlay
+
+        # Parent must outlive the overlay; QGraphicsRectItem is a cheap stand-in.
+        parent = QGraphicsRectItem()
+        overlay = _WarningOverlay(parent)
+        assert overlay.cacheMode() == QGraphicsItem.CacheMode.ItemCoordinateCache

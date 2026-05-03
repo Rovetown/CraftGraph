@@ -546,6 +546,9 @@ class _WarningOverlay(QGraphicsItem):
         self.setZValue(Z_VAL_NODE_WIDGET + 5)
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
+        # Static decoration: cache the painted pixmap in item coordinates so
+        # repaints during pan/zoom skip the painter path entirely.
+        self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
 
     def boundingRect(self) -> QRectF:
         s = self.SIZE
