@@ -1,0 +1,78 @@
+# CraftGraph HWND snapshot 2026-05-03T22:08:55
+gui_objects=3270
+gdi_objects=1634
+widget_count=3144
+
+Top widget classes:
+  _NodeGroupBox: 807
+  QLineEdit: 673
+  QWidget: 473
+  QScrollBar: 310
+  QPushButton: 153
+  QListView: 139
+  QComboBox: 131
+  QFrame: 131
+  _IntEditWidget: 75
+  BaseMenu: 63
+  QLabel: 40
+  QToolButton: 25
+  QMenu: 13
+  QStackedWidget: 10
+  _RecentEntryItem: 10
+  QAbstractButton: 9
+  QMenuBar: 8
+  QTabBar: 8
+  NodeGraphWidget: 7
+  LineNumberArea: 7
+
+Recent hwnd.log entries:
+action=open_file before=759 after=759 delta=+0 widgets=+0
+action=open_folder before=817 after=817 delta=+0 widgets=+0
+action=open_folder before=820 after=820 delta=+0 widgets=+40
+action=open_settings before=850 after=850 delta=+0 widgets=+473
+action=open_settings before=854 after=854 delta=+0 widgets=+473
+action=open_settings before=920 after=920 delta=+0 widgets=+473
+action=watcher_rebuild before=958 after=959 delta=+1 widgets=+64
+action=watcher_rebuild before=962 after=962 delta=+0 widgets=+64
+action=watcher_rebuild before=965 after=965 delta=+0 widgets=+64
+action=watcher_rebuild before=968 after=967 delta=-1 widgets=+64
+action=watcher_rebuild before=970 after=971 delta=+1 widgets=+64
+action=watcher_rebuild before=974 after=974 delta=+0 widgets=+64
+action=open_settings before=71 after=71 delta=+0 widgets=+473
+action=open_settings before=74 after=74 delta=+0 widgets=+473
+action=open_settings before=716 after=717 delta=+1 widgets=+473
+action=open_settings before=735 after=735 delta=+0 widgets=+473
+action=open_folder before=750 after=750 delta=+0 widgets=+0
+action=open_folder before=753 after=753 delta=+0 widgets=+0
+action=open_file before=756 after=756 delta=+0 widgets=+0
+action=open_file before=759 after=759 delta=+0 widgets=+0
+action=open_folder before=817 after=817 delta=+0 widgets=+0
+action=open_folder before=820 after=820 delta=+0 widgets=+40
+action=open_settings before=850 after=850 delta=+0 widgets=+473
+action=open_settings before=854 after=854 delta=+0 widgets=+473
+action=open_settings before=920 after=920 delta=+0 widgets=+473
+action=watcher_rebuild before=958 after=959 delta=+1 widgets=+64
+action=watcher_rebuild before=962 after=962 delta=+0 widgets=+64
+action=watcher_rebuild before=965 after=965 delta=+0 widgets=+64
+action=watcher_rebuild before=968 after=967 delta=-1 widgets=+64
+action=watcher_rebuild before=970 after=971 delta=+1 widgets=+64
+action=watcher_rebuild before=974 after=974 delta=+0 widgets=+64
+action=open_settings before=110 after=110 delta=+0 widgets=+473
+action=open_settings before=113 after=113 delta=+0 widgets=+473
+action=open_settings before=738 after=739 delta=+1 widgets=+473
+action=open_settings before=757 after=757 delta=+0 widgets=+473
+action=open_folder before=772 after=772 delta=+0 widgets=+0
+action=open_folder before=775 after=775 delta=+0 widgets=+0
+action=open_file before=778 after=778 delta=+0 widgets=+0
+action=open_file before=781 after=781 delta=+0 widgets=+0
+action=open_folder before=839 after=839 delta=+0 widgets=+0
+action=open_folder before=842 after=842 delta=+0 widgets=+40
+action=open_settings before=872 after=872 delta=+0 widgets=+473
+action=open_settings before=876 after=876 delta=+0 widgets=+473
+action=open_settings before=942 after=926 delta=-16 widgets=+473
+action=watcher_rebuild before=964 after=965 delta=+1 widgets=+64
+action=watcher_rebuild before=968 after=968 delta=+0 widgets=+64
+action=watcher_rebuild before=971 after=971 delta=+0 widgets=+64
+action=watcher_rebuild before=974 after=973 delta=-1 widgets=+64
+action=watcher_rebuild before=976 after=977 delta=+1 widgets=+64
+action=watcher_rebuild before=980 after=980 delta=+0 widgets=+64
