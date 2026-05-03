@@ -6163,3 +6163,40 @@ class TestPerfMeasureWiring:
         win._apply_code_editor_text_for(win._file_tabs[0])
 
         assert "apply_code_editor_text" in actions
+
+
+class TestDumpMemorySnapshot:
+    """Help > Dump Memory Snapshot writes a file under diagnostics/."""
+
+    def test_dump_memory_action_writes_file(self, qapp, tmp_path, monkeypatch):
+        import tracemalloc
+
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        tracemalloc.start()
+        try:
+            win = CraftGraphWindow()
+            win._on_dump_memory_snapshot()
+        finally:
+            tracemalloc.stop()
+
+        diag_dir = tmp_path / "diagnostics"
+        files = list(diag_dir.glob("mem_*.txt"))
+        assert files, f"expected mem_*.txt in {diag_dir}, found nothing"
+
+    def test_dump_memory_action_in_help_menu(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        menus = win.menuBar().findChildren(QtWidgets.QMenu)
+        help_menu = next(m for m in menus if "Help" in m.title())
+        labels = [a.text().replace("&", "") for a in help_menu.actions()]
+        assert any("Memory Snapshot" in t for t in labels)

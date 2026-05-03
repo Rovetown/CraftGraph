@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from craftgraph import app_dirs, config, hwnd_diag, perf_diag
+from craftgraph import app_dirs, config, hwnd_diag, mem_diag, perf_diag
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
@@ -3498,6 +3498,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._dump_hwnd_action.triggered.connect(self._on_dump_handle_snapshot)
         help_menu.addAction(self._dump_hwnd_action)
 
+        self._dump_memory_action = QtGui.QAction("Dump &Memory Snapshot...", self)
+        self._dump_memory_action.triggered.connect(self._on_dump_memory_snapshot)
+        help_menu.addAction(self._dump_memory_action)
+
         help_menu.addSeparator()
 
         about_action = QtGui.QAction("&About CraftGraph", self)
@@ -3686,6 +3690,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _on_dump_handle_snapshot(self) -> None:
         path = hwnd_diag.snapshot_to_file()
         self.statusBar().showMessage(f"Handle snapshot written to {path}", 5000)
+
+    def _on_dump_memory_snapshot(self) -> None:
+        from datetime import datetime
+
+        diag_dir = app_dirs.log_dir() / "diagnostics"
+        path = diag_dir / f"mem_{datetime.now():%Y%m%d_%H%M%S}.txt"
+        mem_diag.snapshot_to_file(path)
+        self.statusBar().showMessage(f"Memory snapshot written to {path}", 5000)
 
     def _spawn_main_context_menu_for_test(self) -> None:
         """Test hook: pop up and immediately dismiss the main graph context menu.
