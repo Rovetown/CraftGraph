@@ -38,6 +38,11 @@ export PATH *ARGS:
 gui *PATH:
     uv run --extra qt craftgraph gui {{ if PATH == "" { "" } else { PATH } }}
 
+# Same as `just gui` but starts tracemalloc before any import, so
+# Help > Dump Memory Snapshot has real allocation data.
+gui-trace *PATH:
+    uv run --extra qt python -X tracemalloc=25 -m craftgraph.cli gui {{ if PATH == "" { "" } else { PATH } }}
+
 # ---------------------------------------------------------------------------
 # Development
 # ---------------------------------------------------------------------------
