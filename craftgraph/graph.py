@@ -94,6 +94,9 @@ def build_graph(parsed_files: list[ParsedFile]) -> nx.DiGraph[str]:
 # -- Cycle detection -----------------------------------------------------------
 
 
+_CYCLE_CACHE_KEY = "_cycle_cache"
+
+
 def find_cycles(graph: nx.DiGraph[str]) -> list[list[str]]:
     """Find all simple cycles (circular dependencies) in the graph.
 
@@ -102,9 +105,18 @@ def find_cycles(graph: nx.DiGraph[str]) -> list[list[str]]:
     acyclic.
 
     Uses ``networkx.simple_cycles()`` which yields all elementary
-    circuits without raising exceptions for acyclic graphs.
+    circuits without raising exceptions for acyclic graphs. Results
+    are memoized on the graph itself, keyed by ``(n_nodes, n_edges)``;
+    a fresh ``build_graph`` call (or any add/remove that changes those
+    counts) invalidates the cache.
     """
-    return [list(cycle) for cycle in nx.simple_cycles(graph)]
+    key = (graph.number_of_nodes(), graph.number_of_edges())
+    cached = graph.graph.get(_CYCLE_CACHE_KEY)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    cycles = [list(cycle) for cycle in nx.simple_cycles(graph)]
+    graph.graph[_CYCLE_CACHE_KEY] = (key, cycles)
+    return cycles
 
 
 # -- Dependency query helpers --------------------------------------------------
