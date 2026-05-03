@@ -6048,3 +6048,26 @@ class TestFrameTimeOverlay:
         assert view_menu is not None
         labels = [a.text().replace("&", "") for a in view_menu.actions()]
         assert any("Show Frame Time" in t for t in labels)
+
+    def test_frame_tick_reports_frame_to_perf_diag(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs, perf_diag
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        calls: list[float] = []
+        monkeypatch.setattr(
+            perf_diag, "report_frame", lambda frame_ms, **_: calls.append(frame_ms)
+        )
+
+        win = CraftGraphWindow()
+        # First tick seeds the timestamp; no frame reported.
+        win._frame_tick(now_ns=1_000_000)
+        assert calls == []
+        # Second tick at +50 ms produces one report.
+        win._frame_tick(now_ns=51_000_000)
+        assert len(calls) == 1
+        assert abs(calls[0] - 50.0) < 0.01

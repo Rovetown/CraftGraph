@@ -20,6 +20,7 @@ import contextlib
 import json
 import re
 import sys
+import time
 import types
 import warnings
 from dataclasses import dataclass, field
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from craftgraph import app_dirs, config, hwnd_diag
+from craftgraph import app_dirs, config, hwnd_diag, perf_diag
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
@@ -3265,6 +3266,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         # Frame-time perf overlay (View > Show Frame Time). Lazily built.
         self._frame_time_overlay: _FrameTimeOverlay | None = None
+        self._last_frame_ns: int | None = None
+        self._frame_timer = QtCore.QTimer(self)
+        self._frame_timer.setInterval(16)  # ~60 fps polling
+        self._frame_timer.timeout.connect(self._frame_tick)
+        self._frame_timer.start()
 
         # Node search state (inline search bar, built lazily on first use).
         self._search_bar: NodeSearchBar | None = None
@@ -3662,6 +3668,20 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         elif self._frame_time_overlay is not None:
             self._frame_time_overlay.hide()
         app_dirs.save_setting("show_frame_time_overlay", on)
+
+    def _frame_tick(self, *, now_ns: int | None = None) -> None:
+        """Sample one frame interval and report to perf_diag.
+
+        Tracks per-tick wall-clock so frame-budget violations land in the
+        perf_diag log. The overlay (when shown) gets refreshed metrics
+        on a slower cadence to keep paint cost negligible.
+        """
+        if now_ns is None:
+            now_ns = time.perf_counter_ns()
+        if self._last_frame_ns is not None:
+            frame_ms = (now_ns - self._last_frame_ns) / 1_000_000.0
+            perf_diag.report_frame(frame_ms)
+        self._last_frame_ns = now_ns
 
     def _on_dump_handle_snapshot(self) -> None:
         path = hwnd_diag.snapshot_to_file()
