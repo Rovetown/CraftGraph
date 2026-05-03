@@ -5,10 +5,10 @@ description = "CraftGraph - A Node based Editor for CustomCraft3 (and CustomBatt
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "click>=8.0",
+    "click==8.3.3",
     "msgpack>=1.0",
     "networkx>=3.0",
-    "platformdirs>=4.9.4",
+    "platformdirs==4.9.6",
     "pyvis>=0.3",
     "watchdog>=4.0",
 ]
@@ -16,16 +16,16 @@ dependencies = [
 [project.optional-dependencies]
 qt = [
     "nodegraphqt>=0.6.44",
-    "pyside6>=6.10.2",
+    "pyside6>=6.11.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.0",
-    "ruff>=0.9",
-    "mypy>=1.14",
-    "types-networkx>=3.6.1.20260210",
-    "pyinstaller>=6.19.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+    "mypy>=1.20.2",
+    "types-networkx>=3.6.1.20260408",
+    "pyinstaller>=6.20.0",
 ]
 
 [project.scripts]
