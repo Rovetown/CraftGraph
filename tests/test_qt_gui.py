@@ -6071,3 +6071,95 @@ class TestFrameTimeOverlay:
         win._frame_tick(now_ns=51_000_000)
         assert len(calls) == 1
         assert abs(calls[0] - 50.0) < 0.01
+
+
+# ---------------------------------------------------------------------------
+# perf_diag.measure() wiring around top-level actions
+# ---------------------------------------------------------------------------
+
+
+class TestPerfMeasureWiring:
+    """perf_diag.measure() emits an INFO log per wrapped action."""
+
+    def _capture_actions(self, monkeypatch) -> list[str]:
+        """Replace perf_diag.measure with a recorder; return the action list."""
+        import contextlib
+
+        from craftgraph import perf_diag
+
+        actions: list[str] = []
+
+        @contextlib.contextmanager
+        def fake_measure(action: str):
+            actions.append(action)
+            yield None
+
+        monkeypatch.setattr(perf_diag, "measure", fake_measure)
+        return actions
+
+    def test_load_recipes_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        actions = self._capture_actions(monkeypatch)
+        win = CraftGraphWindow()
+
+        recipe = tmp_path / "r.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8")
+        win.load_recipes(recipe)
+
+        assert "load_recipes" in actions
+
+    def test_watcher_rebuild_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        actions = self._capture_actions(monkeypatch)
+        win = CraftGraphWindow()
+        # Skip the dialog branch.
+        win._fw_settings.on_external_change = "ignore"
+        win._on_watcher_rebuild([])
+
+        assert "watcher_rebuild" in actions
+
+    def test_open_settings_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow, _SettingsDialog
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        actions = self._capture_actions(monkeypatch)
+        # Auto-close the modal dialog.
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: 0)
+        win = CraftGraphWindow()
+        win._on_settings()
+
+        assert "open_settings" in actions
+
+    def test_apply_code_editor_text_emits_perf_measure(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        recipe = tmp_path / "r.txt"
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8")
+        win.load_recipes(recipe)
+        assert win._file_tabs, "load_recipes must produce at least one tab"
+
+        # Patch AFTER load_recipes so its measure() call doesn't pollute the list.
+        actions = self._capture_actions(monkeypatch)
+        win._apply_code_editor_text_for(win._file_tabs[0])
+
+        assert "apply_code_editor_text" in actions

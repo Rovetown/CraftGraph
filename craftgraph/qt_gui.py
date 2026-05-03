@@ -4531,7 +4531,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_settings(self) -> None:
         """Show the Settings dialog and apply changed settings."""
-        with hwnd_diag.measure("open_settings"):
+        with hwnd_diag.measure("open_settings"), perf_diag.measure("open_settings"):
             dialog = _SettingsDialog(
                 self,
                 backup_on_save=self._backup_on_save,
@@ -5200,7 +5200,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_watcher_rebuild(self, cycles: list[list[str]]) -> None:
         """Handle a watcher-triggered reload with notification settings."""
-        with hwnd_diag.measure("watcher_rebuild"):
+        with hwnd_diag.measure("watcher_rebuild"), perf_diag.measure("watcher_rebuild"):
             fw = self._fw_settings
 
             if fw.on_external_change == "ignore":
@@ -6152,64 +6152,71 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Parse the code editor text and rebuild the tab's node graph."""
         from craftgraph.parser import MappingError, ParseError, parse_text
 
-        text = tab.editor.toPlainText()
-        if not text.strip():
-            return
+        with perf_diag.measure("apply_code_editor_text"):
+            text = tab.editor.toPlainText()
+            if not text.strip():
+                return
 
-        src = tab.parsed_file.source_path if tab.parsed_file is not None else self._source_path
-        try:
-            pf = parse_text(text, source_path=src)
-        except (ParseError, MappingError) as exc:
-            self.statusBar().showMessage(f"Parse error: {exc}")
-            if self._ce_settings.show_parse_errors_inline:
-                line = getattr(exc, "line", 0)
-                tab.editor.show_parse_error(line, str(exc))
-            return
-
-        tab.editor.clear_parse_errors()
-
-        # Tear down previous handler
-        if tab.ui_handler is not None:
-            tab.ui_handler.disconnect()
-            tab.ui_handler = None
-
-        tab.graph.clear_session()
-        tab.history.clear()
-
-        with tab.sync_guard(), self._suspend_graph_updates(tab.graph):
-            tab.model_to_node = populate_graph(tab.graph, [pf], edit_history=tab.history)
-            connect_hierarchy(tab.graph, [pf], tab.model_to_node)
-            conn_result = connect_ingredients(tab.graph, [pf], tab.model_to_node)
-            tab.orphan_nodes = conn_result.orphan_nodes
-            positions = compute_hierarchy_layout([pf], tab.model_to_node)
-            overlay_user_positions(positions, tab.user_positions, tab.model_to_node)
-            apply_layout(positions, tab.model_to_node)
-            place_orphan_nodes(tab.graph)
-            highlight_cycle_edges(tab.graph, [pf], tab.model_to_node)
-            update_node_issue_overlays(
-                tab.graph,
-                [pf],
-                tab.model_to_node,
-                frozenset(i.lower() for i in self._get_id_words()),
+            src = (
+                tab.parsed_file.source_path
+                if tab.parsed_file is not None
+                else self._source_path
             )
-            self._stamp_source_file(tab.model_to_node, pf.source_path.name)
-            update_child_count_labels(tab.model_to_node)
+            try:
+                pf = parse_text(text, source_path=src)
+            except (ParseError, MappingError) as exc:
+                self.statusBar().showMessage(f"Parse error: {exc}")
+                if self._ce_settings.show_parse_errors_inline:
+                    line = getattr(exc, "line", 0)
+                    tab.editor.show_parse_error(line, str(exc))
+                return
 
-        tab.parsed_file = pf
-        self._apply_sprites_for(tab)
-        self._update_path_completions()
-        tab.ui_handler = UIToModelHandler(
-            graph=tab.graph,
-            history=tab.history,
-            guard=tab.sync_guard,
-            parsed_files=[pf],
-            model_to_node=tab.model_to_node,
-            on_cycle_rejected=self._on_cycle_rejected,
-            on_reassignment_warning=self._on_reassignment_warning,
-        )
+            tab.editor.clear_parse_errors()
 
-        node_count = len(tab.model_to_node)
-        self.statusBar().showMessage(f"Parsed {node_count} node(s) from editor")
+            # Tear down previous handler
+            if tab.ui_handler is not None:
+                tab.ui_handler.disconnect()
+                tab.ui_handler = None
+
+            tab.graph.clear_session()
+            tab.history.clear()
+
+            with tab.sync_guard(), self._suspend_graph_updates(tab.graph):
+                tab.model_to_node = populate_graph(
+                    tab.graph, [pf], edit_history=tab.history
+                )
+                connect_hierarchy(tab.graph, [pf], tab.model_to_node)
+                conn_result = connect_ingredients(tab.graph, [pf], tab.model_to_node)
+                tab.orphan_nodes = conn_result.orphan_nodes
+                positions = compute_hierarchy_layout([pf], tab.model_to_node)
+                overlay_user_positions(positions, tab.user_positions, tab.model_to_node)
+                apply_layout(positions, tab.model_to_node)
+                place_orphan_nodes(tab.graph)
+                highlight_cycle_edges(tab.graph, [pf], tab.model_to_node)
+                update_node_issue_overlays(
+                    tab.graph,
+                    [pf],
+                    tab.model_to_node,
+                    frozenset(i.lower() for i in self._get_id_words()),
+                )
+                self._stamp_source_file(tab.model_to_node, pf.source_path.name)
+                update_child_count_labels(tab.model_to_node)
+
+            tab.parsed_file = pf
+            self._apply_sprites_for(tab)
+            self._update_path_completions()
+            tab.ui_handler = UIToModelHandler(
+                graph=tab.graph,
+                history=tab.history,
+                guard=tab.sync_guard,
+                parsed_files=[pf],
+                model_to_node=tab.model_to_node,
+                on_cycle_rejected=self._on_cycle_rejected,
+                on_reassignment_warning=self._on_reassignment_warning,
+            )
+
+            node_count = len(tab.model_to_node)
+            self.statusBar().showMessage(f"Parsed {node_count} node(s) from editor")
 
     # -- Context menus (per-graph) --------------------------------------------
 
@@ -7438,84 +7445,92 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Parse recipes from *path* and populate per-file tabs."""
         from craftgraph.parser import MappingError, ParseError, parse_directory, parse_file
 
-        self.statusBar().showMessage(f"Parsing {path}...")
+        with perf_diag.measure("load_recipes"):
+            self.statusBar().showMessage(f"Parsing {path}...")
 
-        try:
-            parsed_files = [parse_file(path)] if path.is_file() else parse_directory(path)
-        except (ParseError, MappingError, FileNotFoundError, NotADirectoryError) as exc:
-            self.statusBar().showMessage(f"Parse error: {exc}")
-            return
+            try:
+                parsed_files = (
+                    [parse_file(path)] if path.is_file() else parse_directory(path)
+                )
+            except (
+                ParseError,
+                MappingError,
+                FileNotFoundError,
+                NotADirectoryError,
+            ) as exc:
+                self.statusBar().showMessage(f"Parse error: {exc}")
+                return
 
-        if not parsed_files:
-            self.statusBar().showMessage("No recipe files found.")
-            return
+            if not parsed_files:
+                self.statusBar().showMessage("No recipe files found.")
+                return
 
-        self._tear_down_tabs()
-        self._source_path = path
+            self._tear_down_tabs()
+            self._source_path = path
 
-        # Scan for sprite assets -- CC3 Assets/ is the primary source
-        if self._subnautica_cc3_path:
-            self._sprite_lookup = scan_assets_dir(Path(self._subnautica_cc3_path))
-        else:
-            recipe_dir = path.parent if path.is_file() else path
-            self._sprite_lookup = scan_assets_dir(recipe_dir)
+            # Scan for sprite assets -- CC3 Assets/ is the primary source
+            if self._subnautica_cc3_path:
+                self._sprite_lookup = scan_assets_dir(Path(self._subnautica_cc3_path))
+            else:
+                recipe_dir = path.parent if path.is_file() else path
+                self._sprite_lookup = scan_assets_dir(recipe_dir)
 
-        # Load persisted node positions from sidecar file
-        layout_file = layout_path_for(path)
-        disk_positions = load_layout(layout_file) or {}
+            # Load persisted node positions from sidecar file
+            layout_file = layout_path_for(path)
+            disk_positions = load_layout(layout_file) or {}
 
-        # Create one FileTab per parsed file. Pump the event loop between
-        # tabs so the UI does not appear frozen during a multi-file load
-        # (each tab queues thousands of Qt events that would otherwise pile
-        # up and drain in one big stutter at the end).
-        total_files = len(parsed_files)
-        for idx, pf in enumerate(parsed_files, start=1):
-            tab_key = pf.source_path.stem
-            tab_saved = disk_positions.get(tab_key, {})
-            saved_pos = {k: (v[0], v[1]) for k, v in tab_saved.items()}
+            # Create one FileTab per parsed file. Pump the event loop between
+            # tabs so the UI does not appear frozen during a multi-file load
+            # (each tab queues thousands of Qt events that would otherwise pile
+            # up and drain in one big stutter at the end).
+            total_files = len(parsed_files)
+            for idx, pf in enumerate(parsed_files, start=1):
+                tab_key = pf.source_path.stem
+                tab_saved = disk_positions.get(tab_key, {})
+                saved_pos = {k: (v[0], v[1]) for k, v in tab_saved.items()}
+                self.statusBar().showMessage(
+                    f"Loading {pf.source_path.name} ({idx}/{total_files})..."
+                )
+                tab = self._create_file_tab(pf, saved_positions=saved_pos)
+                self._file_tabs.append(tab)
+
+                self._graph_stack.addWidget(tab.graph.widget)
+                self._editor_stack.addWidget(tab.editor)
+                self._tab_bar.addTab(pf.source_path.stem)
+                self._tab_bar.setTabToolTip(
+                    self._tab_bar.count() - 1,
+                    str(pf.source_path),
+                )
+                QtWidgets.QApplication.processEvents(
+                    QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                    50,
+                )
+
+            # Apply sprites across all tabs
+            for tab in self._file_tabs:
+                self._apply_sprites_for(tab)
+
+            self._update_path_completions()
+            self._refresh_all_ref_nodes()
+
+            # Apply persisted node editor settings (pipe style, port labels, etc.)
+            self._apply_node_editor_settings(self._ne_settings)
+
+            # Activate first tab
+            self._tab_bar.setCurrentIndex(0)
+            self._on_tab_changed(0)
+
+            total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
+            total_cycles = sum(t.cycle_count for t in self._file_tabs)
+            cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ", no cycles"
             self.statusBar().showMessage(
-                f"Loading {pf.source_path.name} ({idx}/{total_files})..."
-            )
-            tab = self._create_file_tab(pf, saved_positions=saved_pos)
-            self._file_tabs.append(tab)
-
-            self._graph_stack.addWidget(tab.graph.widget)
-            self._editor_stack.addWidget(tab.editor)
-            self._tab_bar.addTab(pf.source_path.stem)
-            self._tab_bar.setTabToolTip(
-                self._tab_bar.count() - 1,
-                str(pf.source_path),
-            )
-            QtWidgets.QApplication.processEvents(
-                QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
-                50,
+                f"Loaded {total_nodes} nodes from {len(parsed_files)} file(s){cycle_msg}"
             )
 
-        # Apply sprites across all tabs
-        for tab in self._file_tabs:
-            self._apply_sprites_for(tab)
-
-        self._update_path_completions()
-        self._refresh_all_ref_nodes()
-
-        # Apply persisted node editor settings (pipe style, port labels, etc.)
-        self._apply_node_editor_settings(self._ne_settings)
-
-        # Activate first tab
-        self._tab_bar.setCurrentIndex(0)
-        self._on_tab_changed(0)
-
-        total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
-        total_cycles = sum(t.cycle_count for t in self._file_tabs)
-        cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ", no cycles"
-        self.statusBar().showMessage(
-            f"Loaded {total_nodes} nodes from {len(parsed_files)} file(s){cycle_msg}"
-        )
-
-        # (Re)start file watcher if enabled
-        self._stop_file_watcher()
-        if self._fw_settings.enabled:
-            self._start_file_watcher()
+            # (Re)start file watcher if enabled
+            self._stop_file_watcher()
+            if self._fw_settings.enabled:
+                self._start_file_watcher()
 
 
 # ---------------------------------------------------------------------------
