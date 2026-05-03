@@ -6214,6 +6214,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 self._stamp_source_file(tab.model_to_node, pf.source_path.name)
                 update_child_count_labels(tab.model_to_node)
 
+            # Signals were blocked during populate; rebuild tooltip patches.
+            for node in tab.model_to_node.values():
+                self._apply_node_header_tooltip(node)
+
             tab.parsed_file = pf
             self._apply_sprites_for(tab)
             self._update_path_completions()
@@ -7266,22 +7270,26 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     @staticmethod
     @contextlib.contextmanager
     def _suspend_graph_updates(graph: NodeGraph) -> "Iterator[None]":
-        """Suppress NodeGraphQt redraws and scene re-indexing during bulk load.
+        """Suppress NodeGraphQt redraws, re-indexing, and signals during bulk load.
 
         Each ``setWidget()``, port-add, and property-change normally triggers
         a node redraw + scene reindex.  With hundreds of nodes that adds
         seconds of UI churn before anything is visible.  This wraps the
         bulk-load region: disable view updates, switch the scene to NoIndex,
-        run the build, then restore both and trigger one final repaint.
+        block NodeGraph signals (so listeners like the tooltip patcher do not
+        run per-node -- callers must rebuild that state after exit), run the
+        build, then restore everything and trigger one final repaint.
         """
         viewer = graph.viewer()
         scene = viewer.scene()
         prev_index_method = scene.itemIndexMethod()
         scene.setItemIndexMethod(QtWidgets.QGraphicsScene.ItemIndexMethod.NoIndex)
         viewer.setUpdatesEnabled(False)
+        signal_blocker = QtCore.QSignalBlocker(graph)
         try:
             yield
         finally:
+            del signal_blocker  # explicit unblock before repaint
             viewer.setUpdatesEnabled(True)
             scene.setItemIndexMethod(prev_index_method)
             viewer.update()
@@ -7338,6 +7346,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             # NodeGraphQt defaults create_node(selected=True); clear to
             # avoid accidental bulk deletion of newly-loaded nodes.
             graph.clear_selection()
+
+        # Signals were blocked during populate; rebuild tooltip patches now.
+        for node in model_to_node.values():
+            self._apply_node_header_tooltip(node)
 
         self._attach_completers_bulk(model_to_node)
 
