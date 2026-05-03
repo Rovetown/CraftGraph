@@ -72,20 +72,20 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 
 | # | Item | Where in CraftGraph | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1.1 | cProfile harness with tiered workloads (B/A/C) | tests/test_perf_*.py analog of test_hwnd_stress.py | low | establishes truth before tuning | -- |
-| 1.2 | perf_diag.measure(action) analog of hwnd_diag.measure | wraps _open_folder, _on_watcher_rebuild, code-edit handler | low | per-action wall-clock + frame budget | -- |
-| 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | -- |
-| 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | -- |
+| 1.1 | cProfile harness with tiered workloads (B/A/C) | tests/test_perf_*.py analog of test_hwnd_stress.py | low | establishes truth before tuning | DONE -- tests/test_perf_stress.py with Tier A regression gate |
+| 1.2 | perf_diag.measure(action) analog of hwnd_diag.measure | wraps _open_folder, _on_watcher_rebuild, code-edit handler | low | per-action wall-clock + frame budget | DONE -- perf_diag module; wired around load_recipes / settings / watcher / code-edit |
+| 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | DONE -- View > Show Frame Time + report_frame budget logger |
+| 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | DONE -- mem_diag module + Help > Dump Memory Snapshot |
 | 1.5 | Release-vs-dev baseline: pyinstaller --onefile build, run same workload | one-time | medium | quantifies how much "feels slow" is the dev interpreter | -- |
 
 #### 2. Algorithmic / data structure
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 2.1 | Hash-based file change detection (mtime + size + sha1 fast path) before reparse | 1 | watcher.py -> parser.py boundary | low | watcher rebuild only re-parses changed files | -- |
+| 2.1 | Hash-based file change detection (mtime + size + sha1 fast path) before reparse | 1 | watcher.py -> parser.py boundary | low | watcher rebuild only re-parses changed files | DONE -- (st_ino, st_mtime_ns, st_size) triple cached in _RecipeEventHandler |
 | 2.2 | Incremental graph rebuild (model diff, not full reload) | 2 | graph.py, _on_watcher_rebuild | high | watcher hitch on save vanishes | -- |
-| 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | -- |
-| 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | -- |
+| 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | DONE -- find_cycles memoized on graph.graph keyed by (n_nodes, n_edges) |
+| 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | DONE -- QSignalBlocker added to _suspend_graph_updates; tooltip patches replayed after exit |
 | 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | -- |
 
 #### 3. Concurrency (Python-level)
@@ -104,7 +104,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | -- |
-| 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | -- |
+| 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | DONE -- save/load_layout uses msgspec.json.encode/decode |
 
 > **Parser native-compilation ladder.** 4.1, 9.3, 9.4, 9.5 all attack the same target (parser CPU time). Pick **at most one** rung. The escalation rule lives in Section 9: only climb if profiler proves the previous rung was not enough. Replace, don't stack -- one parser implementation at a time.
 
@@ -113,28 +113,28 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | -- |
-| 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | -- |
+| 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | DONE -- _WarningOverlay uses ItemCoordinateCache |
 
 #### 6. Qt/UI-specific
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | -- |
-| 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | -- |
+| 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | DONE -- audited; default 400 ms already adequate |
+| 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | DONE -- _render_sprite_pixmap lru_cache(maxsize=256) in qt_nodes.py |
 
 #### 7. Architectural
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | -- |
+| 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | DONE -- verified load_layout precedes compute_hierarchy_layout; saved positions overlay solver result |
 | 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | -- |
 
 #### 8. Build / runtime mode  _(Phase 1 -- all entries)_
 
 | # | Item | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 8.1 | PYTHONOPTIMIZE=2 for release builds | PyInstaller spec | low | strips assertions, docstrings | -- |
-| 8.2 | uv run with --no-dev for smoke tests | dev workflow | low | catches dev-mode-only artifacts | -- |
+| 8.1 | PYTHONOPTIMIZE=2 for release builds | PyInstaller spec | low | strips assertions, docstrings | DONE -- just build passes --optimize 2 (zero asserts in craftgraph/, safe to strip) |
+| 8.2 | uv run with --no-dev for smoke tests | dev workflow | low | catches dev-mode-only artifacts | DONE -- just smoke-no-dev recipe + smoke-no-dev CI job |
 
 #### 9. Post-optimization ideas (revisit after sections 1-8 land)
 
