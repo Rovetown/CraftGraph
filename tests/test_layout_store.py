@@ -151,3 +151,37 @@ class TestRoundTrip:
         assert "Good" in result["t"]
         assert "BadPos" not in result["t"]
         assert "BadType" not in result["t"]
+
+
+class TestMsgspecBackend:
+    """layout_store uses msgspec for encode/decode (faster JSON)."""
+
+    def test_save_layout_uses_msgspec(self, tmp_path: Path, monkeypatch) -> None:
+        from craftgraph import layout_store
+
+        # Spy: count msgspec.json.encode calls during save_layout.
+        import msgspec
+
+        original_encode = msgspec.json.encode
+        calls: list[object] = []
+
+        def counting_encode(obj):
+            calls.append(obj)
+            return original_encode(obj)
+
+        monkeypatch.setattr(layout_store.msgspec.json, "encode", counting_encode)
+
+        layout_store.save_layout(
+            tmp_path / "layout.json",
+            {"tab": {"Node": [1.0, 2.0]}},
+        )
+        assert calls, "save_layout must encode via msgspec.json.encode"
+
+    def test_round_trip_via_msgspec(self, tmp_path: Path) -> None:
+        from craftgraph.layout_store import load_layout, save_layout
+
+        positions = {"tab1": {"NodeA": [10.5, 20.25], "NodeB": [-3.0, 4.0]}}
+        out = tmp_path / "layout.json"
+        save_layout(out, positions)
+        loaded = load_layout(out)
+        assert loaded == positions

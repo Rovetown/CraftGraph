@@ -21,9 +21,10 @@ Format::
 No DPG dependency -- operates on plain dicts of position data.
 """
 
-import json
 import logging
 from pathlib import Path
+
+import msgspec
 
 from craftgraph.config import get_config
 
@@ -58,7 +59,11 @@ def save_layout(
         "version": _CURRENT_VERSION,
         "tabs": positions,
     }
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    # msgspec encodes ~5-10x faster than json and outputs UTF-8 bytes
+    # directly (no .encode("utf-8") trip). format_json adds the indent
+    # cosmetic so saved files remain hand-readable.
+    encoded = msgspec.json.encode(data)
+    path.write_bytes(msgspec.json.format(encoded, indent=2))
 
 
 def load_layout(
@@ -73,13 +78,13 @@ def load_layout(
     if not path.exists():
         return None
 
-    text = path.read_text(encoding="utf-8")
-    if not text.strip():
+    raw = path.read_bytes()
+    if not raw.strip():
         return None
 
     try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
+        data = msgspec.json.decode(raw)
+    except msgspec.DecodeError:
         logger.warning("Layout file contains invalid JSON: %s", path)
         return None
 
