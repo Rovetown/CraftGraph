@@ -6072,6 +6072,55 @@ class TestFrameTimeOverlay:
         assert len(calls) == 1
         assert abs(calls[0] - 50.0) < 0.01
 
+    def test_frame_tick_pushes_metrics_into_visible_overlay(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        win._toggle_frame_time_overlay(True)
+        # Throttle is 1-in-6; force the next refresh to fire on the second tick.
+        win._frame_overlay_skip = 5
+
+        captured: list[tuple[float, float, float]] = []
+        original = win._frame_time_overlay.update_metrics
+
+        def spy(*, fps, last_ms, p99_ms):
+            captured.append((fps, last_ms, p99_ms))
+            original(fps=fps, last_ms=last_ms, p99_ms=p99_ms)
+
+        win._frame_time_overlay.update_metrics = spy  # type: ignore[method-assign]
+
+        # First tick seeds the timestamp; second tick produces real data.
+        win._frame_tick(now_ns=1_000_000)
+        win._frame_tick(now_ns=21_000_000)  # +20 ms
+
+        assert captured, "overlay must receive at least one update_metrics call"
+        fps, last_ms, p99_ms = captured[-1]
+        assert abs(last_ms - 20.0) < 0.01
+        assert fps > 0
+        assert p99_ms >= last_ms - 0.01
+
+    def test_frame_tick_skips_overlay_when_hidden(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        # Overlay never shown -- update_metrics must not be called.
+        win._frame_tick(now_ns=1_000_000)
+        win._frame_tick(now_ns=21_000_000)
+        # Sanity: no overlay was lazily created when it stayed hidden.
+        assert win._frame_time_overlay is None
+
 
 # ---------------------------------------------------------------------------
 # perf_diag.measure() wiring around top-level actions

@@ -23,6 +23,7 @@ import sys
 import time
 import types
 import warnings
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -3267,6 +3268,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Frame-time perf overlay (View > Show Frame Time). Lazily built.
         self._frame_time_overlay: _FrameTimeOverlay | None = None
         self._last_frame_ns: int | None = None
+        # Ring buffer of recent frame intervals (~2 s at 60 fps).
+        self._frame_history: deque[float] = deque(maxlen=120)
+        # Skip-counter so the overlay refresh runs at ~10 Hz rather than 60.
+        self._frame_overlay_skip: int = 0
         self._frame_timer = QtCore.QTimer(self)
         self._frame_timer.setInterval(16)  # ~60 fps polling
         self._frame_timer.timeout.connect(self._frame_tick)
@@ -3677,15 +3682,44 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Sample one frame interval and report to perf_diag.
 
         Tracks per-tick wall-clock so frame-budget violations land in the
-        perf_diag log. The overlay (when shown) gets refreshed metrics
-        on a slower cadence to keep paint cost negligible.
+        perf_diag log, maintains a 120-frame ring buffer, and pushes
+        fps / last_ms / p99_ms into the overlay every ~6 ticks (~10 Hz)
+        when the overlay is visible. Refresh cadence is throttled so
+        the overlay never costs more than the work it measures.
         """
         if now_ns is None:
             now_ns = time.perf_counter_ns()
         if self._last_frame_ns is not None:
             frame_ms = (now_ns - self._last_frame_ns) / 1_000_000.0
             perf_diag.report_frame(frame_ms)
+            self._frame_history.append(frame_ms)
+            self._refresh_frame_overlay(frame_ms)
         self._last_frame_ns = now_ns
+
+    def _refresh_frame_overlay(self, last_ms: float) -> None:
+        """Push current fps / last_ms / p99 into the overlay if it's shown.
+
+        Uses ``isHidden()`` instead of ``isVisible()`` so the overlay still
+        gets data when the toggle is on but the window itself isn't yet
+        on-screen (e.g. during tests, or a minimized main window).
+        """
+        overlay = self._frame_time_overlay
+        if overlay is None or overlay.isHidden():
+            return
+        # Throttle to ~10 Hz so overlay paint never dominates frame cost.
+        self._frame_overlay_skip = (self._frame_overlay_skip + 1) % 6
+        if self._frame_overlay_skip != 0:
+            return
+        history = self._frame_history
+        if not history:
+            return
+        avg_ms = sum(history) / len(history)
+        fps = 1000.0 / avg_ms if avg_ms > 0 else 0.0
+        # 99th percentile via sorted index -- fine at len <= 120.
+        sorted_history = sorted(history)
+        p99_idx = max(0, int(len(sorted_history) * 0.99) - 1)
+        p99_ms = sorted_history[p99_idx]
+        overlay.update_metrics(fps=fps, last_ms=last_ms, p99_ms=p99_ms)
 
     def _on_dump_handle_snapshot(self) -> None:
         path = hwnd_diag.snapshot_to_file()
