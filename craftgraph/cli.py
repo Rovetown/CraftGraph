@@ -242,8 +242,22 @@ def export(path: str, output: str | None, *, verbose: bool) -> None:
 
 @main.command()
 @click.argument("path", type=click.Path(), required=False, default=None)
-def gui(path: str | None) -> None:
+@click.option(
+    "--trace-mem",
+    is_flag=True,
+    default=False,
+    help="Start tracemalloc before the GUI launches so Help > Dump Memory "
+    "Snapshot has data. Adds runtime overhead; for diagnostics only.",
+)
+def gui(path: str | None, trace_mem: bool) -> None:
     """Open the graphical recipe editor (PySide6 + NodeGraphQt)."""
+    if trace_mem:
+        # Start tracking AFTER the heavy import chain (pyvis -> IPython etc.)
+        # has settled, so users do not pay tracemalloc cost during startup.
+        import tracemalloc
+
+        tracemalloc.start(25)
+
     try:
         from craftgraph.qt_gui import launch_qt_gui
     except ImportError as exc:

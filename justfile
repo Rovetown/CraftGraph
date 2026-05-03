@@ -38,10 +38,12 @@ export PATH *ARGS:
 gui *PATH:
     uv run --extra qt craftgraph gui {{ if PATH == "" { "" } else { PATH } }}
 
-# Same as `just gui` but starts tracemalloc before any import, so
-# Help > Dump Memory Snapshot has real allocation data.
+# Same as `just gui` but starts tracemalloc just before the GUI launches
+# so Help > Dump Memory Snapshot has real allocation data. Tracemalloc
+# is started AFTER imports settle, so startup is not slowed by the
+# pyvis/IPython import chain.
 gui-trace *PATH:
-    uv run --extra qt python -X tracemalloc=25 -m craftgraph.cli gui {{ if PATH == "" { "" } else { PATH } }}
+    uv run --extra qt craftgraph gui --trace-mem {{ if PATH == "" { "" } else { PATH } }}
 
 # ---------------------------------------------------------------------------
 # Development
