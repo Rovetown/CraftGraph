@@ -6259,3 +6259,49 @@ class TestDumpMemorySnapshot:
         help_menu = next(m for m in menus if "Help" in m.title())
         labels = [a.text().replace("&", "") for a in help_menu.actions()]
         assert any("Memory Snapshot" in t for t in labels)
+
+
+# ---------------------------------------------------------------------------
+# Layout cache read-through order
+# ---------------------------------------------------------------------------
+
+
+class TestLayoutCacheReadThrough:
+    """load_layout runs before the auto-layout solver so saved positions win."""
+
+    def test_load_layout_called_before_compute_hierarchy_layout(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph import qt_gui as qt_gui_mod
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        order: list[str] = []
+
+        def record_load(path):
+            order.append("load_layout")
+            return None
+
+        original_compute = qt_gui_mod.compute_hierarchy_layout
+
+        def record_compute(*args, **kwargs):
+            order.append("compute_hierarchy_layout")
+            return original_compute(*args, **kwargs)
+
+        monkeypatch.setattr(qt_gui_mod, "load_layout", record_load)
+        monkeypatch.setattr(qt_gui_mod, "compute_hierarchy_layout", record_compute)
+
+        win = CraftGraphWindow()
+        recipe = tmp_path / "r.txt"
+        recipe.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8"
+        )
+        win.load_recipes(recipe)
+
+        # load_layout must precede the first compute_hierarchy_layout call.
+        assert "load_layout" in order
+        assert "compute_hierarchy_layout" in order
+        assert order.index("load_layout") < order.index("compute_hierarchy_layout")
