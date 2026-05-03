@@ -58,6 +58,26 @@ jobs:
       - name: Run tests
         run: uv run pytest -v
 
+  smoke-no-dev:
+    name: Smoke (--no-dev runtime deps only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Sync runtime deps only
+        run: uv sync --no-dev
+
+      - name: Smoke parse Tier A workload
+        run: uv run --no-dev python -c "from pathlib import Path; from craftgraph.parser import parse_directory; parse_directory(Path('craftgraph/cc3_reference_files/real-mod-examples')); print('smoke ok')"
+
   build:
     name: Build (${{ matrix.os }})
     needs: [quality, test]
