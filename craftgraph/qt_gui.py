@@ -7647,6 +7647,12 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
 
     hwnd_diag.install_logger(threshold=20, on_threshold_exceeded=_hwnd_threshold_warning)
 
+    # Surface perf_diag's INFO lines (action= delta_ms=) on stderr and
+    # persist them to ~/.craftgraph/diagnostics/perf.log for later review.
+    perf_diag.install_logger(
+        log_path=app_dirs.log_dir() / "diagnostics" / "perf.log",
+    )
+
     window = CraftGraphWindow()
 
     if recipe_path is not None:

@@ -8,12 +8,66 @@ in qt_gui.py reads from this module rather than the other way around.
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator
 
 logger = logging.getLogger(__name__)
+# Track installed handlers so install_logger() is idempotent across
+# repeat launches in the same process (e.g. test reruns).
+_installed_handlers: list[logging.Handler] = []
+
+
+def install_logger(
+    *,
+    log_path: Path | None = None,
+    console: bool = True,
+    level: int = logging.INFO,
+) -> None:
+    """Wire up perf_diag log output to a file and (optionally) stderr.
+
+    Without this the logger inherits the root level (WARNING by default),
+    so ``measure()``'s INFO lines are silenced -- only ``report_frame()``
+    WARNINGs surface. Call once during app start (CLI / GUI entry point).
+
+    Args:
+        log_path: File to append perf records to. ``None`` skips file output.
+        console: Whether to also stream records to stderr.
+        level: Minimum level the perf_diag logger surfaces (default INFO).
+    """
+    # Detach any handlers we previously installed so repeat calls do not
+    # double-log. Leaves third-party handlers alone.
+    for h in _installed_handlers:
+        logger.removeHandler(h)
+    _installed_handlers.clear()
+
+    logger.setLevel(level)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+        _installed_handlers.append(file_handler)
+
+    if console:
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setLevel(level)
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
+        _installed_handlers.append(stream_handler)
+
+    # Stop propagation so records do not also flow to the root logger
+    # (which may have its own handlers configured by callers).
+    logger.propagate = False
 
 
 @dataclass(frozen=True, slots=True)

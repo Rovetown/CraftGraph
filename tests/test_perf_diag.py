@@ -54,3 +54,57 @@ def test_frame_under_budget_does_not_log(
     caplog.set_level(logging.WARNING, logger="craftgraph.perf_diag")
     perf_diag.report_frame(frame_ms=10.0)
     assert not any("frame_budget_violation" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# install_logger
+# ---------------------------------------------------------------------------
+
+
+class TestInstallLogger:
+    """install_logger() routes perf_diag output to file + stderr."""
+
+    def teardown_method(self) -> None:
+        # Reset state so other tests are not affected by our handler installs.
+        perf_diag.install_logger(log_path=None, console=False)
+        # Then detach the no-op handlers we just registered.
+        for h in list(perf_diag._installed_handlers):
+            perf_diag.logger.removeHandler(h)
+        perf_diag._installed_handlers.clear()
+
+    def test_install_logger_creates_file_handler_writing_action_lines(
+        self, tmp_path
+    ) -> None:
+        log_path = tmp_path / "diag" / "perf.log"
+        perf_diag.install_logger(log_path=log_path, console=False)
+
+        with measure("test_action"):
+            time.sleep(0.001)
+
+        # Flush handler before reading.
+        for h in perf_diag.logger.handlers:
+            h.flush()
+
+        text = log_path.read_text(encoding="utf-8")
+        assert "action=test_action" in text
+        assert "delta_ms=" in text
+
+    def test_install_logger_is_idempotent(self, tmp_path) -> None:
+        log_path = tmp_path / "perf.log"
+        perf_diag.install_logger(log_path=log_path, console=False)
+        perf_diag.install_logger(log_path=log_path, console=False)
+
+        with measure("only_once"):
+            pass
+        for h in perf_diag.logger.handlers:
+            h.flush()
+
+        text = log_path.read_text(encoding="utf-8")
+        # Exactly one record per call -- handler not duplicated.
+        assert text.count("action=only_once") == 1
+
+    def test_install_logger_disables_propagation(self, tmp_path) -> None:
+        # Without propagate=False, perf_diag records would also reach the
+        # root logger and could surprise unrelated consumers.
+        perf_diag.install_logger(log_path=tmp_path / "perf.log", console=False)
+        assert perf_diag.logger.propagate is False
