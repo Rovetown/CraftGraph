@@ -114,7 +114,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | -- |
+| 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | DONE -- decision: skip. Measured parser-only cost on Tier A is **75.6 ms** (1.6% of the 4751 ms folder load). Even a 10x mypyc speedup saves <70 ms, invisible to users, in exchange for non-trivial build-hook complexity (hatch_mypyc, wheel distribution, CI changes). Re-evaluate only if Tier C becomes a real acceptance gate. Parser ladder satisfied: no rung selected. |
 | 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | DONE -- save/load_layout uses msgspec.json.encode/decode |
 
 > **Parser native-compilation ladder.** 4.1, 9.3, 9.4, 9.5 all attack the same target (parser CPU time). Pick **at most one** rung. The escalation rule lives in Section 9: only climb if profiler proves the previous rung was not enough. Replace, don't stack -- one parser implementation at a time.
