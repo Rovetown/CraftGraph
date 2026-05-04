@@ -73,6 +73,22 @@ test-v *ARGS:
 test-file FILE *ARGS:
     uv run pytest {{FILE}} {{ARGS}}
 
+# Run the full qt suite with stdout unbuffered + capture disabled.
+# Workaround for the agent-shell pipe-buffering issue where the default
+# `pytest tests/test_qt_gui.py` invocation stalls and never flushes
+# progress dots. PYTHONUNBUFFERED=1 forces line-flushed stdout; -s
+# disables pytest output capture so dots stream live; --tb=line keeps
+# failure output compact. Use this for full Qt regression sweeps.
+test-qt *ARGS:
+    PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_gui.py tests/test_qt_nodes.py -s --tb=line {{ARGS}}
+
+# Run only the non-Qt-window tests. Fast regression check that finishes
+# in seconds: skips test_qt_gui.py (the slow file) but still covers
+# nodes, parser, sync, perf, watcher, etc. Safe default during agent
+# sessions when the full Qt sweep keeps timing out.
+test-fast *ARGS:
+    PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_nodes.py tests/test_proc_diag.py tests/test_perf_diag.py tests/test_sync.py tests/test_parser.py tests/test_graph.py tests/test_serializer.py tests/test_watcher.py -q {{ARGS}}
+
 # ---------------------------------------------------------------------------
 # Code Quality
 # ---------------------------------------------------------------------------
