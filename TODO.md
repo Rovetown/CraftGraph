@@ -123,7 +123,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | -- |
+| 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | DONE -- decision: skip until profiler signals it. The change itself is one line (`graph.viewer().setViewport(QOpenGLWidget())`), but `QGraphicsView` + `QGraphicsProxyWidget` (which every CraftGraph node uses for embedded text inputs / combo boxes) has known rendering issues under OpenGL on some GPUs. Phase 2's stylesheet cache already cut `_align_widgets_horizontal` cost 81% (`_draw_node_horizontal` 71%); post-Phase-2 frame-budget log shows pan/zoom is no longer the bottleneck at Tier A. Re-evaluate only if Tier C pan/zoom degrades or the live frame-time overlay shows steady-state >budget frames after section-6 wins. |
 | 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | DONE -- _WarningOverlay uses ItemCoordinateCache |
 
 #### 6. Qt/UI-specific
