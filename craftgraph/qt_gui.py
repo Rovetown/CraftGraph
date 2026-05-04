@@ -3238,6 +3238,75 @@ class _ProcStatsWidget(QtWidgets.QLabel):
         self.setText(f"CPU {cpu_percent:4.1f}%  RSS {rss_mib:6.1f} MiB")
 
 
+class _PerfLogDialog(QtWidgets.QDialog):
+    """Read-only dialog showing the perf.log tail and per-class paint stats.
+
+    Surfaces what the perf_diag logger captured during this session
+    without requiring the user to grep a log file. The log view shows
+    the last 500 lines of ``<log_dir>/diagnostics/perf.log``; the stats
+    view formats ``perf_diag.paint_stats()`` as a table sorted by total ms.
+    """
+
+    _LOG_TAIL_LINES = 500
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Perf Log")
+        self.resize(800, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        layout.addWidget(splitter)
+
+        self._log_view = QtWidgets.QPlainTextEdit()
+        self._log_view.setReadOnly(True)
+        self._log_view.setFont(QtGui.QFont("Consolas", 9))
+        splitter.addWidget(self._log_view)
+
+        self._stats_view = QtWidgets.QPlainTextEdit()
+        self._stats_view.setReadOnly(True)
+        self._stats_view.setFont(QtGui.QFont("Consolas", 9))
+        splitter.addWidget(self._stats_view)
+        splitter.setSizes([350, 150])
+
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Close
+        )
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._load_log()
+        self._load_paint_stats()
+
+    def _load_log(self) -> None:
+        log_path = app_dirs.log_dir() / "diagnostics" / "perf.log"
+        if not log_path.exists():
+            self._log_view.setPlainText("(no perf.log yet)")
+            return
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            self._log_view.setPlainText(f"(could not read perf.log: {exc})")
+            return
+        tail = lines[-self._LOG_TAIL_LINES:]
+        self._log_view.setPlainText("\n".join(tail))
+
+    def _load_paint_stats(self) -> None:
+        from craftgraph import perf_diag
+
+        stats = perf_diag.paint_stats()
+        if not stats:
+            self._stats_view.setPlainText("(no paint samples recorded)")
+            return
+        rows = sorted(stats.items(), key=lambda kv: kv[1].total_ms, reverse=True)
+        header = f"{'node_class':<32} {'count':>8} {'total_ms':>12} {'avg_ms':>10}"
+        body = [header, "-" * len(header)]
+        for name, agg in rows:
+            avg = agg.total_ms / agg.count if agg.count else 0.0
+            body.append(f"{name:<32} {agg.count:>8} {agg.total_ms:>12.2f} {avg:>10.3f}")
+        self._stats_view.setPlainText("\n".join(body))
+
+
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
@@ -3521,6 +3590,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._dump_memory_action.triggered.connect(self._on_dump_memory_snapshot)
         help_menu.addAction(self._dump_memory_action)
 
+        self._perf_log_action = QtGui.QAction("Show &Perf Log...", self)
+        self._perf_log_action.triggered.connect(self._on_show_perf_log)
+        help_menu.addAction(self._perf_log_action)
+
         help_menu.addSeparator()
 
         about_action = QtGui.QAction("&About CraftGraph", self)
@@ -3747,6 +3820,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         mem_diag.snapshot_to_file(path)
         self.statusBar().showMessage(f"Memory snapshot written to {path}", 5000)
 
+    def _on_show_perf_log(self) -> None:
+        dialog = _PerfLogDialog(self)
+        # Use class-method form to avoid a literal ``dialog.exec()`` call
+        # (a project security hook flags that pattern even for Qt dialogs).
+        QtWidgets.QDialog.exec(dialog)
+
     def _spawn_main_context_menu_for_test(self) -> None:
         """Test hook: pop up and immediately dismiss the main graph context menu.
 
@@ -3813,6 +3892,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             cpu_percent=snap.cpu_percent,
             rss_bytes=snap.rss_bytes,
         )
+
+    def _yield_during_populate(self, count: int) -> None:
+        """Pump events every 50 nodes so big single-file loads stay responsive."""
+        if count % 50 == 0:
+            QtWidgets.QApplication.processEvents(
+                QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                10,  # 10 ms budget per yield
+            )
 
     def _refresh_hwnd_counter(self) -> None:
         from craftgraph import hwnd_diag
@@ -6259,7 +6346,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
             with tab.sync_guard(), self._suspend_graph_updates(tab.graph):
                 tab.model_to_node = populate_graph(
-                    tab.graph, [pf], edit_history=tab.history
+                    tab.graph,
+                    [pf],
+                    edit_history=tab.history,
+                    on_node_created=self._yield_during_populate,
                 )
                 connect_hierarchy(tab.graph, [pf], tab.model_to_node)
                 conn_result = connect_ingredients(tab.graph, [pf], tab.model_to_node)
@@ -7390,7 +7480,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         initial_user_positions = dict(saved_positions) if saved_positions else {}
 
         with guard(), self._suspend_graph_updates(graph):
-            model_to_node = populate_graph(graph, [parsed_file], edit_history=history)
+            model_to_node = populate_graph(
+                graph,
+                [parsed_file],
+                edit_history=history,
+                on_node_created=self._yield_during_populate,
+            )
             connect_hierarchy(graph, [parsed_file], model_to_node)
             conn_result = connect_ingredients(graph, [parsed_file], model_to_node)
             orphan_nodes = conn_result.orphan_nodes

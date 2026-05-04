@@ -6397,3 +6397,76 @@ class TestProcStatsWidget:
         text = win._proc_stats_widget.text()
         assert "42" in text
         assert "117" in text or "118" in text  # 123_456_789 / (1024*1024) ~= 117.7
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 6: cooperative time-slicing in populate_graph
+# ---------------------------------------------------------------------------
+
+
+class TestLoadRecipesTimeSlicing:
+    """populate_graph invokes the on_node_created hook so the GUI can yield."""
+
+    def test_populate_graph_calls_on_node_created_callback(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from craftgraph.parser import parse_text
+        from craftgraph.sync import populate_graph
+
+        text = (
+            "ModifiedRecipes:\n"
+            "(\n    ItemID: A;\n),\n"
+            "(\n    ItemID: B;\n);\n"
+        )
+        pf = parse_text(text, source_path=tmp_path / "r.txt")
+
+        graph = MagicMock()
+        counts: list[int] = []
+
+        populate_graph(graph, [pf], on_node_created=lambda n: counts.append(n))
+
+        assert counts == [1, 2]  # one callback per node, in order
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 8: Help > Show Perf Log dialog
+# ---------------------------------------------------------------------------
+
+
+class TestPerfLogDialog:
+    """Help > Show Perf Log opens a dialog showing the perf.log tail."""
+
+    def test_perf_log_action_in_help_menu(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        menus = win.menuBar().findChildren(QtWidgets.QMenu)
+        help_menu = next(m for m in menus if "Help" in m.title())
+        labels = [a.text().replace("&", "") for a in help_menu.actions()]
+        assert any("Perf Log" in t for t in labels)
+
+    def test_perf_log_dialog_loads_file_content(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow, _PerfLogDialog
+
+        log_dir = tmp_path / "diagnostics"
+        log_dir.mkdir()
+        log_path = log_dir / "perf.log"
+        log_path.write_text(
+            "2026-05-04 12:00:00 INFO craftgraph.perf_diag: action=test delta_ms=42.000\n",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        dialog = _PerfLogDialog(win)
+        text = dialog._log_view.toPlainText()
+        assert "action=test delta_ms=42.000" in text
