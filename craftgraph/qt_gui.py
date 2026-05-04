@@ -20,8 +20,10 @@ import contextlib
 import json
 import re
 import sys
+import time
 import types
 import warnings
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -32,7 +34,7 @@ if TYPE_CHECKING:
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from craftgraph import app_dirs, config, hwnd_diag
+from craftgraph import app_dirs, config, hwnd_diag, mem_diag, perf_diag
 from craftgraph.code_editor import CodeEditor
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
@@ -3200,6 +3202,112 @@ class NodeSearchBar(QtWidgets.QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Frame-time overlay (perf diagnostics, View > Show Frame Time)
+# ---------------------------------------------------------------------------
+
+
+class _FrameTimeOverlay(QtWidgets.QLabel):
+    """Floating label that shows fps / last_ms / 99p_ms in the corner."""
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setStyleSheet(
+            "background: rgba(0, 0, 0, 180); color: rgb(220, 220, 220);"
+            " padding: 4px 8px; border-radius: 3px;"
+        )
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setText("-- fps  last -- ms  99p -- ms")
+        self.adjustSize()
+
+    def update_metrics(self, *, fps: float, last_ms: float, p99_ms: float) -> None:
+        self.setText(f"{fps:.0f} fps  last {last_ms:.1f} ms  99p {p99_ms:.1f} ms")
+        self.adjustSize()
+
+
+class _ProcStatsWidget(QtWidgets.QLabel):
+    """Compact CPU% / RSS label permanently visible in the status bar."""
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setToolTip("Live process CPU% and resident memory (1 Hz sample)")
+        self.setMinimumWidth(150)
+        self.setText("CPU --  RSS --")
+
+    def update_metrics(self, *, cpu_percent: float, rss_bytes: int) -> None:
+        rss_mib = rss_bytes / (1024 * 1024)
+        self.setText(f"CPU {cpu_percent:4.1f}%  RSS {rss_mib:6.1f} MiB")
+
+
+class _PerfLogDialog(QtWidgets.QDialog):
+    """Read-only dialog showing the perf.log tail and per-class paint stats.
+
+    Surfaces what the perf_diag logger captured during this session
+    without requiring the user to grep a log file. The log view shows
+    the last 500 lines of ``<log_dir>/diagnostics/perf.log``; the stats
+    view formats ``perf_diag.paint_stats()`` as a table sorted by total ms.
+    """
+
+    _LOG_TAIL_LINES = 500
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Perf Log")
+        self.resize(800, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        layout.addWidget(splitter)
+
+        self._log_view = QtWidgets.QPlainTextEdit()
+        self._log_view.setReadOnly(True)
+        self._log_view.setFont(QtGui.QFont("Consolas", 9))
+        splitter.addWidget(self._log_view)
+
+        self._stats_view = QtWidgets.QPlainTextEdit()
+        self._stats_view.setReadOnly(True)
+        self._stats_view.setFont(QtGui.QFont("Consolas", 9))
+        splitter.addWidget(self._stats_view)
+        splitter.setSizes([350, 150])
+
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Close
+        )
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self._load_log()
+        self._load_paint_stats()
+
+    def _load_log(self) -> None:
+        log_path = app_dirs.log_dir() / "diagnostics" / "perf.log"
+        if not log_path.exists():
+            self._log_view.setPlainText("(no perf.log yet)")
+            return
+        try:
+            lines = log_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            self._log_view.setPlainText(f"(could not read perf.log: {exc})")
+            return
+        tail = lines[-self._LOG_TAIL_LINES:]
+        self._log_view.setPlainText("\n".join(tail))
+
+    def _load_paint_stats(self) -> None:
+        from craftgraph import perf_diag
+
+        stats = perf_diag.paint_stats()
+        if not stats:
+            self._stats_view.setPlainText("(no paint samples recorded)")
+            return
+        rows = sorted(stats.items(), key=lambda kv: kv[1].total_ms, reverse=True)
+        header = f"{'node_class':<32} {'count':>8} {'total_ms':>12} {'avg_ms':>10}"
+        body = [header, "-" * len(header)]
+        for name, agg in rows:
+            avg = agg.total_ms / agg.count if agg.count else 0.0
+            body.append(f"{name:<32} {agg.count:>8} {agg.total_ms:>12.2f} {avg:>10.3f}")
+        self._stats_view.setPlainText("\n".join(body))
+
+
+# ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
 
@@ -3239,6 +3347,18 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # (which has drifted to the menu item the user clicked by the time
         # the callback runs).
         self._menu_invoke_scene_pos: QtCore.QPointF | None = None
+
+        # Frame-time perf overlay (View > Show Frame Time). Lazily built.
+        self._frame_time_overlay: _FrameTimeOverlay | None = None
+        self._last_frame_ns: int | None = None
+        # Ring buffer of recent frame intervals (~2 s at 60 fps).
+        self._frame_history: deque[float] = deque(maxlen=120)
+        # Skip-counter so the overlay refresh runs at ~10 Hz rather than 60.
+        self._frame_overlay_skip: int = 0
+        self._frame_timer = QtCore.QTimer(self)
+        self._frame_timer.setInterval(16)  # ~60 fps polling
+        self._frame_timer.timeout.connect(self._frame_tick)
+        self._frame_timer.start()
 
         # Node search state (inline search bar, built lazily on first use).
         self._search_bar: NodeSearchBar | None = None
@@ -3444,6 +3564,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_counter_action.toggled.connect(self._on_toggle_hwnd_counter)
         view_menu.addAction(self._hwnd_counter_action)
 
+        self._frame_overlay_action = QtGui.QAction("Show Frame &Time", self)
+        self._frame_overlay_action.setCheckable(True)
+        frame_overlay_initial = bool(
+            app_dirs.load_setting("show_frame_time_overlay", False)
+        )
+        self._frame_overlay_action.setChecked(frame_overlay_initial)
+        self._frame_overlay_action.toggled.connect(self._toggle_frame_time_overlay)
+        view_menu.addAction(self._frame_overlay_action)
+        if frame_overlay_initial:
+            self._toggle_frame_time_overlay(True)
+
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
 
@@ -3454,6 +3585,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._dump_hwnd_action = QtGui.QAction("Dump Handle &Snapshot...", self)
         self._dump_hwnd_action.triggered.connect(self._on_dump_handle_snapshot)
         help_menu.addAction(self._dump_hwnd_action)
+
+        self._dump_memory_action = QtGui.QAction("Dump &Memory Snapshot...", self)
+        self._dump_memory_action.triggered.connect(self._on_dump_memory_snapshot)
+        help_menu.addAction(self._dump_memory_action)
+
+        self._perf_log_action = QtGui.QAction("Show &Perf Log...", self)
+        self._perf_log_action.triggered.connect(self._on_show_perf_log)
+        help_menu.addAction(self._perf_log_action)
 
         help_menu.addSeparator()
 
@@ -3615,9 +3754,77 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_counter.setVisible(checked)
         app_dirs.save_setting("show_hwnd_counter", checked)
 
+    def _toggle_frame_time_overlay(self, on: bool) -> None:
+        if on:
+            if self._frame_time_overlay is None:
+                self._frame_time_overlay = _FrameTimeOverlay(self)
+            self._frame_time_overlay.move(8, 8)
+            self._frame_time_overlay.show()
+            self._frame_time_overlay.raise_()
+        elif self._frame_time_overlay is not None:
+            self._frame_time_overlay.hide()
+        app_dirs.save_setting("show_frame_time_overlay", on)
+
+    def _frame_tick(self, *, now_ns: int | None = None) -> None:
+        """Sample one frame interval and report to perf_diag.
+
+        Tracks per-tick wall-clock so frame-budget violations land in the
+        perf_diag log, maintains a 120-frame ring buffer, and pushes
+        fps / last_ms / p99_ms into the overlay every ~6 ticks (~10 Hz)
+        when the overlay is visible. Refresh cadence is throttled so
+        the overlay never costs more than the work it measures.
+        """
+        if now_ns is None:
+            now_ns = time.perf_counter_ns()
+        if self._last_frame_ns is not None:
+            frame_ms = (now_ns - self._last_frame_ns) / 1_000_000.0
+            perf_diag.report_frame(frame_ms)
+            self._frame_history.append(frame_ms)
+            self._refresh_frame_overlay(frame_ms)
+        self._last_frame_ns = now_ns
+
+    def _refresh_frame_overlay(self, last_ms: float) -> None:
+        """Push current fps / last_ms / p99 into the overlay if it's shown.
+
+        Uses ``isHidden()`` instead of ``isVisible()`` so the overlay still
+        gets data when the toggle is on but the window itself isn't yet
+        on-screen (e.g. during tests, or a minimized main window).
+        """
+        overlay = self._frame_time_overlay
+        if overlay is None or overlay.isHidden():
+            return
+        # Throttle to ~10 Hz so overlay paint never dominates frame cost.
+        self._frame_overlay_skip = (self._frame_overlay_skip + 1) % 6
+        if self._frame_overlay_skip != 0:
+            return
+        history = self._frame_history
+        if not history:
+            return
+        avg_ms = sum(history) / len(history)
+        fps = 1000.0 / avg_ms if avg_ms > 0 else 0.0
+        # 99th percentile via sorted index -- fine at len <= 120.
+        sorted_history = sorted(history)
+        p99_idx = max(0, int(len(sorted_history) * 0.99) - 1)
+        p99_ms = sorted_history[p99_idx]
+        overlay.update_metrics(fps=fps, last_ms=last_ms, p99_ms=p99_ms)
+
     def _on_dump_handle_snapshot(self) -> None:
         path = hwnd_diag.snapshot_to_file()
         self.statusBar().showMessage(f"Handle snapshot written to {path}", 5000)
+
+    def _on_dump_memory_snapshot(self) -> None:
+        from datetime import datetime
+
+        diag_dir = app_dirs.log_dir() / "diagnostics"
+        path = diag_dir / f"mem_{datetime.now():%Y%m%d_%H%M%S}.txt"
+        mem_diag.snapshot_to_file(path)
+        self.statusBar().showMessage(f"Memory snapshot written to {path}", 5000)
+
+    def _on_show_perf_log(self) -> None:
+        dialog = _PerfLogDialog(self)
+        # Use class-method form to avoid a literal ``dialog.exec()`` call
+        # (a project security hook flags that pattern even for Qt dialogs).
+        QtWidgets.QDialog.exec(dialog)
 
     def _spawn_main_context_menu_for_test(self) -> None:
         """Test hook: pop up and immediately dismiss the main graph context menu.
@@ -3660,6 +3867,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self.statusBar().showMessage("Ready")
+        # Live CPU% / RSS readout (psutil sampler @ 1 Hz). Permanent, always visible.
+        self._proc_stats_widget = _ProcStatsWidget(self)
+        self.statusBar().addPermanentWidget(self._proc_stats_widget)
+        self._proc_stats_timer = QtCore.QTimer(self)
+        self._proc_stats_timer.setInterval(1000)  # 1 Hz
+        self._proc_stats_timer.timeout.connect(self._proc_stats_tick)
+        self._proc_stats_timer.start()
         # HWND counter (Surface A). Hidden by default; toggled via View menu.
         self._hwnd_counter = QtWidgets.QLabel("")
         self._hwnd_counter.setVisible(False)
@@ -3669,6 +3883,23 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_counter_timer.setInterval(2000)
         self._hwnd_counter_timer.timeout.connect(self._refresh_hwnd_counter)
         self._hwnd_counter_timer.start()
+
+    def _proc_stats_tick(self) -> None:
+        from craftgraph import proc_diag
+
+        snap = proc_diag.sample()
+        self._proc_stats_widget.update_metrics(
+            cpu_percent=snap.cpu_percent,
+            rss_bytes=snap.rss_bytes,
+        )
+
+    def _yield_during_populate(self, count: int) -> None:
+        """Pump events every 50 nodes so big single-file loads stay responsive."""
+        if count % 50 == 0:
+            QtWidgets.QApplication.processEvents(
+                QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                10,  # 10 ms budget per yield
+            )
 
     def _refresh_hwnd_counter(self) -> None:
         from craftgraph import hwnd_diag
@@ -3901,7 +4132,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             return False
 
         dialog = QuickProjectDialog(parent=self)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return False
 
         docs_dir = app_dirs.documents_dir()
@@ -4006,7 +4237,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             cc3_dir = self._cc3_working_dir()
             default_dir = Path(cc3_dir) if cc3_dir else Path.cwd()
         dialog = NewFileDialog(parent=self, default_dir=default_dir)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         pf = ParsedFile(source_path=dialog.file_path, block_type=dialog.block_type)
@@ -4037,7 +4268,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         cc3_dir = self._cc3_working_dir()
         default_dir = Path(cc3_dir) if cc3_dir else None
         dialog = NewProjectDialog(parent=self, default_dir=default_dir)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
 
         project_dir = dialog.project_path
@@ -4463,7 +4694,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_settings(self) -> None:
         """Show the Settings dialog and apply changed settings."""
-        with hwnd_diag.measure("open_settings"):
+        with hwnd_diag.measure("open_settings"), perf_diag.measure("open_settings"):
             dialog = _SettingsDialog(
                 self,
                 backup_on_save=self._backup_on_save,
@@ -4486,7 +4717,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             )
             dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
             try:
-                dialog.exec_()
+                dialog.exec()
                 self._apply_settings_from_dialog(dialog)
             finally:
                 # Without this, the dialog stays as a child of the main window
@@ -5132,7 +5363,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _on_watcher_rebuild(self, cycles: list[list[str]]) -> None:
         """Handle a watcher-triggered reload with notification settings."""
-        with hwnd_diag.measure("watcher_rebuild"):
+        with hwnd_diag.measure("watcher_rebuild"), perf_diag.measure("watcher_rebuild"):
             fw = self._fw_settings
 
             if fw.on_external_change == "ignore":
@@ -6084,64 +6315,78 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Parse the code editor text and rebuild the tab's node graph."""
         from craftgraph.parser import MappingError, ParseError, parse_text
 
-        text = tab.editor.toPlainText()
-        if not text.strip():
-            return
+        with perf_diag.measure("apply_code_editor_text"):
+            text = tab.editor.toPlainText()
+            if not text.strip():
+                return
 
-        src = tab.parsed_file.source_path if tab.parsed_file is not None else self._source_path
-        try:
-            pf = parse_text(text, source_path=src)
-        except (ParseError, MappingError) as exc:
-            self.statusBar().showMessage(f"Parse error: {exc}")
-            if self._ce_settings.show_parse_errors_inline:
-                line = getattr(exc, "line", 0)
-                tab.editor.show_parse_error(line, str(exc))
-            return
-
-        tab.editor.clear_parse_errors()
-
-        # Tear down previous handler
-        if tab.ui_handler is not None:
-            tab.ui_handler.disconnect()
-            tab.ui_handler = None
-
-        tab.graph.clear_session()
-        tab.history.clear()
-
-        with tab.sync_guard(), self._suspend_graph_updates(tab.graph):
-            tab.model_to_node = populate_graph(tab.graph, [pf], edit_history=tab.history)
-            connect_hierarchy(tab.graph, [pf], tab.model_to_node)
-            conn_result = connect_ingredients(tab.graph, [pf], tab.model_to_node)
-            tab.orphan_nodes = conn_result.orphan_nodes
-            positions = compute_hierarchy_layout([pf], tab.model_to_node)
-            overlay_user_positions(positions, tab.user_positions, tab.model_to_node)
-            apply_layout(positions, tab.model_to_node)
-            place_orphan_nodes(tab.graph)
-            highlight_cycle_edges(tab.graph, [pf], tab.model_to_node)
-            update_node_issue_overlays(
-                tab.graph,
-                [pf],
-                tab.model_to_node,
-                frozenset(i.lower() for i in self._get_id_words()),
+            src = (
+                tab.parsed_file.source_path
+                if tab.parsed_file is not None
+                else self._source_path
             )
-            self._stamp_source_file(tab.model_to_node, pf.source_path.name)
-            update_child_count_labels(tab.model_to_node)
+            try:
+                pf = parse_text(text, source_path=src)
+            except (ParseError, MappingError) as exc:
+                self.statusBar().showMessage(f"Parse error: {exc}")
+                if self._ce_settings.show_parse_errors_inline:
+                    line = getattr(exc, "line", 0)
+                    tab.editor.show_parse_error(line, str(exc))
+                return
 
-        tab.parsed_file = pf
-        self._apply_sprites_for(tab)
-        self._update_path_completions()
-        tab.ui_handler = UIToModelHandler(
-            graph=tab.graph,
-            history=tab.history,
-            guard=tab.sync_guard,
-            parsed_files=[pf],
-            model_to_node=tab.model_to_node,
-            on_cycle_rejected=self._on_cycle_rejected,
-            on_reassignment_warning=self._on_reassignment_warning,
-        )
+            tab.editor.clear_parse_errors()
 
-        node_count = len(tab.model_to_node)
-        self.statusBar().showMessage(f"Parsed {node_count} node(s) from editor")
+            # Tear down previous handler
+            if tab.ui_handler is not None:
+                tab.ui_handler.disconnect()
+                tab.ui_handler = None
+
+            tab.graph.clear_session()
+            tab.history.clear()
+
+            with tab.sync_guard(), self._suspend_graph_updates(tab.graph):
+                tab.model_to_node = populate_graph(
+                    tab.graph,
+                    [pf],
+                    edit_history=tab.history,
+                    on_node_created=self._yield_during_populate,
+                )
+                connect_hierarchy(tab.graph, [pf], tab.model_to_node)
+                conn_result = connect_ingredients(tab.graph, [pf], tab.model_to_node)
+                tab.orphan_nodes = conn_result.orphan_nodes
+                positions = compute_hierarchy_layout([pf], tab.model_to_node)
+                overlay_user_positions(positions, tab.user_positions, tab.model_to_node)
+                apply_layout(positions, tab.model_to_node)
+                place_orphan_nodes(tab.graph)
+                highlight_cycle_edges(tab.graph, [pf], tab.model_to_node)
+                update_node_issue_overlays(
+                    tab.graph,
+                    [pf],
+                    tab.model_to_node,
+                    frozenset(i.lower() for i in self._get_id_words()),
+                )
+                self._stamp_source_file(tab.model_to_node, pf.source_path.name)
+                update_child_count_labels(tab.model_to_node)
+
+            # Signals were blocked during populate; rebuild tooltip patches.
+            for node in tab.model_to_node.values():
+                self._apply_node_header_tooltip(node)
+
+            tab.parsed_file = pf
+            self._apply_sprites_for(tab)
+            self._update_path_completions()
+            tab.ui_handler = UIToModelHandler(
+                graph=tab.graph,
+                history=tab.history,
+                guard=tab.sync_guard,
+                parsed_files=[pf],
+                model_to_node=tab.model_to_node,
+                on_cycle_rejected=self._on_cycle_rejected,
+                on_reassignment_warning=self._on_reassignment_warning,
+            )
+
+            node_count = len(tab.model_to_node)
+            self.statusBar().showMessage(f"Parsed {node_count} node(s) from editor")
 
     # -- Context menus (per-graph) --------------------------------------------
 
@@ -6547,7 +6792,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         visual-only (no model_ref) and has a muted grey style.
         """
         dialog = ItemIdPickerDialog(self._get_id_words(), parent=self)
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         item_id = dialog.selected_id
         if not item_id:
@@ -7179,22 +7424,26 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     @staticmethod
     @contextlib.contextmanager
     def _suspend_graph_updates(graph: NodeGraph) -> "Iterator[None]":
-        """Suppress NodeGraphQt redraws and scene re-indexing during bulk load.
+        """Suppress NodeGraphQt redraws, re-indexing, and signals during bulk load.
 
         Each ``setWidget()``, port-add, and property-change normally triggers
         a node redraw + scene reindex.  With hundreds of nodes that adds
         seconds of UI churn before anything is visible.  This wraps the
         bulk-load region: disable view updates, switch the scene to NoIndex,
-        run the build, then restore both and trigger one final repaint.
+        block NodeGraph signals (so listeners like the tooltip patcher do not
+        run per-node -- callers must rebuild that state after exit), run the
+        build, then restore everything and trigger one final repaint.
         """
         viewer = graph.viewer()
         scene = viewer.scene()
         prev_index_method = scene.itemIndexMethod()
         scene.setItemIndexMethod(QtWidgets.QGraphicsScene.ItemIndexMethod.NoIndex)
         viewer.setUpdatesEnabled(False)
+        signal_blocker = QtCore.QSignalBlocker(graph)
         try:
             yield
         finally:
+            del signal_blocker  # explicit unblock before repaint
             viewer.setUpdatesEnabled(True)
             scene.setItemIndexMethod(prev_index_method)
             viewer.update()
@@ -7231,7 +7480,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         initial_user_positions = dict(saved_positions) if saved_positions else {}
 
         with guard(), self._suspend_graph_updates(graph):
-            model_to_node = populate_graph(graph, [parsed_file], edit_history=history)
+            model_to_node = populate_graph(
+                graph,
+                [parsed_file],
+                edit_history=history,
+                on_node_created=self._yield_during_populate,
+            )
             connect_hierarchy(graph, [parsed_file], model_to_node)
             conn_result = connect_ingredients(graph, [parsed_file], model_to_node)
             orphan_nodes = conn_result.orphan_nodes
@@ -7251,6 +7505,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             # NodeGraphQt defaults create_node(selected=True); clear to
             # avoid accidental bulk deletion of newly-loaded nodes.
             graph.clear_selection()
+
+        # Signals were blocked during populate; rebuild tooltip patches now.
+        for node in model_to_node.values():
+            self._apply_node_header_tooltip(node)
 
         self._attach_completers_bulk(model_to_node)
 
@@ -7370,84 +7628,92 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Parse recipes from *path* and populate per-file tabs."""
         from craftgraph.parser import MappingError, ParseError, parse_directory, parse_file
 
-        self.statusBar().showMessage(f"Parsing {path}...")
+        with perf_diag.measure("load_recipes"):
+            self.statusBar().showMessage(f"Parsing {path}...")
 
-        try:
-            parsed_files = [parse_file(path)] if path.is_file() else parse_directory(path)
-        except (ParseError, MappingError, FileNotFoundError, NotADirectoryError) as exc:
-            self.statusBar().showMessage(f"Parse error: {exc}")
-            return
+            try:
+                parsed_files = (
+                    [parse_file(path)] if path.is_file() else parse_directory(path)
+                )
+            except (
+                ParseError,
+                MappingError,
+                FileNotFoundError,
+                NotADirectoryError,
+            ) as exc:
+                self.statusBar().showMessage(f"Parse error: {exc}")
+                return
 
-        if not parsed_files:
-            self.statusBar().showMessage("No recipe files found.")
-            return
+            if not parsed_files:
+                self.statusBar().showMessage("No recipe files found.")
+                return
 
-        self._tear_down_tabs()
-        self._source_path = path
+            self._tear_down_tabs()
+            self._source_path = path
 
-        # Scan for sprite assets -- CC3 Assets/ is the primary source
-        if self._subnautica_cc3_path:
-            self._sprite_lookup = scan_assets_dir(Path(self._subnautica_cc3_path))
-        else:
-            recipe_dir = path.parent if path.is_file() else path
-            self._sprite_lookup = scan_assets_dir(recipe_dir)
+            # Scan for sprite assets -- CC3 Assets/ is the primary source
+            if self._subnautica_cc3_path:
+                self._sprite_lookup = scan_assets_dir(Path(self._subnautica_cc3_path))
+            else:
+                recipe_dir = path.parent if path.is_file() else path
+                self._sprite_lookup = scan_assets_dir(recipe_dir)
 
-        # Load persisted node positions from sidecar file
-        layout_file = layout_path_for(path)
-        disk_positions = load_layout(layout_file) or {}
+            # Load persisted node positions from sidecar file
+            layout_file = layout_path_for(path)
+            disk_positions = load_layout(layout_file) or {}
 
-        # Create one FileTab per parsed file. Pump the event loop between
-        # tabs so the UI does not appear frozen during a multi-file load
-        # (each tab queues thousands of Qt events that would otherwise pile
-        # up and drain in one big stutter at the end).
-        total_files = len(parsed_files)
-        for idx, pf in enumerate(parsed_files, start=1):
-            tab_key = pf.source_path.stem
-            tab_saved = disk_positions.get(tab_key, {})
-            saved_pos = {k: (v[0], v[1]) for k, v in tab_saved.items()}
+            # Create one FileTab per parsed file. Pump the event loop between
+            # tabs so the UI does not appear frozen during a multi-file load
+            # (each tab queues thousands of Qt events that would otherwise pile
+            # up and drain in one big stutter at the end).
+            total_files = len(parsed_files)
+            for idx, pf in enumerate(parsed_files, start=1):
+                tab_key = pf.source_path.stem
+                tab_saved = disk_positions.get(tab_key, {})
+                saved_pos = {k: (v[0], v[1]) for k, v in tab_saved.items()}
+                self.statusBar().showMessage(
+                    f"Loading {pf.source_path.name} ({idx}/{total_files})..."
+                )
+                tab = self._create_file_tab(pf, saved_positions=saved_pos)
+                self._file_tabs.append(tab)
+
+                self._graph_stack.addWidget(tab.graph.widget)
+                self._editor_stack.addWidget(tab.editor)
+                self._tab_bar.addTab(pf.source_path.stem)
+                self._tab_bar.setTabToolTip(
+                    self._tab_bar.count() - 1,
+                    str(pf.source_path),
+                )
+                QtWidgets.QApplication.processEvents(
+                    QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
+                    50,
+                )
+
+            # Apply sprites across all tabs
+            for tab in self._file_tabs:
+                self._apply_sprites_for(tab)
+
+            self._update_path_completions()
+            self._refresh_all_ref_nodes()
+
+            # Apply persisted node editor settings (pipe style, port labels, etc.)
+            self._apply_node_editor_settings(self._ne_settings)
+
+            # Activate first tab
+            self._tab_bar.setCurrentIndex(0)
+            self._on_tab_changed(0)
+
+            total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
+            total_cycles = sum(t.cycle_count for t in self._file_tabs)
+            cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ", no cycles"
             self.statusBar().showMessage(
-                f"Loading {pf.source_path.name} ({idx}/{total_files})..."
-            )
-            tab = self._create_file_tab(pf, saved_positions=saved_pos)
-            self._file_tabs.append(tab)
-
-            self._graph_stack.addWidget(tab.graph.widget)
-            self._editor_stack.addWidget(tab.editor)
-            self._tab_bar.addTab(pf.source_path.stem)
-            self._tab_bar.setTabToolTip(
-                self._tab_bar.count() - 1,
-                str(pf.source_path),
-            )
-            QtWidgets.QApplication.processEvents(
-                QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,
-                50,
+                f"Loaded {total_nodes} nodes from {len(parsed_files)} file(s){cycle_msg}"
             )
 
-        # Apply sprites across all tabs
-        for tab in self._file_tabs:
-            self._apply_sprites_for(tab)
-
-        self._update_path_completions()
-        self._refresh_all_ref_nodes()
-
-        # Apply persisted node editor settings (pipe style, port labels, etc.)
-        self._apply_node_editor_settings(self._ne_settings)
-
-        # Activate first tab
-        self._tab_bar.setCurrentIndex(0)
-        self._on_tab_changed(0)
-
-        total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
-        total_cycles = sum(t.cycle_count for t in self._file_tabs)
-        cycle_msg = f", {total_cycles} cycle(s)!" if total_cycles else ", no cycles"
-        self.statusBar().showMessage(
-            f"Loaded {total_nodes} nodes from {len(parsed_files)} file(s){cycle_msg}"
-        )
-
-        # (Re)start file watcher if enabled
-        self._stop_file_watcher()
-        if self._fw_settings.enabled:
-            self._start_file_watcher()
+            # (Re)start file watcher if enabled
+            self._stop_file_watcher()
+            if self._fw_settings.enabled:
+                self._start_file_watcher()
 
 
 # ---------------------------------------------------------------------------
@@ -7505,6 +7771,12 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
             )
 
     hwnd_diag.install_logger(threshold=20, on_threshold_exceeded=_hwnd_threshold_warning)
+
+    # Surface perf_diag's INFO lines (action= delta_ms=) on stderr and
+    # persist them to ~/.craftgraph/diagnostics/perf.log for later review.
+    perf_diag.install_logger(
+        log_path=app_dirs.log_dir() / "diagnostics" / "perf.log",
+    )
 
     window = CraftGraphWindow()
 

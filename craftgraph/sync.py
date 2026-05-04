@@ -230,6 +230,8 @@ def populate_graph(
     graph: NodeGraph,
     parsed_files: list[ParsedFile],
     edit_history: EditHistory | None = None,
+    *,
+    on_node_created: Callable[[int], None] | None = None,
 ) -> ModelNodeMap:
     """Create NodeGraphQt nodes for every entry in *parsed_files*.
 
@@ -240,73 +242,98 @@ def populate_graph(
     If *edit_history* is provided, it is injected into every created
     node via ``node.set_edit_history()`` so that auto-wired
     ``_on_field_changed`` callbacks can push undoable commands.
+
+    If *on_node_created* is provided, it is called once per node with
+    the running 1-indexed count. The GUI uses this to pump the Qt event
+    loop every N nodes so big folder loads do not freeze the UI.
     """
     model_to_node: ModelNodeMap = {}
     y_pos = 0.0
+    count = 0
+
+    def _record(node: object) -> None:
+        nonlocal count
+        count += 1
+        if on_node_created is not None:
+            on_node_created(count)
 
     for pf in parsed_files:
         # Fabricators and their nested contents
         for fab in pf.custom_fabricators:
             fnode, y_pos = _create_fab_node(graph, fab, y_pos)
             model_to_node[id(fab)] = fnode
+            _record(fnode)
 
             for tab in fab.tabs:
                 tnode, y_pos = _create_tab_node(graph, tab, y_pos)
                 model_to_node[id(tab)] = tnode
+                _record(tnode)
 
             for recipe in fab.added_recipes:
                 rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
                 model_to_node[id(recipe)] = rnode
+                _record(rnode)
 
             for recipe in fab.alias_recipes:
                 rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
                 model_to_node[id(recipe)] = rnode
+                _record(rnode)
 
             for recipe in fab.custom_foods:
                 rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
                 model_to_node[id(recipe)] = rnode
+                _record(rnode)
 
         # Top-level tabs
         for tab in pf.crafting_tabs:
             tnode, y_pos = _create_tab_node(graph, tab, y_pos)
             model_to_node[id(tab)] = tnode
+            _record(tnode)
 
         # Top-level recipes
         for recipe in pf.modified_recipes:
             rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
             model_to_node[id(recipe)] = rnode
+            _record(rnode)
 
         for recipe in pf.added_recipes:
             rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
             model_to_node[id(recipe)] = rnode
+            _record(rnode)
 
         for recipe in pf.alias_recipes:
             rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
             model_to_node[id(recipe)] = rnode
+            _record(rnode)
 
         for recipe in pf.custom_foods:
             rnode, y_pos = _create_recipe_node(graph, recipe, y_pos)
             model_to_node[id(recipe)] = rnode
+            _record(rnode)
 
         # Custom sizes
         for size in pf.custom_sizes:
             snode, y_pos = _create_size_node(graph, size, y_pos)
             model_to_node[id(size)] = snode
+            _record(snode)
 
         # Moved recipes
         for moved in pf.moved_recipes:
             mnode, y_pos = _create_moved_recipe_node(graph, moved, y_pos)
             model_to_node[id(moved)] = mnode
+            _record(mnode)
 
         # Custom bio fuels
         for fuel in pf.custom_bio_fuels:
             bnode, y_pos = _create_bio_fuel_node(graph, fuel, y_pos)
             model_to_node[id(fuel)] = bnode
+            _record(bnode)
 
         # Custom fragment counts
         for frag in pf.custom_fragment_counts:
             fnode, y_pos = _create_fragment_count_node(graph, frag, y_pos)
             model_to_node[id(frag)] = fnode
+            _record(fnode)
 
     # Inject edit history into all created nodes
     if edit_history is not None:

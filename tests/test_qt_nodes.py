@@ -1523,3 +1523,171 @@ class TestLivePipeViewportUpdateMode:
         ports = node.output_ports() or node.input_ports()
         assert ports, "expected at least one port on a ModifiedRecipeNode"
         return ports[0].view
+
+
+
+# ---------------------------------------------------------------------------
+# Decoration overlay item caching
+# ---------------------------------------------------------------------------
+
+
+class TestDecorationOverlayCache:
+    """Decoration overlays use ItemCoordinateCache to skip repaint churn."""
+
+    def test_warning_overlay_uses_item_coordinate_cache(self, qapp):
+        from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem
+
+        from craftgraph.qt_nodes import _WarningOverlay
+
+        # Parent must outlive the overlay; QGraphicsRectItem is a cheap stand-in.
+        parent = QGraphicsRectItem()
+        overlay = _WarningOverlay(parent)
+        assert overlay.cacheMode() == QGraphicsItem.CacheMode.ItemCoordinateCache
+
+
+# ---------------------------------------------------------------------------
+# Cached pixmap renderer
+# ---------------------------------------------------------------------------
+
+
+class TestRenderSpritePixmapCache:
+    """_render_sprite_pixmap memoizes by (path, size) so repeat calls are free."""
+
+    def test_repeated_render_returns_cached_pixmap(self, qapp, tmp_path):
+        from PySide6.QtGui import QImage
+
+        from craftgraph.qt_nodes import _render_sprite_pixmap
+
+        # Write a real PNG so QPixmap actually decodes something.
+        png = tmp_path / "icon.png"
+        QImage(8, 8, QImage.Format.Format_RGB32).save(str(png), "PNG")
+        assert png.exists()
+
+        # Reset cache so this test starts clean even if other tests pre-warmed it.
+        _render_sprite_pixmap.cache_clear()
+
+        a = _render_sprite_pixmap(png, 32)
+        b = _render_sprite_pixmap(png, 32)
+
+        info = _render_sprite_pixmap.cache_info()
+        assert info.hits >= 1, f"expected cache hit on second call, got {info}"
+        # Same cached object identity proves no rerender.
+        assert a is b
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 4: setStyleSheet cache (skip no-op restyles)
+# ---------------------------------------------------------------------------
+
+
+class TestStyleSheetCache:
+    """Repeated setStyleSheet with the same string is a no-op after caching."""
+
+    def test_setstylesheet_skips_when_unchanged(self, qapp):
+        from PySide6 import QtWidgets
+
+        from craftgraph.qt_nodes import _install_stylesheet_cache
+
+        # Use a Python subclass so we can patch the class-level method
+        # without touching the C++ QLabel binding.
+        class SpyLabel(QtWidgets.QLabel):
+            pass
+
+        widget = SpyLabel()
+        _install_stylesheet_cache(widget)
+
+        widget.setStyleSheet("background: red;")
+        widget.setStyleSheet("background: red;")
+
+        assert widget._cg_last_stylesheet == "background: red;"
+
+        # Replace the class-level setStyleSheet with a counting spy and
+        # verify the cache short-circuits identical follow-up calls.
+        calls: list[str] = []
+        original = SpyLabel.setStyleSheet
+
+        def counting(self, sheet, _orig=original):
+            calls.append(sheet)
+            _orig(self, sheet)
+
+        SpyLabel.setStyleSheet = counting  # type: ignore[assignment]
+        try:
+            _install_stylesheet_cache(widget)
+            widget.setStyleSheet("background: red;")
+            widget.setStyleSheet("background: blue;")
+            assert calls == ["background: blue;"]
+        finally:
+            SpyLabel.setStyleSheet = original  # type: ignore[assignment]
+
+    def test_class_level_cache_is_installed_once_and_short_circuits(self, qapp):
+        """_install_stylesheet_cache_on_class patches the class once.
+
+        The production path (``_install_stylesheet_cache_on_class(_NodeGroupBox)``
+        at module load) replaces every per-instance closure with a single
+        class-level descriptor swap. Verifies the sentinel idempotency and
+        that the cache short-circuits identical follow-up calls.
+        """
+        from PySide6 import QtWidgets
+
+        from craftgraph.qt_nodes import _install_stylesheet_cache_on_class
+
+        class CachedLabel(QtWidgets.QLabel):
+            pass
+
+        _install_stylesheet_cache_on_class(CachedLabel)
+        assert CachedLabel._cg_stylesheet_cache_installed is True
+
+        # Calling install twice should be a no-op (sentinel guard).
+        first_setter = CachedLabel.setStyleSheet
+        _install_stylesheet_cache_on_class(CachedLabel)
+        assert CachedLabel.setStyleSheet is first_setter
+
+        widget = CachedLabel()
+        widget.setStyleSheet("color: red;")
+        assert widget._cg_last_stylesheet == "color: red;"
+        # Second identical call short-circuits before touching Qt.
+        widget.setStyleSheet("color: red;")
+        assert widget._cg_last_stylesheet == "color: red;"
+        # Different value updates the cache.
+        widget.setStyleSheet("color: blue;")
+        assert widget._cg_last_stylesheet == "color: blue;"
+
+
+# ---------------------------------------------------------------------------
+# Paint timing wired via class-level NodeItem.paint wrap
+# ---------------------------------------------------------------------------
+
+
+class TestPaintTimingWiring:
+    """NodeItem.paint records per-class timing via perf_diag.record_paint."""
+
+    def test_view_carries_node_class_name(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert getattr(node.view, "_cg_node_class_name", None) == "ModifiedRecipeNode"
+
+    def test_paint_records_into_perf_diag(self, qapp, graph):
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
+        from craftgraph import perf_diag
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        perf_diag.reset_paint_stats()
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        pixmap = QPixmap(200, 200)
+        painter = QPainter(pixmap)
+        try:
+            opt = QStyleOptionGraphicsItem()
+            node.view.paint(painter, opt, None)
+        finally:
+            painter.end()
+
+        stats = perf_diag.paint_stats()
+        assert "ModifiedRecipeNode" in stats
+        assert stats["ModifiedRecipeNode"].count >= 1
+        assert stats["ModifiedRecipeNode"].total_ms >= 0.0
+
+        perf_diag.reset_paint_stats()

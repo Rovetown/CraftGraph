@@ -1,0 +1,26 @@
+# CraftGraph HWND snapshot 2026-05-04T11:42:20
+gui_objects=3271
+gdi_objects=1634
+widget_count=3146
+
+Top widget classes:
+  _NodeGroupBox: 807
+  QLineEdit: 673
+  QWidget: 473
+  QScrollBar: 310
+  QPushButton: 153
+  QListView: 139
+  QComboBox: 131
+  QFrame: 131
+  _IntEditWidget: 75
+  BaseMenu: 63
+  QLabel: 40
+  QToolButton: 25
+  QMenu: 13
+  _RecentEntryItem: 10
+  QStackedWidget: 10
+  QAbstractButton: 9
+  QTabBar: 8
+  QMenuBar: 8
+  QRubberBand: 7
+  CodeEditor: 7

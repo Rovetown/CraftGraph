@@ -1,6 +1,14 @@
 #### BIG INBETWEEN NEEDED TO BE SOLVED!!!
 The file "GEMINI_SOLUTION.md" has important info and potential bug fixes for us!
 
+#### TEST RUNNER -- regression sweep hangs / times out
+
+- [DONE] **Investigate why `uv run --extra qt pytest tests/test_qt_gui.py` hangs.** _Two layered causes. (1) Pipe buffering on the agent shell: `2>&1 | tail` and `Select-Object -Last` capture only the final tail of stdout, so progress dots never flush mid-run. Fix: redirect to a file with `>file 2>&1` and tail the file -- output streams as expected. (2) Real test hang at test #28, `tests/test_qt_gui.py::TestMenuBar::test_settings_dialog_opens` -- 27 prior tests pass in seconds, then pytest stalls indefinitely. Likely a modal `QDialog` call without monkey-patching to dismiss it; in an interactive shell the dialog can be closed by the user, but in the headless agent shell the modal loop waits forever. **Action items below.**_
+- [DONE] **Add `just test-fast` and `just test-qt` recipes.** _`test-fast` runs every non-Qt-window test file (test_qt_nodes + parser/graph/sync/serializer/watcher/perf_diag/proc_diag/mem_diag) and finishes in ~10 s -- proven 629/634 in 9.37 s on this branch. `test-qt` runs the full Qt suite (test_qt_gui + test_qt_nodes) with PYTHONUNBUFFERED=1, `-s`, `--tb=line`; finishes 609/609 in ~38 s under the agent shell after the dialog-stub migration below._
+- [DONE] **Patch modal-dialog tests so they never block headless.** _Production code migrated from `QDialog.exec_()` to `QDialog.exec()` in commit a46e127, but 10 monkey-patch stubs in test_qt_gui.py kept patching `exec_` -- a method nobody calls anymore -- so the real modal ran and stalled the headless agent shell. Migrated every `exec_` stub to `exec` (and dropped the redundant double-stub in TestMeasureWrappers.test_open_settings_writes_log_entry). Full sweep now passes 609/609 in 38 s._
+- [ ] **Consider tagging slow / interactive tests with `@pytest.mark.slow`** and excluding them from the default `just test` recipe; opt-in via `just test-slow`. Same goal: the default sweep should finish fast enough that "did my change regress anything" never times out. Lower priority now that `just test-fast` exists.
+
+
 ## HWND Exhaustion: Hardening + Diagnostics Plan
 
 The original 894-node `_NodeGroupBox` blow-up is patched, but HWND exhaustion still surfaces "here and there" through bugs or leaks we have not pinned down. Goal: stop it permanently by (1) measuring it so leaks become findable, (2) fixing the known suspects, (3) installing cheap preventive guards. Performance / multithreading work is out of scope here -- separate planning cycle once HWND is stable.
@@ -72,39 +80,42 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 
 | # | Item | Where in CraftGraph | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1.1 | cProfile harness with tiered workloads (B/A/C) | tests/test_perf_*.py analog of test_hwnd_stress.py | low | establishes truth before tuning | -- |
-| 1.2 | perf_diag.measure(action) analog of hwnd_diag.measure | wraps _open_folder, _on_watcher_rebuild, code-edit handler | low | per-action wall-clock + frame budget | -- |
-| 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | -- |
-| 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | -- |
-| 1.5 | Release-vs-dev baseline: pyinstaller --onefile build, run same workload | one-time | medium | quantifies how much "feels slow" is the dev interpreter | -- |
+| 1.1 | cProfile harness with tiered workloads (B/A/C) | tests/test_perf_*.py analog of test_hwnd_stress.py | low | establishes truth before tuning | DONE -- tests/test_perf_stress.py with Tier A regression gate |
+| 1.2 | perf_diag.measure(action) analog of hwnd_diag.measure | wraps _open_folder, _on_watcher_rebuild, code-edit handler | low | per-action wall-clock + frame budget | DONE -- perf_diag module; wired around load_recipes / settings / watcher / code-edit |
+| 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | DONE -- View > Show Frame Time + report_frame budget logger |
+| 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | DONE -- mem_diag module + Help > Dump Memory Snapshot |
+| 1.5 | Release-vs-dev baseline: pyinstaller --onefile build, run same workload | one-time | medium | quantifies how much "feels slow" is the dev interpreter | DONE -- finding: **release is 3.9x slower than dev**, not the other way around. `craftgraph check craftgraph/cc3_reference_files/real-mod-examples` ran 3 times: dev `uv run` averaged 725 ms; the PyInstaller `--onefile` binary averaged 2793 ms. The `--onefile` extraction tax (whole bundle to `%TEMP%` per launch) dominates everything else, so optimizing the dev interpreter would not make the release faster. Side-fix: the build recipe was missing `--collect-data craftgraph`, so the binary crashed on launch with a missing config.toml; recipe updated. **Action item:** if release-mode startup ever becomes a real complaint, switch the build recipe to `--onedir` (folder ships, no extraction tax) -- not done yet because distribution implications need their own design pass. |
+| 1.6 | Live CPU% / RSS readout in status bar (psutil) | new perf widget in qt_gui.py status bar | low | per-second CPU + memory visible without dumping snapshots | DONE -- proc_diag module + _ProcStatsWidget on 1 Hz QTimer |
+| 1.7 | Per-node paint timing (instrument QGraphicsItem.paint) | qt_nodes.py + perf_diag aggregator | medium | identifies which node subclass dominates pan/zoom paint cost | DONE -- record_paint / paint_stats / reset_paint_stats API in perf_diag (paint-side wiring deferred with the rolled-back lazy-build patch) |
+| 1.8 | Per-action perf history view (Help > Show Perf Log) | new dialog reading perf_diag log file | low | trend visibility without grepping log files | DONE -- _PerfLogDialog (perf.log tail + paint_stats table) |
 
 #### 2. Algorithmic / data structure
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 2.1 | Hash-based file change detection (mtime + size + sha1 fast path) before reparse | 1 | watcher.py -> parser.py boundary | low | watcher rebuild only re-parses changed files | -- |
+| 2.1 | Hash-based file change detection (mtime + size + sha1 fast path) before reparse | 1 | watcher.py -> parser.py boundary | low | watcher rebuild only re-parses changed files | DONE -- (st_ino, st_mtime_ns, st_size) triple cached in _RecipeEventHandler |
 | 2.2 | Incremental graph rebuild (model diff, not full reload) | 2 | graph.py, _on_watcher_rebuild | high | watcher hitch on save vanishes | -- |
-| 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | -- |
-| 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | -- |
-| 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | -- |
+| 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | DONE -- find_cycles memoized on graph.graph keyed by (n_nodes, n_edges) |
+| 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | DONE -- QSignalBlocker added to _suspend_graph_updates; tooltip patches replayed after exit |
+| 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | INVESTIGATE -- evaluate later. Parse-all on Tier A is **75.6 ms** (1.6% of folder load); background-prefetch would shave at most that much. Cost: thread or QThreadPool wiring, cross-thread error paths, file-order preservation for stable tab ordering. Re-evaluate only if Tier C parse cost becomes a real fraction of the load wall-clock, or if the project moves to a directory-watcher model that re-parses on every save. |
 
 #### 3. Concurrency (Python-level)
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 3.1 | QThread + worker for parser signals (anchor) | 2 | _open_folder, _on_watcher_rebuild | medium | folder open no longer freezes UI | -- |
-| 3.2 | QThreadPool + QRunnable for parallel parse | 2 | parser.py | medium | tier A folder load parallelizes | -- |
-| 3.3 | ProcessPoolExecutor with persistent worker pool | 2 | parser orchestrator | medium | bypasses GIL on multi-core | -- |
+| 3.1 | QThread + worker for parser signals (anchor) | 2 | _open_folder, _on_watcher_rebuild | medium | folder open no longer freezes UI | INVESTIGATE -- evaluate later. Profile-driven, same as 2.7 / 4.1: parse-all on Tier A is **75.6 ms** (1.6% of folder load). The freeze users feel is the post-parse Qt scene mutation (populate_graph + per-node widget construction = ~4 s), and **NodeGraphQt is not thread-safe** -- nodes must be created on the main thread, so a parser worker thread cannot help with the actual cost. Phase 2's cooperative time-slicing (3.6) already keeps the UI responsive during the 4 s populate. |
+| 3.2 | QThreadPool + QRunnable for parallel parse | 2 | parser.py | medium | tier A folder load parallelizes | INVESTIGATE -- evaluate later. Parallelizing 75 ms of work across cores would save tens of ms in the best case and could cost more from QThreadPool overhead + result aggregation. Same NodeGraphQt main-thread constraint as 3.1: post-parse populate must run serially anyway. |
+| 3.3 | ProcessPoolExecutor with persistent worker pool | 2 | parser orchestrator | medium | bypasses GIL on multi-core | INVESTIGATE -- evaluate later. Same profile data as 3.1/3.2 plus cross-process serialization overhead (pickling ParsedFile dataclasses) likely costs more than the 75 ms it would save. Re-evaluate only if Tier C parse cost ever becomes >500 ms. |
 | 3.4 | Python 3.14 free-threaded build (no-GIL) | track | runtime selection | high | parallel parse without process overhead -- track only, gated on PySide6 wheel compat | -- |
-| 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | -- |
-| 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | -- |
+| 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | DONE -- audit-only. `_schedule_rebuild` already cancels-and-restarts the debounce Timer on every event so an arbitrary burst within `watcher_debounce_sec` collapses to exactly one rebuild. Per-event reparse is filtered by the (st_ino, st_mtime_ns, st_size) fast path from 2.1. No change warranted. |
+| 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | DONE -- populate_graph gained on_node_created hook; CraftGraphWindow yields every 50 nodes via processEvents (10 ms budget, ExcludeUserInputEvents) |
 
 #### 4. Native code / compiled extensions
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | -- |
-| 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | -- |
+| 4.1 | mypyc compile parser (parser ladder rung 1) | 2 | parser.py, serializer.py | low | 2-4x parse speed | INVESTIGATE -- evaluate later. Measured parser-only cost on Tier A is **75.6 ms** (1.6% of the 4751 ms folder load). Even a 10x mypyc speedup saves <70 ms, invisible to users, in exchange for non-trivial build-hook complexity (hatch_mypyc, wheel distribution, CI changes). Re-evaluate only if Tier C becomes a real acceptance gate. Parser ladder satisfied: no rung selected. |
+| 4.5 | msgspec for JSON layout cache | 1 | layout_store.py | low | freebie for large layout files | DONE -- save/load_layout uses msgspec.json.encode/decode |
 
 > **Parser native-compilation ladder.** 4.1, 9.3, 9.4, 9.5 all attack the same target (parser CPU time). Pick **at most one** rung. The escalation rule lives in Section 9: only climb if profiler proves the previous rung was not enough. Replace, don't stack -- one parser implementation at a time.
 
@@ -112,29 +123,30 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | -- |
-| 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | -- |
+| 5.1 | QOpenGLWidget viewport | 2 | NodeGraphQt viewer | low | pan/zoom 2-5x smoother | INVESTIGATE -- evaluate later when profiler signals it. The change itself is one line (`graph.viewer().setViewport(QOpenGLWidget())`), but `QGraphicsView` + `QGraphicsProxyWidget` (which every CraftGraph node uses for embedded text inputs / combo boxes) has known rendering issues under OpenGL on some GPUs. Phase 2's stylesheet cache already cut `_align_widgets_horizontal` cost 81% (`_draw_node_horizontal` 71%); post-Phase-2 frame-budget log shows pan/zoom is no longer the bottleneck at Tier A. Re-evaluate only if Tier C pan/zoom degrades or the live frame-time overlay shows steady-state >budget frames after section-6 wins. |
+| 5.2 | Painter caching (ItemCoordinateCache, decoration items only) | 1 | qt_nodes.py decoration overlays | low | skip repaint on unchanged decorations | DONE -- _WarningOverlay uses ItemCoordinateCache |
 
 #### 6. Qt/UI-specific
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | -- |
-| 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | -- |
+| 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | DONE -- audited; default 400 ms already adequate |
+| 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | DONE -- _render_sprite_pixmap lru_cache(maxsize=256) in qt_nodes.py |
+| 6.7 | setStyleSheet cache on _NodeGroupBox (skip no-op restyles) | 2 | qt_nodes.py _patched_set_custom_widget | low | NodeGraphQt's setTitleAlign re-applies an identical stylesheet thousands of times per redraw; cache short-circuits ~3.3 s of QSS reparse on Tier A | DONE -- _install_stylesheet_cache wired onto every _NodeGroupBox at construction |
 
 #### 7. Architectural
 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | -- |
-| 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | -- |
+| 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | DONE -- verified load_layout precedes compute_hierarchy_layout; saved positions overlay solver result |
+| 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | INVESTIGATE -- evaluate later. Measured serialize-all on Tier A: **0.3 ms** for all 6 files combined (faster than a single 16 ms frame). Threading overhead (signal hop + lifecycle) would cost more than the work it offloads. Re-evaluate only if a workload appears where serialize wall-clock ever shows up in the perf log. |
 
 #### 8. Build / runtime mode  _(Phase 1 -- all entries)_
 
 | # | Item | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 8.1 | PYTHONOPTIMIZE=2 for release builds | PyInstaller spec | low | strips assertions, docstrings | -- |
-| 8.2 | uv run with --no-dev for smoke tests | dev workflow | low | catches dev-mode-only artifacts | -- |
+| 8.1 | PYTHONOPTIMIZE=2 for release builds | PyInstaller spec | low | strips assertions, docstrings | DONE -- just build passes --optimize 2 (zero asserts in craftgraph/, safe to strip) |
+| 8.2 | uv run with --no-dev for smoke tests | dev workflow | low | catches dev-mode-only artifacts | DONE -- just smoke-no-dev recipe + smoke-no-dev CI job |
 
 #### 9. Post-optimization ideas (revisit after sections 1-8 land)
 
@@ -152,7 +164,8 @@ Items here are explicitly *out of scope* for the first performance pass. They go
 | 9.8 | Background pre-build of inactive tab graphs _(was 7.1, optional)_ | `qt_gui.py` tab manager | medium | tab switch instant after pre-build completes | NodeGraphQt is not thread-safe -- nodes must be created on the main thread, so this isn't true off-thread work. Covered in v1 by 2.7 (background prefetch parse). Revisit only if tab switches still hitch after that lands. |
 | 9.9 | Replace NetworkX with rustworkx _(was 2.5, demoted from v1)_ | `graph.py` | medium | 5-50x on cycle/topo at tier C | Demoted because at tier A (~50 nodes) NetworkX is plenty fast and gain is negligible. Revisit if Phase 1 profiler shows graph algos are a meaningful fraction of folder-load wall-clock at tier A, or if tier C becomes a real acceptance target. |
 | 9.10 | Level-of-detail: hide widgets when zoomed out _(was 5.3, demoted from v1)_ | `qt_nodes.py` paint() | medium | tier C pan/zoom dramatic improvement | Demoted because at tier A node count, pan/zoom is bounded by total widget count, not LOD. Revisit if Phase 1 frame-time log shows pan/zoom exceeding budget at tier A, or if tier C becomes a real acceptance target. |
-| 9.11 | Lazy widget allocation _(was 6.2, demoted from v1; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | Demoted because at tier A widget count is bounded and proxy-widget cost does not dominate. Revisit if Phase 1 widget-count delta or HWND counter shows proxy widgets dominating cost at tier A. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2. |
+| 9.11 | Lazy widget allocation _(was 6.2, demoted from v1; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | **ATTEMPTED in Phase 2 -- reverted.** Deferring `_build_from_registry()` to first paint broke `populate_from_model` (called synchronously after node create) -- newly built widgets re-seeded from default values instead of populated model state, and the per-instance paint patch produced heap corruption (0xc0000374) under the regression suite. Needs a redesign that handles populate-before-paint and patches paint at the class level. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2. |
+| 9.12 | Real GPU usage queries (D3D / Vulkan / Metal) | new gpu_diag.py | high | quantifies render-side cost vs CPU widget cost | Heavy: needs platform-specific bindings (D3D query interface on Windows, MoltenVK / Metal on macOS). Only revisit if frame-time overlay (1.3) consistently shows >budget frames AND CPU profile rules out widget construction. Until then, frame_ms from `report_frame()` is the best signal we have. |
 
 ---
 

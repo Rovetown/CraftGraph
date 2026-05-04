@@ -389,3 +389,47 @@ class TestIntegration:
 
         time.sleep(0.6)
         callback.assert_not_called()
+
+
+class TestStatFastPath:
+    """When mtime+size+inode are unchanged, skip the parser entirely."""
+
+    def test_unchanged_stat_skips_reparse(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from craftgraph import watcher as watcher_mod
+
+        recipe_file = tmp_path / "r.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n",
+            encoding="utf-8",
+        )
+
+        callback = MagicMock()
+        handler = _make_handler(tmp_path, callback)
+        # Seed the cache by parsing once.
+        handler._reparse_file(recipe_file)
+        assert recipe_file in handler._cache
+
+        # Patch parse_file so any call after the seed counts as a wasted reparse.
+        parse_calls = 0
+
+        def counting_parse(path):
+            nonlocal parse_calls
+            parse_calls += 1
+            return _make_parsed_file(path, item_id="Titanium")
+
+        monkeypatch.setattr(watcher_mod, "parse_file", counting_parse)
+
+        # Re-trigger reparse without touching the file -- stat unchanged.
+        handler._reparse_file(recipe_file)
+        assert parse_calls == 0, "stat fast-path must skip parse_file"
+
+        # Modifying the file invalidates the stat triple -> parse runs again.
+        time.sleep(0.01)  # ensure mtime advances on coarse FS clocks
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Gold;\n);\n",
+            encoding="utf-8",
+        )
+        handler._reparse_file(recipe_file)
+        assert parse_calls == 1, "changed stat must trigger reparse"

@@ -14,6 +14,7 @@ Architecture notes:
 
 from __future__ import annotations
 
+import functools
 import uuid
 from enum import Enum
 from pathlib import Path
@@ -90,6 +91,96 @@ def _suppress_native_window(widget: QWidget) -> None:
         child.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
 
 
+def _install_node_paint_timing() -> None:
+    """Patch ``NodeItem.paint`` once at module load to record per-class paint timing.
+
+    Each call wraps the original paint call with a perf_counter delta and forwards
+    the ``(class_name, ms)`` sample to ``perf_diag.record_paint``. The class
+    name is read from ``view._cg_node_class_name`` (stamped in
+    ``CraftGraphBaseNode.__init__``); fallback is ``"NodeItem"`` for any
+    NodeGraphQt-internal items that paint through the same method.
+
+    Class-level patch (not per-instance) so Qt's C++ vtable dispatch hits the
+    wrap on every paint, not just direct Python calls. Idempotent across
+    repeat imports via the ``_cg_paint_timing_installed`` sentinel.
+    """
+    import time as _time
+
+    from NodeGraphQt.qgraphics.node_base import NodeItem
+
+    if getattr(NodeItem, "_cg_paint_timing_installed", False):
+        return
+
+    original_paint = NodeItem.paint
+
+    def timed_paint(self, painter, option, widget=None):
+        from craftgraph import perf_diag
+
+        cls_name = getattr(self, "_cg_node_class_name", "NodeItem")
+        before = _time.perf_counter_ns()
+        original_paint(self, painter, option, widget)
+        after = _time.perf_counter_ns()
+        perf_diag.record_paint(cls_name, (after - before) / 1_000_000.0)
+
+    NodeItem.paint = timed_paint  # type: ignore[assignment]
+    NodeItem._cg_paint_timing_installed = True  # type: ignore[attr-defined]
+
+
+_install_node_paint_timing()
+
+
+def _install_stylesheet_cache(widget: object) -> None:
+    """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
+
+    Kept for direct unit testing of the cache semantics. The production code
+    path uses :func:`_install_stylesheet_cache_on_class` instead, which patches
+    the target class once at module load instead of allocating a closure +
+    ``MethodType`` per node.
+    """
+    import types as _types
+
+    original_set = type(widget).setStyleSheet
+
+    def cached_set(self, sheet: str, _orig=original_set) -> None:
+        if getattr(self, "_cg_last_stylesheet", None) == sheet:
+            return
+        self._cg_last_stylesheet = sheet
+        _orig(self, sheet)
+
+    widget.setStyleSheet = _types.MethodType(cached_set, widget)
+
+
+def _install_stylesheet_cache_on_class(cls: type) -> None:
+    """Patch *cls*.setStyleSheet once so identical re-applications short-circuit.
+
+    NodeGraphQt's per-redraw ``setTitleAlign`` sends the same stylesheet to
+    every ``_NodeGroupBox`` thousands of times during a single folder load
+    (15,876 calls measured at Tier A). Caching the last-applied sheet on the
+    instance and skipping the real Qt call when unchanged eliminates ~3
+    seconds of redundant QSS re-parsing.
+
+    Class-level (not per-instance) so we pay one closure + descriptor swap
+    for the entire process instead of per-node. Idempotent across repeat
+    imports via the ``_cg_stylesheet_cache_installed`` sentinel.
+    """
+    if getattr(cls, "_cg_stylesheet_cache_installed", False):
+        return
+
+    original_set = cls.setStyleSheet
+
+    def cached_set(self, sheet: str) -> None:
+        if getattr(self, "_cg_last_stylesheet", None) == sheet:
+            return
+        self._cg_last_stylesheet = sheet
+        original_set(self, sheet)
+
+    cls.setStyleSheet = cached_set  # type: ignore[assignment]
+    cls._cg_stylesheet_cache_installed = True  # type: ignore[attr-defined]
+
+
+_install_stylesheet_cache_on_class(_NodeGroupBox)
+
+
 def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
     """Replacement for NodeBaseWidget.set_custom_widget that prevents HWND leaks."""
     global _GROUPBOX_PARENT
@@ -102,6 +193,9 @@ def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
         _GROUPBOX_PARENT = QWidget()
         _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
     group = _NodeGroupBox(self._label, parent=_GROUPBOX_PARENT)
+    # The setStyleSheet no-op cache is installed once at class level via
+    # _install_stylesheet_cache_on_class(_NodeGroupBox); every group
+    # instance picks it up automatically.
     group.add_node_widget(widget)
     # Block HWND allocation that would otherwise fire when group becomes
     # top-level via setParent(None) below, and again during setWidget()'s
@@ -216,6 +310,27 @@ _REQUIRED_VALID_STYLE = _VAR_NODES.required_valid_style
 # Node type strings for port constraints (identifier + "." + ClassName)
 _FABRICATOR_TYPE = f"{IDENTIFIER}.FabricatorNode"
 _CRAFTING_TAB_TYPE = f"{IDENTIFIER}.CraftingTabNode"
+
+
+@functools.lru_cache(maxsize=256)
+def _render_sprite_pixmap(path: Path, size_px: int) -> QPixmap:
+    """Load and scale a sprite PNG, memoizing by (path, size_px).
+
+    Loading + smooth-scaling a PNG is ~1 ms each; the same icon often
+    appears on dozens of nodes (every recipe that uses Titanium gets
+    the same Titanium pixmap). Caching the rendered result skips the
+    decode + scale on repeats. Bounded at 256 entries -- well above
+    typical sprite count and trims to LRU on overflow.
+    """
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return pixmap
+    return pixmap.scaled(
+        size_px,
+        size_px,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
 
 
 class _IntEditWidget(QWidget):
@@ -546,6 +661,9 @@ class _WarningOverlay(QGraphicsItem):
         self.setZValue(Z_VAL_NODE_WIDGET + 5)
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
+        # Static decoration: cache the painted pixmap in item coordinates so
+        # repaints during pan/zoom skip the painter path entirely.
+        self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
 
     def boundingRect(self) -> QRectF:
         s = self.SIZE
@@ -625,6 +743,10 @@ class CraftGraphBaseNode(BaseNode):
         self._source_file_name: str = ""
         self._issue_messages: list[str] = []
         self._cycle_paths: list[str] = []
+        # Stamp the concrete subclass name on the view so the class-level
+        # NodeItem.paint wrap (see _install_node_paint_timing) can attribute
+        # paint cost to the right CraftGraph node class.
+        self.view._cg_node_class_name = type(self).__name__
 
         self.set_color(*self.NODE_COLOR)
         if self.HAS_SPRITE_PORT:
@@ -661,16 +783,10 @@ class CraftGraphBaseNode(BaseNode):
             return
         if size is None:
             size = get_config().ui.sprite_size
-        pixmap = QPixmap(str(path))
+        pixmap = _render_sprite_pixmap(path, size)
         if pixmap.isNull():
             self.clear_sprite()
             return
-        pixmap = pixmap.scaled(
-            size,
-            size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
         self.view._icon_item.setPixmap(pixmap)
         self._sprite_path = path
         if self.view.scene():

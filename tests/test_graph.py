@@ -488,3 +488,54 @@ class TestClassifyNodes:
         types = classify_nodes(graph)
         assert types["A"] == NodeType.INTERMEDIATE
         assert types["B"] == NodeType.INTERMEDIATE
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection cache
+# ---------------------------------------------------------------------------
+
+
+class TestFindCyclesCache:
+    """find_cycles memoizes results on the graph until topology changes."""
+
+    def test_repeated_call_skips_recomputation(self, monkeypatch) -> None:
+        recipes = [
+            ModifiedRecipe(item_id="A", ingredients=[Ingredient("B", 1)]),
+            ModifiedRecipe(item_id="B", ingredients=[Ingredient("A", 1)]),
+        ]
+        graph = build_graph([_make_parsed_file(recipes)])
+
+        first = find_cycles(graph)
+
+        # After the first call, simple_cycles must not be invoked again
+        # for an unchanged graph -- the result comes from the cache.
+        from craftgraph import graph as graph_mod
+
+        sentinel_calls = 0
+
+        def boom(_g):
+            nonlocal sentinel_calls
+            sentinel_calls += 1
+            return iter(())
+
+        monkeypatch.setattr(graph_mod.nx, "simple_cycles", boom)
+        second = find_cycles(graph)
+
+        assert sentinel_calls == 0, "cached result must short-circuit simple_cycles"
+        assert second == first
+
+    def test_topology_change_invalidates_cache(self) -> None:
+        recipes = [
+            ModifiedRecipe(item_id="A", ingredients=[Ingredient("B", 1)]),
+            ModifiedRecipe(item_id="B", ingredients=[Ingredient("A", 1)]),
+        ]
+        graph = build_graph([_make_parsed_file(recipes)])
+
+        first = find_cycles(graph)
+        assert first  # non-empty: A <-> B cycle
+
+        # Break the cycle by removing one edge -- the cache must invalidate
+        # so the next call returns the now-empty cycle list.
+        graph.remove_edge("A", "B")
+        second = find_cycles(graph)
+        assert second == []

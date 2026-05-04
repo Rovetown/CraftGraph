@@ -38,6 +38,13 @@ export PATH *ARGS:
 gui *PATH:
     uv run --extra qt craftgraph gui {{ if PATH == "" { "" } else { PATH } }}
 
+# Same as `just gui` but starts tracemalloc just before the GUI launches
+# so Help > Dump Memory Snapshot has real allocation data. Tracemalloc
+# is started AFTER imports settle, so startup is not slowed by the
+# pyvis/IPython import chain.
+gui-trace *PATH:
+    uv run --extra qt craftgraph gui --trace-mem {{ if PATH == "" { "" } else { PATH } }}
+
 # ---------------------------------------------------------------------------
 # Development
 # ---------------------------------------------------------------------------
@@ -65,6 +72,22 @@ test-v *ARGS:
 # Run a specific test file
 test-file FILE *ARGS:
     uv run pytest {{FILE}} {{ARGS}}
+
+# Run the full qt suite with stdout unbuffered + capture disabled.
+# Workaround for the agent-shell pipe-buffering issue where the default
+# `pytest tests/test_qt_gui.py` invocation stalls and never flushes
+# progress dots. PYTHONUNBUFFERED=1 forces line-flushed stdout; -s
+# disables pytest output capture so dots stream live; --tb=line keeps
+# failure output compact. Use this for full Qt regression sweeps.
+test-qt *ARGS:
+    PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_gui.py tests/test_qt_nodes.py -s --tb=line {{ARGS}}
+
+# Run only the non-Qt-window tests. Fast regression check that finishes
+# in seconds: skips test_qt_gui.py (the slow file) but still covers
+# nodes, parser, sync, perf, watcher, etc. Safe default during agent
+# sessions when the full Qt sweep keeps timing out.
+test-fast *ARGS:
+    PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_nodes.py tests/test_proc_diag.py tests/test_perf_diag.py tests/test_sync.py tests/test_parser.py tests/test_graph.py tests/test_serializer.py tests/test_watcher.py -q {{ARGS}}
 
 # ---------------------------------------------------------------------------
 # Code Quality
@@ -109,10 +132,26 @@ unregister:
 # Build & Distribution
 # ---------------------------------------------------------------------------
 
-# Bundle into a standalone binary with PyInstaller
+# Bundle into a standalone binary with PyInstaller (--optimize 2 strips asserts/docstrings)
 build:
-    uv run pyinstaller --onefile --name craftgraph --collect-data pyvis craftgraph/cli.py
+    uv run pyinstaller --onefile --name craftgraph --collect-data pyvis --collect-data craftgraph --optimize 2 craftgraph/cli.py
 
 # Clean build artifacts
 clean:
     rm -rf build/ dist/ *.spec __pycache__ .mypy_cache .pytest_cache .ruff_cache
+
+# ---------------------------------------------------------------------------
+# Performance
+# ---------------------------------------------------------------------------
+
+# Run perf stress tests (Tier A asserts; B smoke; C skipped)
+perf-test *ARGS:
+    uv run --extra qt pytest tests/test_perf_stress.py -v {{ARGS}}
+
+# Run --no-dev smoke: parse Tier A workload with runtime deps only
+smoke-no-dev:
+    uv run --no-dev --extra qt python -c "from pathlib import Path; from craftgraph.parser import parse_directory; parse_directory(Path('craftgraph/cc3_reference_files/real-mod-examples')); print('smoke ok')"
+
+# Capture pre/post Phase-1 baseline numbers (no output capture)
+baseline-perf:
+    uv run --extra qt pytest tests/test_perf_stress.py -v --capture=no

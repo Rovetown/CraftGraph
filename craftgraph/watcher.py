@@ -9,6 +9,7 @@ GUI can reuse it with its own callback.
 """
 
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -55,6 +56,7 @@ class _RecipeEventHandler(FileSystemEventHandler):
             debounce_seconds = get_config().timings.watcher_debounce_sec
         self._debounce_seconds = debounce_seconds
         self._cache: dict[Path, ParsedFile] = {}
+        self._stat_cache: dict[Path, tuple[int, int, int]] = {}
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
 
@@ -92,6 +94,7 @@ class _RecipeEventHandler(FileSystemEventHandler):
         path = Path(str(event.src_path))
         with self._lock:
             self._cache.pop(path, None)
+            self._stat_cache.pop(path, None)
         self._schedule_rebuild()
 
     # -- Internal helpers ------------------------------------------------------
@@ -110,6 +113,20 @@ class _RecipeEventHandler(FileSystemEventHandler):
         """
         if not path.exists():
             return
+
+        # Fast path: if (st_ino, st_mtime_ns, st_size) matches the last
+        # parse, the file content is unchanged -- skip parser entirely.
+        # Editors that touch a file without modifying content (autosave
+        # backup, redundant Watchdog event) hit this path.
+        try:
+            st = os.stat(path)
+            triple = (st.st_ino, st.st_mtime_ns, st.st_size)
+        except OSError:
+            triple = None
+
+        if triple is not None and self._stat_cache.get(path) == triple:
+            return
+
         try:
             parsed = parse_file(path)
         except (ParseError, MappingError, OSError) as exc:
@@ -120,10 +137,13 @@ class _RecipeEventHandler(FileSystemEventHandler):
             # File is empty or comment-only; remove from cache
             with self._lock:
                 self._cache.pop(path, None)
+                self._stat_cache.pop(path, None)
             return
 
         with self._lock:
             self._cache[path] = parsed
+            if triple is not None:
+                self._stat_cache[path] = triple
 
     def _schedule_rebuild(self) -> None:
         """Cancel any pending rebuild timer and start a new one."""
