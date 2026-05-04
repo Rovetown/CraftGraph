@@ -97,7 +97,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | 2.2 | Incremental graph rebuild (model diff, not full reload) | 2 | graph.py, _on_watcher_rebuild | high | watcher hitch on save vanishes | -- |
 | 2.3 | Cycle-detection cache (dirty flag invalidation) | 1 | graph.py find_cycle() | low | skip cycle re-run when graph unchanged | DONE -- find_cycles memoized on graph.graph keyed by (n_nodes, n_edges) |
 | 2.4 | Bulk node creation in NodeGraphQt (signal blocker) | 1 | qt_gui.py load_recipes() | medium | folder load drops 50%+ at scale | DONE -- QSignalBlocker added to _suspend_graph_updates; tooltip patches replayed after exit |
-| 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | -- |
+| 2.7 | Lazy parse -- background-prefetch variant | 2 | qt_gui.py tab open hook | medium | folder open finishes in O(file count) | DONE -- decision: skip. Parse-all on Tier A is **75.6 ms** (1.6% of folder load); background-prefetch would shave at most that much. Cost: thread or QThreadPool wiring, cross-thread error paths, file-order preservation for stable tab ordering. Re-evaluate only if Tier C parse cost becomes a real fraction of the load wall-clock, or if the project moves to a directory-watcher model that re-parses on every save. |
 
 #### 3. Concurrency (Python-level)
 
