@@ -134,7 +134,7 @@ unregister:
 
 # Bundle into a standalone binary with PyInstaller (--optimize 2 strips asserts/docstrings)
 build:
-    uv run pyinstaller --onefile --name craftgraph --collect-data pyvis --optimize 2 craftgraph/cli.py
+    uv run pyinstaller --onefile --name craftgraph --collect-data pyvis --collect-data craftgraph --optimize 2 craftgraph/cli.py
 
 # Clean build artifacts
 clean:
