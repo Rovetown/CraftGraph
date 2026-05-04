@@ -108,3 +108,24 @@ class TestInstallLogger:
         # root logger and could surprise unrelated consumers.
         perf_diag.install_logger(log_path=tmp_path / "perf.log", console=False)
         assert perf_diag.logger.propagate is False
+
+
+class TestPaintStats:
+    """record_paint accumulates per-class paint time; paint_stats reports it."""
+
+    def teardown_method(self):
+        perf_diag.reset_paint_stats()
+
+    def test_record_paint_accumulates_total_and_count(self):
+        perf_diag.record_paint("ModifiedRecipeNode", 1.5)
+        perf_diag.record_paint("ModifiedRecipeNode", 2.5)
+        perf_diag.record_paint("AliasRecipeNode", 0.5)
+        stats = perf_diag.paint_stats()
+        assert stats["ModifiedRecipeNode"].count == 2
+        assert stats["ModifiedRecipeNode"].total_ms == 4.0
+        assert stats["AliasRecipeNode"].count == 1
+
+    def test_reset_paint_stats_clears_all(self):
+        perf_diag.record_paint("X", 1.0)
+        perf_diag.reset_paint_stats()
+        assert perf_diag.paint_stats() == {}

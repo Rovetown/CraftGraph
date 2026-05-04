@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 import time
+from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -116,3 +118,43 @@ def measure(action: str) -> Iterator[PerfSnapshot]:
             action,
             after.delta_ms_since(before),
         )
+
+
+# ---------------------------------------------------------------------------
+# Per-node paint timing aggregator
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PaintAggregate:
+    """Aggregated paint timing for one node class."""
+
+    count: int
+    total_ms: float
+
+
+_paint_lock = threading.Lock()
+_paint_totals: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
+
+
+def record_paint(node_class: str, ms: float) -> None:
+    """Add one paint sample for *node_class*. Thread-safe."""
+    with _paint_lock:
+        bucket = _paint_totals[node_class]
+        bucket[0] += 1
+        bucket[1] += ms
+
+
+def paint_stats() -> dict[str, PaintAggregate]:
+    """Return a snapshot of per-class paint aggregates."""
+    with _paint_lock:
+        return {
+            name: PaintAggregate(count=int(b[0]), total_ms=b[1])
+            for name, b in _paint_totals.items()
+        }
+
+
+def reset_paint_stats() -> None:
+    """Clear all accumulated paint stats."""
+    with _paint_lock:
+        _paint_totals.clear()
