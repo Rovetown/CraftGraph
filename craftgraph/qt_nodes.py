@@ -130,13 +130,12 @@ _install_node_paint_timing()
 
 
 def _install_stylesheet_cache(widget: object) -> None:
-    """Make ``widget.setStyleSheet`` a no-op when called with the same string twice.
+    """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
 
-    NodeGraphQt's per-redraw ``setTitleAlign`` sends the same stylesheet to
-    every node widget thousands of times during a single folder load
-    (15,876 calls measured at Tier A). Caching the last-applied sheet on
-    the instance and skipping the real Qt call when unchanged eliminates
-    ~3 seconds of redundant QSS re-parsing.
+    Kept for direct unit testing of the cache semantics. The production code
+    path uses :func:`_install_stylesheet_cache_on_class` instead, which patches
+    the target class once at module load instead of allocating a closure +
+    ``MethodType`` per node.
     """
     import types as _types
 
@@ -151,6 +150,37 @@ def _install_stylesheet_cache(widget: object) -> None:
     widget.setStyleSheet = _types.MethodType(cached_set, widget)
 
 
+def _install_stylesheet_cache_on_class(cls: type) -> None:
+    """Patch *cls*.setStyleSheet once so identical re-applications short-circuit.
+
+    NodeGraphQt's per-redraw ``setTitleAlign`` sends the same stylesheet to
+    every ``_NodeGroupBox`` thousands of times during a single folder load
+    (15,876 calls measured at Tier A). Caching the last-applied sheet on the
+    instance and skipping the real Qt call when unchanged eliminates ~3
+    seconds of redundant QSS re-parsing.
+
+    Class-level (not per-instance) so we pay one closure + descriptor swap
+    for the entire process instead of per-node. Idempotent across repeat
+    imports via the ``_cg_stylesheet_cache_installed`` sentinel.
+    """
+    if getattr(cls, "_cg_stylesheet_cache_installed", False):
+        return
+
+    original_set = cls.setStyleSheet
+
+    def cached_set(self, sheet: str) -> None:
+        if getattr(self, "_cg_last_stylesheet", None) == sheet:
+            return
+        self._cg_last_stylesheet = sheet
+        original_set(self, sheet)
+
+    cls.setStyleSheet = cached_set  # type: ignore[assignment]
+    cls._cg_stylesheet_cache_installed = True  # type: ignore[attr-defined]
+
+
+_install_stylesheet_cache_on_class(_NodeGroupBox)
+
+
 def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
     """Replacement for NodeBaseWidget.set_custom_widget that prevents HWND leaks."""
     global _GROUPBOX_PARENT
@@ -163,10 +193,9 @@ def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
         _GROUPBOX_PARENT = QWidget()
         _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
     group = _NodeGroupBox(self._label, parent=_GROUPBOX_PARENT)
-    # NodeGraphQt's _align_widgets_horizontal redraws every node every paint and
-    # unconditionally re-applies the same _NodeGroupBox stylesheet via
-    # setTitleAlign. Cache it so identical reapplications short-circuit.
-    _install_stylesheet_cache(group)
+    # The setStyleSheet no-op cache is installed once at class level via
+    # _install_stylesheet_cache_on_class(_NodeGroupBox); every group
+    # instance picks it up automatically.
     group.add_node_widget(widget)
     # Block HWND allocation that would otherwise fire when group becomes
     # top-level via setParent(None) below, and again during setWidget()'s

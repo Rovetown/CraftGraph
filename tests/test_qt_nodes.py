@@ -1619,6 +1619,39 @@ class TestStyleSheetCache:
         finally:
             SpyLabel.setStyleSheet = original  # type: ignore[assignment]
 
+    def test_class_level_cache_is_installed_once_and_short_circuits(self, qapp):
+        """_install_stylesheet_cache_on_class patches the class once.
+
+        The production path (``_install_stylesheet_cache_on_class(_NodeGroupBox)``
+        at module load) replaces every per-instance closure with a single
+        class-level descriptor swap. Verifies the sentinel idempotency and
+        that the cache short-circuits identical follow-up calls.
+        """
+        from PySide6 import QtWidgets
+
+        from craftgraph.qt_nodes import _install_stylesheet_cache_on_class
+
+        class CachedLabel(QtWidgets.QLabel):
+            pass
+
+        _install_stylesheet_cache_on_class(CachedLabel)
+        assert CachedLabel._cg_stylesheet_cache_installed is True
+
+        # Calling install twice should be a no-op (sentinel guard).
+        first_setter = CachedLabel.setStyleSheet
+        _install_stylesheet_cache_on_class(CachedLabel)
+        assert CachedLabel.setStyleSheet is first_setter
+
+        widget = CachedLabel()
+        widget.setStyleSheet("color: red;")
+        assert widget._cg_last_stylesheet == "color: red;"
+        # Second identical call short-circuits before touching Qt.
+        widget.setStyleSheet("color: red;")
+        assert widget._cg_last_stylesheet == "color: red;"
+        # Different value updates the cache.
+        widget.setStyleSheet("color: blue;")
+        assert widget._cg_last_stylesheet == "color: blue;"
+
 
 # ---------------------------------------------------------------------------
 # Paint timing wired via class-level NodeItem.paint wrap
