@@ -91,6 +91,28 @@ def _suppress_native_window(widget: QWidget) -> None:
         child.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
 
 
+def _install_stylesheet_cache(widget: object) -> None:
+    """Make ``widget.setStyleSheet`` a no-op when called with the same string twice.
+
+    NodeGraphQt's per-redraw ``setTitleAlign`` sends the same stylesheet to
+    every node widget thousands of times during a single folder load
+    (15,876 calls measured at Tier A). Caching the last-applied sheet on
+    the instance and skipping the real Qt call when unchanged eliminates
+    ~3 seconds of redundant QSS re-parsing.
+    """
+    import types as _types
+
+    original_set = type(widget).setStyleSheet
+
+    def cached_set(self, sheet: str, _orig=original_set) -> None:
+        if getattr(self, "_cg_last_stylesheet", None) == sheet:
+            return
+        self._cg_last_stylesheet = sheet
+        _orig(self, sheet)
+
+    widget.setStyleSheet = _types.MethodType(cached_set, widget)
+
+
 def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
     """Replacement for NodeBaseWidget.set_custom_widget that prevents HWND leaks."""
     global _GROUPBOX_PARENT
@@ -103,6 +125,10 @@ def _patched_set_custom_widget(self: NodeBaseWidget, widget: QWidget) -> None:
         _GROUPBOX_PARENT = QWidget()
         _GROUPBOX_PARENT.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
     group = _NodeGroupBox(self._label, parent=_GROUPBOX_PARENT)
+    # NodeGraphQt's _align_widgets_horizontal redraws every node every paint and
+    # unconditionally re-applies the same _NodeGroupBox stylesheet via
+    # setTitleAlign. Cache it so identical reapplications short-circuit.
+    _install_stylesheet_cache(group)
     group.add_node_widget(widget)
     # Block HWND allocation that would otherwise fire when group becomes
     # top-level via setParent(None) below, and again during setWidget()'s
