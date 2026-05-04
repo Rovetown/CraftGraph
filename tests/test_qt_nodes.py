@@ -1573,3 +1573,48 @@ class TestRenderSpritePixmapCache:
         assert info.hits >= 1, f"expected cache hit on second call, got {info}"
         # Same cached object identity proves no rerender.
         assert a is b
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 Task 4: setStyleSheet cache (skip no-op restyles)
+# ---------------------------------------------------------------------------
+
+
+class TestStyleSheetCache:
+    """Repeated setStyleSheet with the same string is a no-op after caching."""
+
+    def test_setstylesheet_skips_when_unchanged(self, qapp):
+        from PySide6 import QtWidgets
+
+        from craftgraph.qt_nodes import _install_stylesheet_cache
+
+        # Use a Python subclass so we can patch the class-level method
+        # without touching the C++ QLabel binding.
+        class SpyLabel(QtWidgets.QLabel):
+            pass
+
+        widget = SpyLabel()
+        _install_stylesheet_cache(widget)
+
+        widget.setStyleSheet("background: red;")
+        widget.setStyleSheet("background: red;")
+
+        assert widget._cg_last_stylesheet == "background: red;"
+
+        # Replace the class-level setStyleSheet with a counting spy and
+        # verify the cache short-circuits identical follow-up calls.
+        calls: list[str] = []
+        original = SpyLabel.setStyleSheet
+
+        def counting(self, sheet, _orig=original):
+            calls.append(sheet)
+            _orig(self, sheet)
+
+        SpyLabel.setStyleSheet = counting  # type: ignore[assignment]
+        try:
+            _install_stylesheet_cache(widget)
+            widget.setStyleSheet("background: red;")
+            widget.setStyleSheet("background: blue;")
+            assert calls == ["background: blue;"]
+        finally:
+            SpyLabel.setStyleSheet = original  # type: ignore[assignment]
