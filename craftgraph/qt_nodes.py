@@ -91,6 +91,44 @@ def _suppress_native_window(widget: QWidget) -> None:
         child.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
 
 
+def _install_node_paint_timing() -> None:
+    """Patch ``NodeItem.paint`` once at module load to record per-class paint timing.
+
+    Each call wraps the original paint call with a perf_counter delta and forwards
+    the ``(class_name, ms)`` sample to ``perf_diag.record_paint``. The class
+    name is read from ``view._cg_node_class_name`` (stamped in
+    ``CraftGraphBaseNode.__init__``); fallback is ``"NodeItem"`` for any
+    NodeGraphQt-internal items that paint through the same method.
+
+    Class-level patch (not per-instance) so Qt's C++ vtable dispatch hits the
+    wrap on every paint, not just direct Python calls. Idempotent across
+    repeat imports via the ``_cg_paint_timing_installed`` sentinel.
+    """
+    import time as _time
+
+    from NodeGraphQt.qgraphics.node_base import NodeItem
+
+    if getattr(NodeItem, "_cg_paint_timing_installed", False):
+        return
+
+    original_paint = NodeItem.paint
+
+    def timed_paint(self, painter, option, widget=None):
+        from craftgraph import perf_diag
+
+        cls_name = getattr(self, "_cg_node_class_name", "NodeItem")
+        before = _time.perf_counter_ns()
+        original_paint(self, painter, option, widget)
+        after = _time.perf_counter_ns()
+        perf_diag.record_paint(cls_name, (after - before) / 1_000_000.0)
+
+    NodeItem.paint = timed_paint  # type: ignore[assignment]
+    NodeItem._cg_paint_timing_installed = True  # type: ignore[attr-defined]
+
+
+_install_node_paint_timing()
+
+
 def _install_stylesheet_cache(widget: object) -> None:
     """Make ``widget.setStyleSheet`` a no-op when called with the same string twice.
 
@@ -676,6 +714,10 @@ class CraftGraphBaseNode(BaseNode):
         self._source_file_name: str = ""
         self._issue_messages: list[str] = []
         self._cycle_paths: list[str] = []
+        # Stamp the concrete subclass name on the view so the class-level
+        # NodeItem.paint wrap (see _install_node_paint_timing) can attribute
+        # paint cost to the right CraftGraph node class.
+        self.view._cg_node_class_name = type(self).__name__
 
         self.set_color(*self.NODE_COLOR)
         if self.HAS_SPRITE_PORT:

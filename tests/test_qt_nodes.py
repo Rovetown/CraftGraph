@@ -1618,3 +1618,43 @@ class TestStyleSheetCache:
             assert calls == ["background: blue;"]
         finally:
             SpyLabel.setStyleSheet = original  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# Paint timing wired via class-level NodeItem.paint wrap
+# ---------------------------------------------------------------------------
+
+
+class TestPaintTimingWiring:
+    """NodeItem.paint records per-class timing via perf_diag.record_paint."""
+
+    def test_view_carries_node_class_name(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert getattr(node.view, "_cg_node_class_name", None) == "ModifiedRecipeNode"
+
+    def test_paint_records_into_perf_diag(self, qapp, graph):
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
+        from craftgraph import perf_diag
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        perf_diag.reset_paint_stats()
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        pixmap = QPixmap(200, 200)
+        painter = QPainter(pixmap)
+        try:
+            opt = QStyleOptionGraphicsItem()
+            node.view.paint(painter, opt, None)
+        finally:
+            painter.end()
+
+        stats = perf_diag.paint_stats()
+        assert "ModifiedRecipeNode" in stats
+        assert stats["ModifiedRecipeNode"].count >= 1
+        assert stats["ModifiedRecipeNode"].total_ms >= 0.0
+
+        perf_diag.reset_paint_stats()
