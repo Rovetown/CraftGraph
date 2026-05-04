@@ -211,7 +211,7 @@ class TestMenuBar:
 
     def test_settings_dialog_opens(self, window, monkeypatch):
         """Verify _on_settings creates a QDialog with placeholder text."""
-        monkeypatch.setattr(QtWidgets.QDialog, "exec_", lambda self: QtWidgets.QDialog.Accepted)
+        monkeypatch.setattr(QtWidgets.QDialog, "exec", lambda self: QtWidgets.QDialog.Accepted)
         window._on_settings()
         # If we got here without error, the dialog was created successfully.
 
@@ -227,7 +227,7 @@ class TestMenuBar:
             created_dialogs.append(self_dialog)
 
         monkeypatch.setattr(_SettingsDialog, "__init__", tracking_init)
-        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: QtWidgets.QDialog.Accepted)
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: QtWidgets.QDialog.Accepted)
         window._on_settings()
         assert len(created_dialogs) == 1
         tab_widget = created_dialogs[0].findChild(QtWidgets.QTabWidget)
@@ -2237,7 +2237,7 @@ class TestAddIngredientCanvas:
 
         monkeypatch.setattr(
             ItemIdPickerDialog,
-            "exec_",
+            "exec",
             lambda self: QtWidgets.QDialog.DialogCode.Accepted,
         )
         monkeypatch.setattr(
@@ -2259,7 +2259,7 @@ class TestAddIngredientCanvas:
 
         monkeypatch.setattr(
             ItemIdPickerDialog,
-            "exec_",
+            "exec",
             lambda self: QtWidgets.QDialog.DialogCode.Rejected,
         )
         initial_count = len(window.graph.all_nodes())
@@ -3680,7 +3680,7 @@ class TestAutoSave:
             self_dialog._auto_save_interval_spin.setValue(45)
             return True
 
-        monkeypatch.setattr(_SettingsDialog, "exec_", fake_exec)
+        monkeypatch.setattr(_SettingsDialog, "exec", fake_exec)
         window._on_settings()
 
         assert len(calls) == 1
@@ -3736,7 +3736,7 @@ class TestDefaultPaths:
             self_dialog._cc3_path_edit.setText("/edited/cc3")
             return True
 
-        monkeypatch.setattr(_SettingsDialog, "exec_", fake_exec)
+        monkeypatch.setattr(_SettingsDialog, "exec", fake_exec)
         window._on_settings()
 
         assert window._default_project_folder == "/edited/project"
@@ -4109,7 +4109,7 @@ class TestWelcomeButtonIntegration:
 
         assert window._main_stack.currentIndex() == 0
         mock_dialog = Mock()
-        mock_dialog.return_value.exec_.return_value = (
+        mock_dialog.return_value.exec.return_value = (
             QtWidgets.QDialog.DialogCode.Rejected
         )
         with patch("craftgraph.qt_gui.NewProjectDialog", mock_dialog):
@@ -4278,7 +4278,7 @@ class TestSettingsPersistenceRoundTrip:
         from craftgraph.qt_gui import _SettingsDialog
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: None)
         window._on_settings()
         data = __import__("json").loads(
             (tmp_path / "settings.json").read_text(encoding="utf-8")
@@ -4485,7 +4485,7 @@ class TestThemePersistence:
         from craftgraph.qt_gui import _SettingsDialog
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: None)
         window._on_settings()
         data = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
         assert "theme" in data
@@ -5187,7 +5187,7 @@ class TestCodeEditorSettingsPersistence:
         from craftgraph.qt_gui import _SettingsDialog
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: None)
+        monkeypatch.setattr(_SettingsDialog, "exec", lambda self: None)
         window._on_settings()
         data = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
         assert "code_editor" in data
@@ -5906,10 +5906,8 @@ class TestMeasureWrappers:
         from craftgraph.qt_gui import _SettingsDialog
 
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
-        # Stub both `exec` and the deprecated `exec_` so the test does not
-        # block on QDialog.exec.
+        # Stub QDialog.exec so the test does not block on the modal loop.
         monkeypatch.setattr(_SettingsDialog, "exec", lambda self: 0)
-        monkeypatch.setattr(_SettingsDialog, "exec_", lambda self: 0)
 
         window._on_settings()
         log = (tmp_path / "hwnd.log").read_text(encoding="utf-8")
