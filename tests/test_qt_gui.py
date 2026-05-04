@@ -6354,3 +6354,46 @@ class TestLayoutCacheReadThrough:
         assert "load_layout" in order
         assert "compute_hierarchy_layout" in order
         assert order.index("load_layout") < order.index("compute_hierarchy_layout")
+
+
+# ---------------------------------------------------------------------------
+# Status-bar CPU/RSS widget (Phase 2 Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestProcStatsWidget:
+    """Status bar shows live CPU% / RSS readout updated on a timer."""
+
+    def test_proc_stats_widget_present_in_status_bar(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        assert win._proc_stats_widget is not None
+        assert win._proc_stats_widget.parent() is not None
+
+    def test_proc_stats_tick_pushes_metrics_into_widget(
+        self, qapp, monkeypatch, tmp_path
+    ):
+        from craftgraph import app_dirs, proc_diag
+        from craftgraph.proc_diag import ProcSnapshot
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        monkeypatch.setattr(
+            proc_diag, "sample",
+            lambda: ProcSnapshot(cpu_percent=42.5, rss_bytes=123_456_789),
+        )
+
+        win = CraftGraphWindow()
+        win._proc_stats_tick()
+
+        text = win._proc_stats_widget.text()
+        assert "42" in text
+        assert "117" in text or "118" in text  # 123_456_789 / (1024*1024) ~= 117.7

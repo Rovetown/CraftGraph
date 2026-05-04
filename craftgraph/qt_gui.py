@@ -3224,6 +3224,20 @@ class _FrameTimeOverlay(QtWidgets.QLabel):
         self.adjustSize()
 
 
+class _ProcStatsWidget(QtWidgets.QLabel):
+    """Compact CPU% / RSS label permanently visible in the status bar."""
+
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
+        super().__init__(parent)
+        self.setToolTip("Live process CPU% and resident memory (1 Hz sample)")
+        self.setMinimumWidth(150)
+        self.setText("CPU --  RSS --")
+
+    def update_metrics(self, *, cpu_percent: float, rss_bytes: int) -> None:
+        rss_mib = rss_bytes / (1024 * 1024)
+        self.setText(f"CPU {cpu_percent:4.1f}%  RSS {rss_mib:6.1f} MiB")
+
+
 # ---------------------------------------------------------------------------
 # Main window
 # ---------------------------------------------------------------------------
@@ -3774,6 +3788,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self.statusBar().showMessage("Ready")
+        # Live CPU% / RSS readout (psutil sampler @ 1 Hz). Permanent, always visible.
+        self._proc_stats_widget = _ProcStatsWidget(self)
+        self.statusBar().addPermanentWidget(self._proc_stats_widget)
+        self._proc_stats_timer = QtCore.QTimer(self)
+        self._proc_stats_timer.setInterval(1000)  # 1 Hz
+        self._proc_stats_timer.timeout.connect(self._proc_stats_tick)
+        self._proc_stats_timer.start()
         # HWND counter (Surface A). Hidden by default; toggled via View menu.
         self._hwnd_counter = QtWidgets.QLabel("")
         self._hwnd_counter.setVisible(False)
@@ -3783,6 +3804,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_counter_timer.setInterval(2000)
         self._hwnd_counter_timer.timeout.connect(self._refresh_hwnd_counter)
         self._hwnd_counter_timer.start()
+
+    def _proc_stats_tick(self) -> None:
+        from craftgraph import proc_diag
+
+        snap = proc_diag.sample()
+        self._proc_stats_widget.update_metrics(
+            cpu_percent=snap.cpu_percent,
+            rss_bytes=snap.rss_bytes,
+        )
 
     def _refresh_hwnd_counter(self) -> None:
         from craftgraph import hwnd_diag
