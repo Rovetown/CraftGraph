@@ -139,7 +139,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | # | Item | Phase | Where | Cost | Benefit | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 7.2 | Read-through layout cache (verify-and-swap order) | 1 | layout_store.py | low | skip auto-layout on second open | DONE -- verified load_layout precedes compute_hierarchy_layout; saved positions overlay solver result |
-| 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | -- |
+| 7.3 | Move serializer onto worker thread on save | 2 | _on_save_* actions | low | save no longer blocks | DONE -- decision: skip. Measured serialize-all on Tier A: **0.3 ms** for all 6 files combined (faster than a single 16 ms frame). Threading overhead (signal hop + lifecycle) would cost more than the work it offloads. Re-evaluate only if a workload appears where serialize wall-clock ever shows up in the perf log. |
 
 #### 8. Build / runtime mode  _(Phase 1 -- all entries)_
 
