@@ -107,7 +107,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | 3.2 | QThreadPool + QRunnable for parallel parse | 2 | parser.py | medium | tier A folder load parallelizes | -- |
 | 3.3 | ProcessPoolExecutor with persistent worker pool | 2 | parser orchestrator | medium | bypasses GIL on multi-core | -- |
 | 3.4 | Python 3.14 free-threaded build (no-GIL) | track | runtime selection | high | parallel parse without process overhead -- track only, gated on PySide6 wheel compat | -- |
-| 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | -- |
+| 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | DONE -- audit-only. `_schedule_rebuild` already cancels-and-restarts the debounce Timer on every event so an arbitrary burst within `watcher_debounce_sec` collapses to exactly one rebuild. Per-event reparse is filtered by the (st_ino, st_mtime_ns, st_size) fast path from 2.1. No change warranted. |
 | 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | DONE -- populate_graph gained on_node_created hook; CraftGraphWindow yields every 50 nodes via processEvents (10 ms budget, ExcludeUserInputEvents) |
 
 #### 4. Native code / compiled extensions
