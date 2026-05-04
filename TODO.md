@@ -1,6 +1,13 @@
 #### BIG INBETWEEN NEEDED TO BE SOLVED!!!
 The file "GEMINI_SOLUTION.md" has important info and potential bug fixes for us!
 
+#### TEST RUNNER -- regression sweep hangs / times out
+
+- [ ] **Investigate why `uv run --extra qt pytest tests/test_qt_gui.py` (~456 tests) hangs or times out under the agent shell.** Symptoms during Phase 2 perf work: pytest process spawns, output file stays empty for 10+ minutes, no progress visible, eventually has to be killed. Targeted subsets (`-k`, single class, single file) finish in seconds. Suspected causes: stdout buffering on the wrapper pipe (`2>&1 | tail`, `2>&1 | Select-Object -Last`), Windows console-attach handling for pytest progress dots, or a single test in the suite legitimately stalling (watcher debounce, Qt event loop). Need: reliable way to either run the full sweep to completion or split it deterministically by class so blockers surface fast.
+- [ ] **Add a `just test-fast-qt` recipe that runs the qt suite in batches** (e.g. one class per pytest invocation, parallelized via `pytest -n auto` if `pytest-xdist` is added). Each batch finishes quickly enough that the agent can verify it without hitting timeout, and a hung batch surfaces the offending class instead of taking the whole sweep down silently.
+- [ ] **Consider tagging slow / interactive tests with `@pytest.mark.slow`** and excluding them from the default `just test` recipe; opt-in via `just test-slow`. Same goal: the default sweep should finish fast enough that "did my change regress anything" never times out.
+
+
 ## HWND Exhaustion: Hardening + Diagnostics Plan
 
 The original 894-node `_NodeGroupBox` blow-up is patched, but HWND exhaustion still surfaces "here and there" through bugs or leaks we have not pinned down. Goal: stop it permanently by (1) measuring it so leaks become findable, (2) fixing the known suspects, (3) installing cheap preventive guards. Performance / multithreading work is out of scope here -- separate planning cycle once HWND is stable.
