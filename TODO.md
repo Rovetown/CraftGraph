@@ -77,9 +77,9 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | 1.3 | Qt frame-time overlay (debug-only) | qt_gui.py View menu toggle | low | visible fps during pan/zoom | DONE -- View > Show Frame Time + report_frame budget logger |
 | 1.4 | tracemalloc snapshots tied to actions | new mem_diag.py | low | pairs with hwnd_diag for total picture | DONE -- mem_diag module + Help > Dump Memory Snapshot |
 | 1.5 | Release-vs-dev baseline: pyinstaller --onefile build, run same workload | one-time | medium | quantifies how much "feels slow" is the dev interpreter | -- |
-| 1.6 | Live CPU% / RSS readout in status bar (psutil) | new perf widget in qt_gui.py status bar | low | per-second CPU + memory visible without dumping snapshots | -- |
-| 1.7 | Per-node paint timing (instrument QGraphicsItem.paint) | qt_nodes.py + perf_diag aggregator | medium | identifies which node subclass dominates pan/zoom paint cost | -- |
-| 1.8 | Per-action perf history view (Help > Show Perf Log) | new dialog reading perf_diag log file | low | trend visibility without grepping log files | -- |
+| 1.6 | Live CPU% / RSS readout in status bar (psutil) | new perf widget in qt_gui.py status bar | low | per-second CPU + memory visible without dumping snapshots | DONE -- proc_diag module + _ProcStatsWidget on 1 Hz QTimer |
+| 1.7 | Per-node paint timing (instrument QGraphicsItem.paint) | qt_nodes.py + perf_diag aggregator | medium | identifies which node subclass dominates pan/zoom paint cost | DONE -- record_paint / paint_stats / reset_paint_stats API in perf_diag (paint-side wiring deferred with the rolled-back lazy-build patch) |
+| 1.8 | Per-action perf history view (Help > Show Perf Log) | new dialog reading perf_diag log file | low | trend visibility without grepping log files | DONE -- _PerfLogDialog (perf.log tail + paint_stats table) |
 
 #### 2. Algorithmic / data structure
 
@@ -100,7 +100,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | 3.3 | ProcessPoolExecutor with persistent worker pool | 2 | parser orchestrator | medium | bypasses GIL on multi-core | -- |
 | 3.4 | Python 3.14 free-threaded build (no-GIL) | track | runtime selection | high | parallel parse without process overhead -- track only, gated on PySide6 wheel compat | -- |
 | 3.5 | Coalesce watcher events (audit existing debounce) | 1 | watcher.py | low | reduces duplicate rebuilds | -- |
-| 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | -- |
+| 3.6 | Cooperative time-slicing (QTimer-chained build) | 2 | load_recipes() | medium | UI stays responsive during big load | DONE -- populate_graph gained on_node_created hook; CraftGraphWindow yields every 50 nodes via processEvents (10 ms budget, ExcludeUserInputEvents) |
 
 #### 4. Native code / compiled extensions
 
@@ -124,6 +124,7 @@ Tracked separately. Phases 1-3 of HWND have landed and stress tests stay green. 
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | 6.3 | Throttle code-edit -> reparse (audit existing _parse_timer) | 1 | qt_gui.py _parse_timer | low | typing latency drops | DONE -- audited; default 400 ms already adequate |
 | 6.6 | Pre-render node icons to QPixmap cache (lru_cache) | 1 | sprite_loader.py | low | first-paint flash reduced | DONE -- _render_sprite_pixmap lru_cache(maxsize=256) in qt_nodes.py |
+| 6.7 | setStyleSheet cache on _NodeGroupBox (skip no-op restyles) | 2 | qt_nodes.py _patched_set_custom_widget | low | NodeGraphQt's setTitleAlign re-applies an identical stylesheet thousands of times per redraw; cache short-circuits ~3.3 s of QSS reparse on Tier A | DONE -- _install_stylesheet_cache wired onto every _NodeGroupBox at construction |
 
 #### 7. Architectural
 
@@ -155,7 +156,7 @@ Items here are explicitly *out of scope* for the first performance pass. They go
 | 9.8 | Background pre-build of inactive tab graphs _(was 7.1, optional)_ | `qt_gui.py` tab manager | medium | tab switch instant after pre-build completes | NodeGraphQt is not thread-safe -- nodes must be created on the main thread, so this isn't true off-thread work. Covered in v1 by 2.7 (background prefetch parse). Revisit only if tab switches still hitch after that lands. |
 | 9.9 | Replace NetworkX with rustworkx _(was 2.5, demoted from v1)_ | `graph.py` | medium | 5-50x on cycle/topo at tier C | Demoted because at tier A (~50 nodes) NetworkX is plenty fast and gain is negligible. Revisit if Phase 1 profiler shows graph algos are a meaningful fraction of folder-load wall-clock at tier A, or if tier C becomes a real acceptance target. |
 | 9.10 | Level-of-detail: hide widgets when zoomed out _(was 5.3, demoted from v1)_ | `qt_nodes.py` paint() | medium | tier C pan/zoom dramatic improvement | Demoted because at tier A node count, pan/zoom is bounded by total widget count, not LOD. Revisit if Phase 1 frame-time log shows pan/zoom exceeding budget at tier A, or if tier C becomes a real acceptance target. |
-| 9.11 | Lazy widget allocation _(was 6.2, demoted from v1; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | Demoted because at tier A widget count is bounded and proxy-widget cost does not dominate. Revisit if Phase 1 widget-count delta or HWND counter shows proxy widgets dominating cost at tier A. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2. |
+| 9.11 | Lazy widget allocation _(was 6.2, demoted from v1; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | **ATTEMPTED in Phase 2 -- reverted.** Deferring `_build_from_registry()` to first paint broke `populate_from_model` (called synchronously after node create) -- newly built widgets re-seeded from default values instead of populated model state, and the per-instance paint patch produced heap corruption (0xc0000374) under the regression suite. Needs a redesign that handles populate-before-paint and patches paint at the class level. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2. |
 | 9.12 | Real GPU usage queries (D3D / Vulkan / Metal) | new gpu_diag.py | high | quantifies render-side cost vs CPU widget cost | Heavy: needs platform-specific bindings (D3D query interface on Windows, MoltenVK / Metal on macOS). Only revisit if frame-time overlay (1.3) consistently shows >budget frames AND CPU profile rules out widget construction. Until then, frame_ms from `report_frame()` is the best signal we have. |
 
 ---
