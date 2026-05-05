@@ -23,6 +23,7 @@ PLAN.md
 *.md
 
 !README.md
+!docs/superpowers/specs/*.md
 
 craftgraph/cc3_reference_files/
 
