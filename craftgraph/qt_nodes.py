@@ -165,11 +165,16 @@ def _install_port_bounding_rect_cache() -> None:
     original_bounding_rect = PortItem.boundingRect
 
     def cached_bounding_rect(self: object) -> object:
-        cached = getattr(self, "_cg_br_cache", None)
+        # Use __dict__.get rather than getattr: avoids descriptor lookup +
+        # default-value setup, ~2x faster on the cache-hit path. Qt's
+        # scene index calls this hundreds of thousands of times per
+        # pan/zoom session, so the lookup cost compounds.
+        instance_dict = self.__dict__
+        cached = instance_dict.get("_cg_br_cache")
         if cached is not None:
             return cached
         rect = original_bounding_rect(self)
-        self._cg_br_cache = rect  # type: ignore[attr-defined]
+        instance_dict["_cg_br_cache"] = rect
         return rect
 
     PortItem.boundingRect = cached_bounding_rect  # type: ignore[method-assign]
