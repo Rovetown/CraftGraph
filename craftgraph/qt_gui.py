@@ -3254,6 +3254,8 @@ class _PerfLogDialog(QtWidgets.QDialog):
         self.setWindowTitle("Perf Log")
         self.resize(800, 500)
 
+        from craftgraph import perf_diag
+
         layout = QtWidgets.QVBoxLayout(self)
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         layout.addWidget(splitter)
@@ -3269,6 +3271,18 @@ class _PerfLogDialog(QtWidgets.QDialog):
         splitter.addWidget(self._stats_view)
         splitter.setSizes([350, 150])
 
+        controls = QtWidgets.QHBoxLayout()
+        self._record_cb = QtWidgets.QCheckBox("Record paint stats")
+        self._record_cb.setChecked(perf_diag.is_paint_recording())
+        self._record_cb.toggled.connect(perf_diag.set_paint_recording)
+        controls.addWidget(self._record_cb)
+
+        self._reset_btn = QtWidgets.QPushButton("Reset Stats")
+        self._reset_btn.clicked.connect(self._on_reset_stats)
+        controls.addWidget(self._reset_btn)
+        controls.addStretch(1)
+        layout.addLayout(controls)
+
         button_box = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Close
         )
@@ -3276,6 +3290,12 @@ class _PerfLogDialog(QtWidgets.QDialog):
         layout.addWidget(button_box)
 
         self._load_log()
+        self._load_paint_stats()
+
+    def _on_reset_stats(self) -> None:
+        from craftgraph import perf_diag
+
+        perf_diag.reset_paint_stats()
         self._load_paint_stats()
 
     def _load_log(self) -> None:

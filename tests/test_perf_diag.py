@@ -113,7 +113,11 @@ class TestInstallLogger:
 class TestPaintStats:
     """record_paint accumulates per-class paint time; paint_stats reports it."""
 
+    def setup_method(self):
+        perf_diag.set_paint_recording(True)
+
     def teardown_method(self):
+        perf_diag.set_paint_recording(False)
         perf_diag.reset_paint_stats()
 
     def test_record_paint_accumulates_total_and_count(self):
@@ -129,3 +133,34 @@ class TestPaintStats:
         perf_diag.record_paint("X", 1.0)
         perf_diag.reset_paint_stats()
         assert perf_diag.paint_stats() == {}
+
+
+class TestPaintRecordingToggle:
+    """set_paint_recording / is_paint_recording gate the recording cost."""
+
+    def teardown_method(self):
+        perf_diag.set_paint_recording(False)
+        perf_diag.reset_paint_stats()
+
+    def test_recording_disabled_by_default(self):
+        # Module must boot with recording off so per-paint instrumentation is
+        # free in the default case.
+        assert perf_diag.is_paint_recording() is False
+
+    def test_record_paint_is_noop_when_disabled(self):
+        perf_diag.set_paint_recording(False)
+        perf_diag.record_paint("X", 1.0)
+        assert perf_diag.paint_stats() == {}
+
+    def test_record_paint_records_when_enabled(self):
+        perf_diag.set_paint_recording(True)
+        perf_diag.record_paint("X", 1.0)
+        assert "X" in perf_diag.paint_stats()
+
+    def test_toggle_off_stops_recording(self):
+        perf_diag.set_paint_recording(True)
+        perf_diag.record_paint("X", 1.0)
+        perf_diag.set_paint_recording(False)
+        perf_diag.record_paint("X", 99.0)
+        # Second call must not have been counted.
+        assert perf_diag.paint_stats()["X"].count == 1

@@ -94,8 +94,12 @@ def _suppress_native_window(widget: QWidget) -> None:
 def _install_node_paint_timing() -> None:
     """Patch ``NodeItem.paint`` once at module load to record per-class paint timing.
 
-    Each call wraps the original paint call with a perf_counter delta and forwards
-    the ``(class_name, ms)`` sample to ``perf_diag.record_paint``. The class
+    The wrapper early-returns to the original paint when
+    ``perf_diag.is_paint_recording()`` is False (the default), so the
+    instrumentation is essentially free unless the user has opted in via the
+    Perf Log dialog. When recording is on, each call wraps the original
+    paint call with a ``perf_counter`` delta and forwards the
+    ``(class_name, ms)`` sample to ``perf_diag.record_paint``. The class
     name is read from ``view._cg_node_class_name`` (stamped in
     ``CraftGraphBaseNode.__init__``); fallback is ``"NodeItem"`` for any
     NodeGraphQt-internal items that paint through the same method.
@@ -104,23 +108,31 @@ def _install_node_paint_timing() -> None:
     wrap on every paint, not just direct Python calls. Idempotent across
     repeat imports via the ``_cg_paint_timing_installed`` sentinel.
     """
-    import time as _time
+    from time import perf_counter_ns as _perf_counter_ns
 
     from NodeGraphQt.qgraphics.node_base import NodeItem
+
+    from craftgraph import perf_diag as _perf_diag
 
     if getattr(NodeItem, "_cg_paint_timing_installed", False):
         return
 
     original_paint = NodeItem.paint
+    # Hoist hot-path lookups to the closure so each paint avoids module-level
+    # dict access and a fresh ``from craftgraph import perf_diag``.
+    _is_recording = _perf_diag.is_paint_recording
+    _record_paint = _perf_diag.record_paint
+    _NS_TO_MS = 1.0 / 1_000_000.0
 
     def timed_paint(self, painter, option, widget=None):
-        from craftgraph import perf_diag
-
+        if not _is_recording():
+            original_paint(self, painter, option, widget)
+            return
         cls_name = getattr(self, "_cg_node_class_name", "NodeItem")
-        before = _time.perf_counter_ns()
+        before = _perf_counter_ns()
         original_paint(self, painter, option, widget)
-        after = _time.perf_counter_ns()
-        perf_diag.record_paint(cls_name, (after - before) / 1_000_000.0)
+        after = _perf_counter_ns()
+        _record_paint(cls_name, (after - before) * _NS_TO_MS)
 
     NodeItem.paint = timed_paint  # type: ignore[assignment]
     NodeItem._cg_paint_timing_installed = True  # type: ignore[attr-defined]

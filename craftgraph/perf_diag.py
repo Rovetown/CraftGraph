@@ -136,9 +136,28 @@ class PaintAggregate:
 _paint_lock = threading.Lock()
 _paint_totals: dict[str, list[float]] = defaultdict(lambda: [0, 0.0])
 
+# Global enable flag for per-paint instrumentation. Default False so the
+# wrapper installed by ``qt_nodes._install_node_paint_timing`` can early-out
+# without touching the lock or accumulator dict on every paint. Flip via
+# ``set_paint_recording(True)`` to capture data for the Perf Log dialog.
+_paint_recording_enabled = False
+
+
+def set_paint_recording(enabled: bool) -> None:
+    """Enable or disable per-class paint timing recording."""
+    global _paint_recording_enabled
+    _paint_recording_enabled = enabled
+
+
+def is_paint_recording() -> bool:
+    """Return True when ``record_paint`` will accumulate samples."""
+    return _paint_recording_enabled
+
 
 def record_paint(node_class: str, ms: float) -> None:
-    """Add one paint sample for *node_class*. Thread-safe."""
+    """Add one paint sample for *node_class*. Thread-safe; no-op when disabled."""
+    if not _paint_recording_enabled:
+        return
     with _paint_lock:
         bucket = _paint_totals[node_class]
         bucket[0] += 1

@@ -1675,6 +1675,34 @@ class TestPaintTimingWiring:
         from craftgraph.qt_nodes import IDENTIFIER
 
         perf_diag.reset_paint_stats()
+        perf_diag.set_paint_recording(True)
+        try:
+            node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+            pixmap = QPixmap(200, 200)
+            painter = QPainter(pixmap)
+            try:
+                opt = QStyleOptionGraphicsItem()
+                node.view.paint(painter, opt, None)
+            finally:
+                painter.end()
+
+            stats = perf_diag.paint_stats()
+            assert "ModifiedRecipeNode" in stats
+            assert stats["ModifiedRecipeNode"].count >= 1
+            assert stats["ModifiedRecipeNode"].total_ms >= 0.0
+        finally:
+            perf_diag.set_paint_recording(False)
+            perf_diag.reset_paint_stats()
+
+    def test_paint_does_not_record_when_disabled(self, qapp, graph):
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
+        from craftgraph import perf_diag
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        perf_diag.reset_paint_stats()
+        perf_diag.set_paint_recording(False)
 
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         pixmap = QPixmap(200, 200)
@@ -1685,9 +1713,4 @@ class TestPaintTimingWiring:
         finally:
             painter.end()
 
-        stats = perf_diag.paint_stats()
-        assert "ModifiedRecipeNode" in stats
-        assert stats["ModifiedRecipeNode"].count >= 1
-        assert stats["ModifiedRecipeNode"].total_ms >= 0.0
-
-        perf_diag.reset_paint_stats()
+        assert perf_diag.paint_stats() == {}
