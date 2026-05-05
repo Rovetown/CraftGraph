@@ -4,6 +4,11 @@ Renders a scaled-down overview of the entire node graph with a
 semi-transparent rectangle showing the current viewport position.
 Click or drag within the minimap to pan the main viewer.
 
+The static content (background + node dots) is cached as a QPixmap
+since it only changes when the graph topology or node positions change.
+The viewport overlay rectangle is the only thing redrawn on each paint,
+which keeps pan/zoom paints essentially free.
+
 Usage::
 
     from craftgraph.minimap import MinimapWidget
@@ -48,6 +53,9 @@ _CONTENT_INSET_PX = 4
 _COLOR_BOOST = 40
 _COLOR_MAX = 255
 _COLOR_DOT_ALPHA = 200
+# How long (ms) to keep the cached node-content pixmap before forcing a
+# rebuild. Catches node moves/additions without wiring graph signals.
+_CONTENT_REBUILD_INTERVAL_MS = 1000
 
 
 class MinimapWidget(QtWidgets.QWidget):
@@ -59,6 +67,17 @@ class MinimapWidget(QtWidgets.QWidget):
         self._graph: NodeGraph | None = None
         self._dragging = False
 
+        # Cached pixmap holding the slow-changing layer (background + node
+        # dots). Rebuilt on resize, detach, or every
+        # _content_rebuild_interval_ms; blitted as-is on every paint.
+        self._content_pixmap: QtGui.QPixmap | None = None
+        self._content_rebuild_interval_ms = _CONTENT_REBUILD_INTERVAL_MS
+        self._last_content_rebuild_ms = 0
+        # (padded_scene_rect, scale, offset_x, offset_y) -- captured during
+        # the static-layer render and reused for viewport overlay + mouse
+        # coordinate conversion.
+        self._transform: tuple[QtCore.QRectF, float, float, float] | None = None
+
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(get_config().timings.minimap_update_interval_ms)
         self._timer.timeout.connect(self.update)
@@ -66,6 +85,7 @@ class MinimapWidget(QtWidgets.QWidget):
     def attach(self, graph: NodeGraph) -> None:
         """Bind this minimap to a NodeGraph instance."""
         self._graph = graph
+        self._invalidate_content_cache()
         self._timer.start()
         self.update()
 
@@ -73,32 +93,49 @@ class MinimapWidget(QtWidgets.QWidget):
         """Unbind from the current graph."""
         self._timer.stop()
         self._graph = None
+        self._invalidate_content_cache()
         self.update()
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        self._invalidate_content_cache()
+        super().resizeEvent(event)
+
+    def _invalidate_content_cache(self) -> None:
+        self._content_pixmap = None
+        self._transform = None
 
     # -- Rendering ------------------------------------------------------------
 
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+    def _render_content_pixmap(self) -> None:
+        """Build the cached background + node-dots layer."""
+        pixmap = QtGui.QPixmap(self.size())
+        pixmap.fill(QtCore.Qt.GlobalColor.transparent)
 
-        # Background
-        painter.fillRect(self.rect(), _BG_COLOR)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.fillRect(pixmap.rect(), _BG_COLOR)
         painter.setPen(QtGui.QPen(_BORDER_COLOR, 1))
-        painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        painter.drawRect(pixmap.rect().adjusted(0, 0, -1, -1))
 
         if self._graph is None:
             painter.end()
+            self._content_pixmap = pixmap
+            self._transform = None
             return
 
         viewer = self._graph.viewer()
         scene = viewer.scene()
         if scene is None:
             painter.end()
+            self._content_pixmap = pixmap
+            self._transform = None
             return
 
         scene_rect = scene.itemsBoundingRect()
         if scene_rect.isEmpty():
             painter.end()
+            self._content_pixmap = pixmap
+            self._transform = None
             return
 
         # Add margin so nodes aren't flush against minimap edges
@@ -122,12 +159,13 @@ class MinimapWidget(QtWidgets.QWidget):
         # Draw each node as a small rectangle
         painter.setPen(QtCore.Qt.PenStyle.NoPen)
         for item in scene.items():
+            # Filter top-level items first so we never pay sceneBoundingRect
+            # cost for child ports/overlays we discard anyway.
+            if item.parentItem() is not None:
+                continue
             if not hasattr(item, "boundingRect"):
                 continue
             item_rect = item.sceneBoundingRect()
-            # Only draw top-level items (nodes), skip tiny sub-items
-            if item.parentItem() is not None:
-                continue
             if (
                 item_rect.width() < _MIN_SCENE_ITEM_PX
                 or item_rect.height() < _MIN_SCENE_ITEM_PX
@@ -142,21 +180,43 @@ class MinimapWidget(QtWidgets.QWidget):
             rh = max(item_rect.height() * scale, _MIN_DOT_PX)
             painter.drawRoundedRect(QtCore.QRectF(rx, ry, rw, rh), 1, 1)
 
-        # Draw viewport indicator rectangle
-        vp_rect = viewer.mapToScene(viewer.viewport().rect()).boundingRect()
-        vx = offset_x + (vp_rect.x() - padded.x()) * scale
-        vy = offset_y + (vp_rect.y() - padded.y()) * scale
-        vw = vp_rect.width() * scale
-        vh = vp_rect.height() * scale
-
-        painter.setBrush(_VIEWPORT_FILL)
-        painter.setPen(QtGui.QPen(_VIEWPORT_BORDER, 1.5))
-        painter.drawRect(QtCore.QRectF(vx, vy, vw, vh))
-
         painter.end()
 
-        # Stash transform params for mouse event coordinate conversion
+        self._content_pixmap = pixmap
         self._transform = (padded, scale, offset_x, offset_y)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        now_ms = QtCore.QDateTime.currentMSecsSinceEpoch()
+        cache_stale = (
+            self._content_pixmap is None
+            or now_ms - self._last_content_rebuild_ms
+            >= self._content_rebuild_interval_ms
+        )
+        if cache_stale:
+            self._render_content_pixmap()
+            self._last_content_rebuild_ms = now_ms
+
+        painter = QtGui.QPainter(self)
+        if self._content_pixmap is not None:
+            painter.drawPixmap(0, 0, self._content_pixmap)
+
+        # Viewport overlay -- the only piece that actually changes during
+        # pan/zoom, so it stays out of the cached pixmap.
+        if self._graph is not None and self._transform is not None:
+            viewer = self._graph.viewer()
+            padded, scale, offset_x, offset_y = self._transform
+            vp_rect = viewer.mapToScene(viewer.viewport().rect()).boundingRect()
+            vx = offset_x + (vp_rect.x() - padded.x()) * scale
+            vy = offset_y + (vp_rect.y() - padded.y()) * scale
+            vw = vp_rect.width() * scale
+            vh = vp_rect.height() * scale
+
+            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+            painter.setBrush(_VIEWPORT_FILL)
+            painter.setPen(QtGui.QPen(_VIEWPORT_BORDER, 1.5))
+            painter.drawRect(QtCore.QRectF(vx, vy, vw, vh))
+
+        painter.end()
 
     # -- Mouse interaction (click/drag to pan) --------------------------------
 
@@ -175,7 +235,7 @@ class MinimapWidget(QtWidgets.QWidget):
 
     def _pan_to(self, pos: QtCore.QPointF) -> None:
         """Center the main viewer on the scene coordinate under *pos*."""
-        if self._graph is None or not hasattr(self, "_transform"):
+        if self._graph is None or self._transform is None:
             return
         padded, scale, offset_x, offset_y = self._transform
         if scale <= 0:

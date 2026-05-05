@@ -84,5 +84,5 @@ ignore_missing_imports = true
 follow_untyped_imports = true
 
 [[tool.mypy.overrides]]
-module = ["craftgraph.qt_nodes", "craftgraph.qt_gui", "craftgraph.welcome"]
+module = ["craftgraph.qt_nodes", "craftgraph.qt_gui", "craftgraph.welcome", "craftgraph.minimap"]
 disallow_untyped_calls = false
