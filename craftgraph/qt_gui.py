@@ -337,6 +337,66 @@ class _ColorPickerSwatch(QtWidgets.QPushButton):
             self.color_hex = chosen.name()
 
 
+def _build_scene_grid_brush(scene: QtWidgets.QGraphicsScene) -> QtGui.QBrush:
+    """Build a tiled QBrush whose texture renders one period of the grid.
+
+    Produces the same on-screen lines/dots as NodeScene.drawBackground would
+    draw per-frame, but as a single cached QPixmap so the dirty-rect fill is
+    one tiled blit instead of thousands of QPainter line ops. The tile is
+    sized to the LCM of minor and major grid spacing (``gs * 8`` for LINES
+    mode, ``gs`` for DOTS mode); Qt repeats it indefinitely in scene
+    coordinates, which keeps the grid aligned with the world even as the
+    user pans or zooms.
+
+    Trade-off vs. the original: the major-grid zoom-dependent darkening is
+    not preserved (would require rebuilding the brush on every zoom step,
+    which negates much of the win). Theme/grid-size changes still rebuild
+    via :py:meth:`CraftGraphWindow._rebuild_grid_brush`.
+    """
+    from NodeGraphQt.constants import ViewerEnum
+
+    gs = int(scene._cg_grid_size)  # type: ignore[attr-defined]
+    bg_color = QtGui.QColor(*scene._bg_color)  # type: ignore[attr-defined]
+    grid_color = QtGui.QColor(*scene.grid_color)  # type: ignore[attr-defined]
+    mode = scene._grid_mode  # type: ignore[attr-defined]
+
+    if mode == ViewerEnum.GRID_DISPLAY_NONE.value:
+        return QtGui.QBrush(bg_color)
+
+    if mode == ViewerEnum.GRID_DISPLAY_DOTS.value:
+        pixmap = QtGui.QPixmap(gs, gs)
+        pixmap.fill(bg_color)
+        painter = QtGui.QPainter(pixmap)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+        painter.setPen(QtGui.QPen(grid_color, 0.65))
+        painter.drawPoint(0, 0)
+        painter.end()
+        return QtGui.QBrush(pixmap)
+
+    # LINES (default): minor lines at 1*gs..7*gs; major line at position 0
+    # (which the next tile renders as the boundary between major periods).
+    tile_size = gs * 8
+    pixmap = QtGui.QPixmap(tile_size, tile_size)
+    pixmap.fill(bg_color)
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
+
+    minor_lines = []
+    for i in range(gs, tile_size, gs):
+        minor_lines.append(QtCore.QLineF(i, 0, i, tile_size))
+        minor_lines.append(QtCore.QLineF(0, i, tile_size, i))
+    painter.setPen(QtGui.QPen(grid_color, 0.65))
+    painter.drawLines(minor_lines)
+
+    major_color = bg_color.darker(200)
+    painter.setPen(QtGui.QPen(major_color, 0.65))
+    painter.drawLine(0, 0, 0, tile_size)
+    painter.drawLine(0, 0, tile_size, 0)
+
+    painter.end()
+    return QtGui.QBrush(pixmap)
+
+
 def _popup_style() -> str:
     """Return the autocomplete popup stylesheet, scaled to the active UI scale."""
     return (
@@ -4973,6 +5033,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             pass
         return ThemeColors()
 
+    def _rebuild_grid_brush(self, scene: QtWidgets.QGraphicsScene) -> None:
+        """Rebuild and reapply the tiled grid brush after a settings change.
+
+        Called by ``_apply_node_editor_settings`` whenever ``grid_size`` or
+        ``grid_mode`` changes -- the brush's cached pixmap encodes both, so
+        a settings change means a fresh tile.
+        """
+        scene.setBackgroundBrush(_build_scene_grid_brush(scene))
+
     def _install_viewer_patches(self, graph: NodeGraph) -> None:
         """Patch a graph's viewer and scene for CraftGraph-specific settings.
 
@@ -5023,39 +5092,27 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         viewer.mouseMoveEvent = _patched_mouse_move
 
-        # -- Patch scene.drawBackground (custom grid size) --
+        # -- Patch scene.drawBackground (tiled-brush grid) --
+        # NodeGraphQt's stock drawBackground iterates every visible grid
+        # position and issues a drawLines call per frame (pan/zoom profile
+        # showed it as the dominant remaining hotspot at ~0.20 s / 412
+        # paints, ~16% of the frame budget). We replace the per-frame line
+        # drawing with a tiled QBrush(QPixmap) set on the scene; Qt fills
+        # the dirty rect by tiling the cached pattern bitmap, which is
+        # essentially free compared to issuing thousands of line ops.
+        # Trade-off: lose the zoom-dependent fade on the major grid.
         scene = graph.scene()
         scene._cg_grid_size: int = s.grid_size
+        scene.setBackgroundBrush(_build_scene_grid_brush(scene))
 
         def _patched_draw_bg(
             painter: QtGui.QPainter,
             rect: QtCore.QRectF,
         ) -> None:
-            from NodeGraphQt.constants import ViewerEnum
             from NodeGraphQt.widgets.scene import NodeScene
 
+            # Parent QGraphicsScene.drawBackground tiles the brush.
             super(NodeScene, scene).drawBackground(painter, rect)
-            painter.save()
-            painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
-            painter.setBrush(scene.backgroundBrush())
-
-            gs: int = scene._cg_grid_size
-
-            if scene._grid_mode is ViewerEnum.GRID_DISPLAY_DOTS.value:
-                pen = QtGui.QPen(QtGui.QColor(*scene.grid_color), 0.65)
-                scene._draw_dots(painter, rect, pen, gs)
-            elif scene._grid_mode is ViewerEnum.GRID_DISPLAY_LINES.value:
-                zoom = scene.viewer().get_zoom()
-                if zoom > -0.5:
-                    pen = QtGui.QPen(QtGui.QColor(*scene.grid_color), 0.65)
-                    scene._draw_grid(painter, rect, pen, gs)
-                color = QtGui.QColor(*scene._bg_color).darker(200)
-                if zoom < -0.0:
-                    color = color.darker(100 - int(zoom * 110))
-                pen = QtGui.QPen(color, 0.65)
-                scene._draw_grid(painter, rect, pen, gs * 8)
-
-            painter.restore()
 
         scene.drawBackground = types.MethodType(
             lambda self, p, r: _patched_draw_bg(p, r),
@@ -5109,7 +5166,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 viewer._cg_zoom_speed = s.zoom_speed
                 viewer._cg_invert_zoom = s.invert_zoom
                 viewer._cg_pan_with_mmb = s.pan_with_mmb
-                tab.graph.scene()._cg_grid_size = s.grid_size
+                scene = tab.graph.scene()
+                scene._cg_grid_size = s.grid_size
+                self._rebuild_grid_brush(scene)
                 viewer.force_update()
 
             # Pipe style

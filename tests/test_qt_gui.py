@@ -5029,6 +5029,34 @@ class TestViewerPatches:
         assert not hasattr(viewer.wheelEvent, "__self__")
 
 
+class TestTiledGridBrush:
+    """Background grid is rendered via a tiled QBrush(QPixmap), not drawLines."""
+
+    def test_scene_uses_texture_pattern_brush(self, window):
+        from PySide6 import QtCore as _QtCore
+
+        scene = window.graph.scene()
+        brush = scene.backgroundBrush()
+        assert brush.style() == _QtCore.Qt.BrushStyle.TexturePattern
+
+    def test_brush_tile_size_matches_grid_size_times_eight(self, window):
+        scene = window.graph.scene()
+        brush = scene.backgroundBrush()
+        texture = brush.texture()
+        gs = scene._cg_grid_size
+        assert texture.width() == gs * 8
+        assert texture.height() == gs * 8
+
+    def test_grid_size_change_rebuilds_brush(self, window):
+        from craftgraph.theme import NodeEditorSettings
+
+        window._apply_node_editor_settings(NodeEditorSettings(grid_size=70))
+        scene = window.graph.scene()
+        brush = scene.backgroundBrush()
+        texture = brush.texture()
+        assert texture.width() == 70 * 8
+
+
 class TestSnapToGrid:
     """Snap-to-grid rounds node positions after drag."""
 
