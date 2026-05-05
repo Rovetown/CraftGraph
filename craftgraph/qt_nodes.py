@@ -141,6 +141,44 @@ def _install_node_paint_timing() -> None:
 _install_node_paint_timing()
 
 
+def _install_port_bounding_rect_cache() -> None:
+    """Cache ``PortItem.boundingRect`` since its inputs never change.
+
+    NodeGraphQt's ``PortItem.boundingRect`` constructs a fresh ``QRectF``
+    on every call. Qt's scene index plus the port's own paint(), which
+    calls ``self.boundingRect()`` twice, hammer it ~190k times during a
+    10s pan/zoom session (~16% of the profile). The values that drive
+    the rect (``_width`` = ``_height`` = ``PortEnum.SIZE.value``, plus
+    the static ``CLICK_FALLOFF`` constant) are set once in ``__init__``
+    and never mutated by NodeGraphQt or by us. Cache the rect on the
+    instance after the first call.
+
+    Class-level patch (idempotent via ``_cg_bounding_rect_cached``
+    sentinel) so the cache lookup hits even when Qt invokes
+    ``boundingRect`` from the C++ side.
+    """
+    from NodeGraphQt.qgraphics.port import PortItem
+
+    if getattr(PortItem, "_cg_bounding_rect_cached", False):
+        return
+
+    original_bounding_rect = PortItem.boundingRect
+
+    def cached_bounding_rect(self: object) -> object:
+        cached = getattr(self, "_cg_br_cache", None)
+        if cached is not None:
+            return cached
+        rect = original_bounding_rect(self)
+        self._cg_br_cache = rect  # type: ignore[attr-defined]
+        return rect
+
+    PortItem.boundingRect = cached_bounding_rect  # type: ignore[method-assign]
+    PortItem._cg_bounding_rect_cached = True  # type: ignore[attr-defined]
+
+
+_install_port_bounding_rect_cache()
+
+
 def _install_stylesheet_cache(widget: object) -> None:
     """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
 

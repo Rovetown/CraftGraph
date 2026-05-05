@@ -1714,3 +1714,49 @@ class TestPaintTimingWiring:
             painter.end()
 
         assert perf_diag.paint_stats() == {}
+
+
+# ---------------------------------------------------------------------------
+# PortItem.boundingRect caching
+# ---------------------------------------------------------------------------
+
+
+class TestPortBoundingRectCache:
+    """PortItem.boundingRect returns a cached QRectF since _width/_height never change."""
+
+    def test_returns_same_instance_on_repeat_call(self, qapp, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        ports = node.view.inputs + node.view.outputs
+        assert ports, "expected at least one port on a recipe node"
+        port = ports[0]
+        first = port.boundingRect()
+        second = port.boundingRect()
+        assert first is second
+
+    def test_cache_matches_original_dimensions(self, qapp, graph):
+        from NodeGraphQt.constants import PortEnum
+
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        ports = node.view.inputs + node.view.outputs
+        port = ports[0]
+        rect = port.boundingRect()
+        # PortEnum.SIZE + CLICK_FALLOFF was the original formula.
+        expected_w = PortEnum.SIZE.value + PortEnum.CLICK_FALLOFF.value
+        expected_h = PortEnum.SIZE.value
+        assert rect.width() == expected_w
+        assert rect.height() == expected_h
+
+    def test_cache_is_per_instance(self, qapp, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node_a = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node_b = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        port_a = (node_a.view.inputs + node_a.view.outputs)[0]
+        port_b = (node_b.view.inputs + node_b.view.outputs)[0]
+        # Same dimensions but distinct cached objects -- caller must not be
+        # able to mutate one port's rect and affect another.
+        assert port_a.boundingRect() is not port_b.boundingRect()
