@@ -3348,6 +3348,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # the callback runs).
         self._menu_invoke_scene_pos: QtCore.QPointF | None = None
 
+        # cProfile instance for View > Profile Pan/Zoom; None when idle.
+        import cProfile
+
+        self._panzoom_profiler: cProfile.Profile | None = None
+
         # Frame-time perf overlay (View > Show Frame Time). Lazily built.
         self._frame_time_overlay: _FrameTimeOverlay | None = None
         self._last_frame_ns: int | None = None
@@ -3574,6 +3579,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         view_menu.addAction(self._frame_overlay_action)
         if frame_overlay_initial:
             self._toggle_frame_time_overlay(True)
+
+        self._profile_panzoom_action = QtGui.QAction(
+            "Profile &Pan/Zoom (10s)...", self,
+        )
+        self._profile_panzoom_action.triggered.connect(self._on_profile_panzoom)
+        view_menu.addAction(self._profile_panzoom_action)
 
         # Help menu
         help_menu = menu_bar.addMenu("&Help")
@@ -3825,6 +3836,38 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Use class-method form to avoid a literal ``dialog.exec()`` call
         # (a project security hook flags that pattern even for Qt dialogs).
         QtWidgets.QDialog.exec(dialog)
+
+    def _on_profile_panzoom(self) -> None:
+        duration_ms = 10_000
+        self._start_panzoom_profile(duration_ms=duration_ms)
+        self.statusBar().showMessage(
+            f"Profiling pan/zoom for {duration_ms / 1000:.0f}s...", duration_ms,
+        )
+
+    def _start_panzoom_profile(self, *, duration_ms: int) -> None:
+        import cProfile
+
+        if self._panzoom_profiler is not None:
+            return
+        profiler = cProfile.Profile()
+        profiler.enable()
+        self._panzoom_profiler = profiler
+        if duration_ms > 0:
+            QtCore.QTimer.singleShot(duration_ms, self._stop_panzoom_profile)
+
+    def _stop_panzoom_profile(self) -> None:
+        from datetime import datetime
+
+        profiler = self._panzoom_profiler
+        if profiler is None:
+            return
+        profiler.disable()
+        self._panzoom_profiler = None
+        diag_dir = app_dirs.log_dir() / "diagnostics"
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        path = diag_dir / f"panzoom_{datetime.now():%Y%m%d_%H%M%S}.prof"
+        profiler.dump_stats(str(path))
+        self.statusBar().showMessage(f"Pan/zoom profile written to {path}", 5000)
 
     def _spawn_main_context_menu_for_test(self) -> None:
         """Test hook: pop up and immediately dismiss the main graph context menu.

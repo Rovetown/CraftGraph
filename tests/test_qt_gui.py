@@ -6468,3 +6468,46 @@ class TestPerfLogDialog:
         dialog = _PerfLogDialog(win)
         text = dialog._log_view.toPlainText()
         assert "action=test delta_ms=42.000" in text
+
+
+# ---------------------------------------------------------------------------
+# Pan/zoom-scoped cProfile capture (TODO 1.9)
+# ---------------------------------------------------------------------------
+
+
+class TestPanZoomProfiler:
+    """View > Profile Pan/Zoom turns cProfile on for N seconds and saves a .prof."""
+
+    def test_action_in_view_menu(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        menus = win.menuBar().findChildren(QtWidgets.QMenu)
+        view_menu = next(m for m in menus if "View" in m.title())
+        labels = [a.text().replace("&", "") for a in view_menu.actions()]
+        assert any("Profile Pan/Zoom" in t for t in labels)
+
+    def test_start_writes_prof_after_stop(self, qapp, monkeypatch, tmp_path):
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import CraftGraphWindow
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+
+        win = CraftGraphWindow()
+        # Drive the profiler manually instead of going through the menu /
+        # QTimer so the test does not have to wait for real wall-clock.
+        win._start_panzoom_profile(duration_ms=0)
+        # Trigger some work so the profiler has samples.
+        for _ in range(100):
+            sum(range(50))
+        win._stop_panzoom_profile()
+
+        diag_dir = tmp_path / "diagnostics"
+        prof_files = list(diag_dir.glob("panzoom_*.prof"))
+        assert len(prof_files) == 1
+        assert prof_files[0].stat().st_size > 0
