@@ -187,3 +187,46 @@ class TestApplyAddPass:
 
         apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
         assert isinstance(tab.model_to_node[id(fab)], FabricatorNode)
+
+
+class TestApplyModifyPassFields:
+    def test_modified_recipe_updates_widget_value(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.sync import apply_file_diff
+
+        old = ModifiedRecipe(item_id="Titanium", amount_crafted=1)
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = old
+        node.populate_from_model()
+
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        old_pf.modified_recipes.append(old)
+        tab = _make_tab(graph, parsed_file=old_pf, model_to_node={id(old): node})
+
+        new = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.modified_recipes.append(new)
+        diff = FileDiff(added=[], removed=[], modified=[(old, new)])
+
+        result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+
+        assert node.model_ref is new
+        assert int(node.get_property("amount_crafted")) == 5
+        assert result.nodes_modified == [node]
+        assert id(new) in tab.model_to_node
+        assert id(old) not in tab.model_to_node
+
+    def test_modify_with_missing_node_is_safe(self, graph):
+        from craftgraph.sync import apply_file_diff
+
+        old = ModifiedRecipe(item_id="Titanium")
+        new = ModifiedRecipe(item_id="Titanium", amount_crafted=2)
+
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        tab = _make_tab(graph, parsed_file=old_pf, model_to_node={})
+
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        diff = FileDiff(added=[], removed=[], modified=[(old, new)])
+
+        result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+        assert result.nodes_modified == []

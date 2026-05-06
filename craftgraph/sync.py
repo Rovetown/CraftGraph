@@ -2124,11 +2124,51 @@ def _create_node_for_entry(graph: object, entry: object) -> object:
     raise TypeError(f"no node creator registered for {cls.__name__}")
 
 
+# Field names whose changes require a port-topology rebuild (Task 10's fallback).
+# Anything not in this set is a "scalar field" change handled in place.
+_TOPOLOGY_FIELDS: frozenset[str] = frozenset({"ingredients", "linked_item_ids"})
+
+
 def _apply_modify_pass(
     file_tab: object,
     modified: list[tuple[object, object]],
     result: ApplyResult,
 ) -> None:
-    """Lands in Task 9."""
-    if modified:
-        raise NotImplementedError("modify pass lands in Task 9")
+    """Rebind model_ref + push field values for each (old, new) pair.
+
+    Port-topology-affecting fields trigger ``_topology_rebuild_node`` (a
+    delete-and-re-add fallback). For scalar field changes the existing
+    node is reused; ``populate_from_model`` refreshes its widgets.
+    """
+    for old_entry, new_entry in modified:
+        node = file_tab.model_to_node.pop(id(old_entry), None)
+        if node is None:
+            continue
+
+        if _topology_changed(old_entry, new_entry):
+            _topology_rebuild_node(file_tab, node, old_entry, new_entry, result)
+            continue
+
+        node.model_ref = new_entry
+        node.populate_from_model()
+        file_tab.model_to_node[id(new_entry)] = node
+        result.nodes_modified.append(node)
+
+
+def _topology_changed(old_entry: object, new_entry: object) -> bool:
+    """True when a topology field's value differs between old and new."""
+    for fname in _TOPOLOGY_FIELDS:
+        if getattr(old_entry, fname, None) != getattr(new_entry, fname, None):
+            return True
+    return False
+
+
+def _topology_rebuild_node(
+    file_tab: object,
+    node: object,
+    old_entry: object,
+    new_entry: object,
+    result: ApplyResult,
+) -> None:
+    """Lands in Task 10."""
+    raise NotImplementedError("topology rebuild lands in Task 10")
