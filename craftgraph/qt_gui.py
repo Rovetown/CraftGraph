@@ -5477,8 +5477,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if not skipped_initial[0]:
                 skipped_initial[0] = True
                 return
+            # The Watchdog observer runs on its own thread with no Qt event
+            # loop. Passing ``self`` as the receiver queues the slot on the
+            # main thread instead of the calling thread, so the timer
+            # actually fires.
             QtCore.QTimer.singleShot(
-                _DEFERRED_TICK_MS, lambda: self._on_watcher_rebuild(_cycles),
+                _DEFERRED_TICK_MS,
+                self,
+                lambda: self._on_watcher_rebuild(_cycles),
             )
 
         self._recipe_watcher = RecipeWatcher(
