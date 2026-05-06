@@ -54,6 +54,90 @@ def _model_key(entry: object) -> tuple[type, str]:
 def compute_diff(old: list[ParsedFile], new: list[ParsedFile]) -> ProjectDiff:
     """Compare two ParsedFile lists and return the project-level delta.
 
-    Implementation lands in Task 4.
+    Files are matched by ``source_path``. Within a matched pair, every
+    block-type list is walked and entries are classified by ``_model_key``.
     """
-    raise NotImplementedError("compute_diff lands in Task 4")
+    old_by_path = {pf.source_path: pf for pf in old}
+    new_by_path = {pf.source_path: pf for pf in new}
+
+    unchanged_paths: list[Path] = []
+    removed_paths: list[Path] = []
+    added_files: list[ParsedFile] = []
+    changed_files: list[tuple[ParsedFile, ParsedFile, FileDiff]] = []
+
+    for path in old_by_path.keys() - new_by_path.keys():
+        removed_paths.append(path)
+
+    for path in new_by_path.keys() - old_by_path.keys():
+        added_files.append(new_by_path[path])
+
+    for path in old_by_path.keys() & new_by_path.keys():
+        old_pf = old_by_path[path]
+        new_pf = new_by_path[path]
+        fd = _diff_one_file(old_pf, new_pf)
+        if not fd.added and not fd.removed and not fd.modified:
+            unchanged_paths.append(path)
+        else:
+            changed_files.append((old_pf, new_pf, fd))
+
+    return ProjectDiff(
+        unchanged_paths=unchanged_paths,
+        removed_paths=removed_paths,
+        added_files=added_files,
+        changed_files=changed_files,
+    )
+
+
+# Per-ParsedFile attribute names that hold lists of model entries. Walking
+# these covers every CC3 block type that lands at the top level. Nested
+# children of CustomFabricator (added_recipes, alias_recipes, custom_foods,
+# crafting_tabs) are not walked here -- a CustomFabricator with different
+# children is detected as "modified" via dataclass __eq__ and the apply
+# layer handles the nested delta.
+_ENTRY_LIST_ATTRS: tuple[str, ...] = (
+    "modified_recipes",
+    "added_recipes",
+    "alias_recipes",
+    "custom_foods",
+    "crafting_tabs",
+    "custom_fabricators",
+    "moved_recipes",
+    "custom_sizes",
+    "custom_bio_fuels",
+    "custom_fragment_counts",
+)
+
+
+def _diff_one_file(old_pf: ParsedFile, new_pf: ParsedFile) -> FileDiff:
+    """Walk every entry list on the ParsedFile and classify by _model_key."""
+    added: list[object] = []
+    removed: list[object] = []
+    modified: list[tuple[object, object]] = []
+
+    for attr in _ENTRY_LIST_ATTRS:
+        old_entries = getattr(old_pf, attr, None) or []
+        new_entries = getattr(new_pf, attr, None) or []
+        _classify(old_entries, new_entries, added, removed, modified)
+
+    return FileDiff(added=added, removed=removed, modified=modified)
+
+
+def _classify(
+    old_entries: list[object],
+    new_entries: list[object],
+    added: list[object],
+    removed: list[object],
+    modified: list[tuple[object, object]],
+) -> None:
+    old_by_key = {_model_key(e): e for e in old_entries}
+    new_by_key = {_model_key(e): e for e in new_entries}
+
+    for key in old_by_key.keys() - new_by_key.keys():
+        removed.append(old_by_key[key])
+    for key in new_by_key.keys() - old_by_key.keys():
+        added.append(new_by_key[key])
+    for key in old_by_key.keys() & new_by_key.keys():
+        old_e = old_by_key[key]
+        new_e = new_by_key[key]
+        if old_e != new_e:
+            modified.append((old_e, new_e))
