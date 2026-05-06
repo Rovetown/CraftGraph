@@ -49,6 +49,68 @@ def window(qapp, monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _add_tab(window, pf):
+    """Helper that mimics the load_recipes per-file registration loop."""
+    tab = window._create_file_tab(pf)
+    window._file_tabs.append(tab)
+    window._graph_stack.addWidget(tab.graph.widget)
+    window._editor_stack.addWidget(tab.editor)
+    window._tab_bar.addTab(pf.source_path.stem)
+    return tab
+
+
+class TestFileTabParsedFile:
+    def test_create_file_tab_stores_parsed_file(self, window, tmp_path):
+        from pathlib import Path
+
+        from craftgraph.models import ParsedFile
+
+        pf = ParsedFile(source_path=tmp_path / "smoke.txt")
+        tab = _add_tab(window, pf)
+        assert tab.parsed_file is pf
+        assert isinstance(tab.parsed_file.source_path, Path)
+
+    def test_close_tab_by_source_path(self, window, tmp_path):
+        from craftgraph.models import ParsedFile
+
+        pf = ParsedFile(source_path=tmp_path / "smoke.txt")
+        _add_tab(window, pf)
+        assert any(
+            t.parsed_file is not None and t.parsed_file.source_path == pf.source_path
+            for t in window._file_tabs
+        )
+
+        window._close_tab_by_source_path(pf.source_path)
+        assert not any(
+            t.parsed_file is not None and t.parsed_file.source_path == pf.source_path
+            for t in window._file_tabs
+        )
+
+    def test_close_tab_by_source_path_idempotent(self, window, tmp_path):
+        """Closing an unknown path is a no-op."""
+        from craftgraph.models import ParsedFile
+
+        pf = ParsedFile(source_path=tmp_path / "smoke.txt")
+        _add_tab(window, pf)
+        baseline_count = len(window._file_tabs)
+
+        window._close_tab_by_source_path(tmp_path / "does_not_exist.txt")
+        assert len(window._file_tabs) == baseline_count
+
+    def test_tab_for_source_path(self, window, tmp_path):
+        from craftgraph.models import ParsedFile
+
+        pf = ParsedFile(source_path=tmp_path / "smoke.txt")
+        _add_tab(window, pf)
+
+        tab = window._tab_for_source_path(pf.source_path)
+        assert tab is not None
+        assert tab.parsed_file is pf
+
+    def test_tab_for_source_path_returns_none_when_missing(self, window, tmp_path):
+        assert window._tab_for_source_path(tmp_path / "missing.txt") is None
+
+
 class TestWindowCreation:
     def test_window_title(self, window):
         assert window.windowTitle() == "CraftGraph"

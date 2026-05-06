@@ -7448,6 +7448,61 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     # -- Recipe loading -------------------------------------------------------
 
+    def _tab_for_source_path(self, path: Path) -> FileTab | None:
+        """Return the FileTab whose ParsedFile.source_path equals ``path``."""
+        for tab in self._file_tabs:
+            pf = tab.parsed_file
+            if pf is not None and getattr(pf, "source_path", None) == path:
+                return tab
+        return None
+
+    def _close_tab_by_source_path(self, path: Path) -> None:
+        """Close the tab for ``path`` if it exists. Idempotent.
+
+        Mirrors the per-tab portion of ``_tear_down_tabs`` for a single tab so
+        the watcher diff path can drop tabs whose files were deleted on disk.
+        """
+        tab = self._tab_for_source_path(path)
+        if tab is None:
+            return
+
+        index = self._file_tabs.index(tab)
+
+        if tab.ui_handler is not None:
+            tab.ui_handler.disconnect()
+        if tab.parse_timer is not None:
+            tab.parse_timer.stop()
+            tab.parse_timer.deleteLater()
+            tab.parse_timer = None
+
+        viewer = tab.graph.viewer()
+        search_widget = getattr(viewer, "_search_widget", None)
+        if search_widget is not None:
+            search_widget.setParent(None)
+            search_widget.deleteLater()
+
+        tab.model_to_node.clear()
+        tab.orphan_nodes.clear()
+        tab.user_positions.clear()
+
+        self._tab_bar.blockSignals(True)
+        self._tab_bar.removeTab(index)
+        self._tab_bar.blockSignals(False)
+
+        graph_widget = self._graph_stack.widget(index)
+        if graph_widget is not None:
+            self._graph_stack.removeWidget(graph_widget)
+            graph_widget.setParent(None)
+            graph_widget.deleteLater()
+
+        editor_widget = self._editor_stack.widget(index)
+        if editor_widget is not None:
+            self._editor_stack.removeWidget(editor_widget)
+            editor_widget.setParent(None)
+            editor_widget.deleteLater()
+
+        del self._file_tabs[index]
+
     def _tear_down_tabs(self) -> None:
         """Disconnect, destroy, and remove all existing file tabs."""
         if hasattr(self, "_minimap") and self._minimap is not None:
