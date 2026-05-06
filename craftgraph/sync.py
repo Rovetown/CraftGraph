@@ -2037,17 +2037,40 @@ def apply_file_diff(
       3. Modify pass: rebind model_ref + push field values; delete-and-re-add
          when port topology changes.
 
-    Bypasses NodeGraphQt's undo stack via ``SyncGuard(suspend_undo_for=...)``.
+    Critically, all three passes run inside the FileTab's existing
+    ``sync_guard``. The graph signals fired by ``delete_node`` /
+    ``create_node`` reach a ``UIToModelHandler`` that would otherwise
+    translate every port_disconnected event back into an EditCommand that
+    mutates the parsed_file, racing with our diff. The shared guard's
+    ``active`` flag short-circuits that handler. The undo stack is cleared
+    on exit (matches the existing full-reload behavior; QUndoStack has no
+    pop-without-apply API).
 
     On return, ``file_tab.parsed_file`` is replaced with ``new_parsed_file``.
     """
     result = ApplyResult()
-    with SyncGuard(suspend_undo_for=file_tab.graph):
+    guard = getattr(file_tab, "sync_guard", None)
+    guard_ctx = guard() if guard is not None else SyncGuard()()
+    with guard_ctx, _suspend_undo(file_tab.graph):
         _apply_remove_pass(file_tab, diff.removed, result)
         _apply_add_pass(file_tab, diff.added, result)
         _apply_modify_pass(file_tab, diff.modified, result)
     file_tab.parsed_file = new_parsed_file
     return result
+
+
+@contextmanager
+def _suspend_undo(graph: object) -> Generator[None]:
+    """Drop any undo commands pushed during the block.
+
+    QUndoStack has no pop-without-apply API; we ``clear()`` instead. The
+    user-visible UX matches NodeGraphQt's own ``deserialize_session`` and
+    the pre-2.2 full-reload watcher path, so we are not regressing.
+    """
+    try:
+        yield
+    finally:
+        graph.undo_stack().clear()
 
 
 def _apply_remove_pass(file_tab: object, removed: list[object], result: ApplyResult) -> None:
