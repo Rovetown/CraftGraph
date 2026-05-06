@@ -112,6 +112,14 @@ def _make_window(qapp, monkeypatch, tmp_path):
     return CraftGraphWindow()
 
 
+def _multi_recipe_file(baseline_copy):
+    """Pick a baseline file containing multiple recipes (for add/remove/rename)."""
+    target = baseline_copy / "_Alch_AliasRecipes_0_NEW_Lab_Equipment.txt"
+    if not target.exists():
+        pytest.skip("expected multi-recipe baseline file missing")
+    return target
+
+
 def test_modify_recipe_field_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     """Change AmountCrafted on one recipe; both paths converge to equal state."""
     target_file = next(
@@ -128,7 +136,6 @@ def test_modify_recipe_field_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     text = target_file.read_text(encoding="utf-8")
     mutated = text.replace("AmountCrafted: 1", "AmountCrafted: 7", 1)
     if mutated == text:
-        # Try other small numbers.
         mutated = text.replace("AmountCrafted: 2", "AmountCrafted: 7", 1)
     if mutated == text:
         pytest.skip("could not locate an AmountCrafted line to mutate")
@@ -136,6 +143,122 @@ def test_modify_recipe_field_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
     target_file.write_text(mutated, encoding="utf-8")
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_add_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Append a new alias recipe; both paths produce the same nodes."""
+    target_file = _multi_recipe_file(baseline_copy)
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    text = target_file.read_text(encoding="utf-8")
+    insert = (
+        "(\n"
+        "    ItemID: ParityTestRecipe;\n"
+        '    DisplayName: "Parity Test";\n'
+        '    Tooltip: "Parity Test";\n'
+        "    Ingredients:\n"
+        "    ( ItemID: Titanium; Required: 1; );\n"
+        "    LinkedItemIDs: ParityTestRecipe;\n"
+        "    Path: Alch_Fab/Alch_LabEquipment;\n"
+        "    ForceUnlockAtStart: NO;\n"
+        "),\n"
+    )
+    last_paren = text.rfind(");")
+    if last_paren < 0:
+        pytest.skip("baseline target lacks expected closing paren")
+    mutated = text[:last_paren] + insert + text[last_paren:]
+    target_file.write_text(mutated, encoding="utf-8")
+
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_remove_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Delete the second recipe block; both paths produce the same nodes."""
+    target_file = _multi_recipe_file(baseline_copy)
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    # Cut the second recipe block: from its ",\n(" boundary to the matching "),".
+    text = target_file.read_text(encoding="utf-8")
+    second_open = text.find("),\n(")
+    if second_open < 0:
+        pytest.skip("baseline target lacks an inter-recipe boundary")
+    block_start = second_open + 2  # position of '\n('
+    next_close = text.find("),", block_start) + 2
+    if next_close <= 1:
+        pytest.skip("baseline target lacks a recipe close after target block")
+    mutated = text[:block_start] + text[next_close:]
+    target_file.write_text(mutated, encoding="utf-8")
+
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_rename_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Rename the first ItemID; remove+add semantics produce parity."""
+    target_file = _multi_recipe_file(baseline_copy)
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    text = target_file.read_text(encoding="utf-8")
+    mutated = text.replace("ItemID: ", "ItemID: ParityRenamed_", 1)
+    target_file.write_text(mutated, encoding="utf-8")
+
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_ingredient_count_change_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Bump one Required value; exercises topology fallback."""
+    import re
+
+    target_file = _multi_recipe_file(baseline_copy)
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    text = target_file.read_text(encoding="utf-8")
+    mutated = re.sub(
+        r"Required: (\d+);",
+        lambda m: f"Required: {int(m.group(1)) + 1};",
+        text,
+        count=1,
+    )
+    if mutated == text:
+        pytest.skip("baseline target lacks any Required: N; line")
+    target_file.write_text(mutated, encoding="utf-8")
+
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
