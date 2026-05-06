@@ -36,25 +36,28 @@ class SyncGuard:
     model must update. Without a guard, this creates an infinite cycle:
     model change -> UI update -> model change -> ...
 
-    Usage::
+    Usage (existing, recursion guard only)::
 
         guard = SyncGuard()
+        with guard():
+            update_ui_from_model()
 
-        def on_model_changed():
-            if guard.active:
-                return
-            with guard:
-                update_ui_from_model()
+    Usage (watcher path, with undo bypass)::
 
-        def on_ui_changed():
-            if guard.active:
-                return
-            with guard:
-                update_model_from_ui()
+        with SyncGuard(suspend_undo_for=graph):
+            apply_diff(...)
+
+    The watcher path needs to mutate the NodeGraph without polluting the
+    user's in-app undo stack. QUndoStack does not expose a way to drop
+    pushed commands without applying their undo, so on exit the entire
+    undo stack is cleared. This matches NodeGraphQt's own behavior for
+    full reload (``deserialize_session(clear_undo_stack=True)``) and is no
+    worse than the pre-2.2 watcher path.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, suspend_undo_for: object | None = None) -> None:
         self._depth: int = 0
+        self._undo_target = suspend_undo_for
 
     @property
     def active(self) -> bool:
@@ -63,12 +66,22 @@ class SyncGuard:
 
     @contextmanager
     def __call__(self) -> Generator[None]:
-        """Context manager that activates the guard for a sync operation."""
+        """Context manager for the existing ``with guard():`` pattern."""
         self._depth += 1
         try:
             yield
         finally:
             self._depth -= 1
+
+    def __enter__(self) -> SyncGuard:
+        """Context manager for ``with SyncGuard(suspend_undo_for=g):`` pattern."""
+        self._depth += 1
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        self._depth -= 1
+        if self._undo_target is not None:
+            self._undo_target.undo_stack().clear()
 
     def reset(self) -> None:
         """Force-reset the guard depth to zero (for testing or error recovery)."""

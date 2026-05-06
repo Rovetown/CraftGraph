@@ -161,6 +161,44 @@ def _make_parsed_file(**kwargs) -> ParsedFile:
 # ---------------------------------------------------------------------------
 
 
+class TestSyncGuardSuspendUndo:
+    def test_undo_stack_cleared_after_suspended_block(self, graph):
+        """Watcher path mutates without leaving undo entries.
+
+        QUndoStack does not expose pop-without-apply, so the entire stack is
+        cleared on exit. This matches NodeGraphQt's deserialize_session
+        behavior used by the pre-2.2 full-reload watcher path.
+        """
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        # User performs an action before the watcher event fires.
+        graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert graph.undo_stack().count() >= 1
+
+        with SyncGuard(suspend_undo_for=graph):
+            graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+            graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+
+        assert graph.undo_stack().count() == 0
+
+    def test_no_target_leaves_stack_alone(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        baseline = graph.undo_stack().count()
+
+        with SyncGuard():
+            pass
+
+        assert graph.undo_stack().count() == baseline
+
+    def test_suspend_undo_recursion_guard_active_inside_block(self, graph):
+        guard = SyncGuard(suspend_undo_for=graph)
+        with guard:
+            assert guard.active
+        assert not guard.active
+
+
 class TestPopulateGraph:
     def test_empty_files_produce_no_nodes(self, graph):
         pf = _make_parsed_file()
