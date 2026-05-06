@@ -48,6 +48,9 @@ filterwarnings = [
     "ignore:distutils Version classes are deprecated.*:DeprecationWarning",
     "ignore:.*QMouseEvent.*marked as deprecated.*:DeprecationWarning",
 ]
+markers = [
+    "slow: marks tests that take meaningful time (deselect with '-m \"not slow\"')",
+]
 
 [tool.ruff]
 target-version = "py314"
