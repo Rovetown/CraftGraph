@@ -59,6 +59,43 @@ def _add_tab(window, pf):
     return tab
 
 
+class TestWatcherRebuildFallback:
+    def test_diff_exception_falls_back_to_load_recipes(
+        self, window, monkeypatch, caplog
+    ):
+        """When the diff path raises, log a WARNING and call load_recipes."""
+        import logging
+        from pathlib import Path
+
+        from craftgraph.models import ParsedFile
+
+        # Set a source path so _apply_watcher_diff has somewhere to parse from.
+        window._source_path = Path(".")
+        # Pre-load an empty tab so old_files isn't empty.
+        pf = ParsedFile(source_path=Path("smoke.txt"))
+        _add_tab(window, pf)
+
+        called = {"load": 0}
+
+        def spy_load(path):
+            called["load"] += 1
+
+        monkeypatch.setattr(window, "load_recipes", spy_load)
+        monkeypatch.setattr(
+            window,
+            "_apply_watcher_diff",
+            lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="craftgraph.qt_gui"):
+            window._on_watcher_rebuild([])
+
+        assert called["load"] == 1
+        assert any(
+            "incremental rebuild failed" in rec.message for rec in caplog.records
+        )
+
+
 class TestFileTabParsedFile:
     def test_create_file_tab_stores_parsed_file(self, window, tmp_path):
         from pathlib import Path

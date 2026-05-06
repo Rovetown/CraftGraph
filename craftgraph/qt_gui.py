@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 import sys
 import time
@@ -161,6 +162,8 @@ _PIPE_ANIM_TICK_MS = 50              # pipe dash-offset animation tick
 _TAB_FLASH_DURATION_MS = 400         # tab-bar highlight after watcher rebuild
 _STATUS_ERROR_DEFAULT_MS = 5000      # default auto-dismiss for status bar errors
 _DEFERRED_TICK_MS = 0                # "run after event loop drain" singleShot delay
+
+logger = logging.getLogger(__name__)
 
 # Pattern for extracting ItemID / TabID values from selected EasyMarkup text.
 # Captures the value (a single token) so multi-line code-editor selections
@@ -5484,7 +5487,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._recipe_watcher.start()
 
     def _on_watcher_rebuild(self, cycles: list[list[str]]) -> None:
-        """Handle a watcher-triggered reload with notification settings."""
+        """Handle a watcher-triggered reload via the incremental diff path.
+
+        Falls back to a full ``load_recipes`` reload on any exception so
+        diff bugs / parser bugs / new-block-types-we-forgot-about all funnel
+        into the existing-and-trusted slow path.
+        """
         with hwnd_diag.measure("watcher_rebuild"), perf_diag.measure("watcher_rebuild"):
             fw = self._fw_settings
 
@@ -5503,9 +5511,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 if reply != QtWidgets.QMessageBox.StandardButton.Yes:
                     return
 
-            self.load_recipes(self._source_path)
+            try:
+                self._apply_watcher_diff()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("incremental rebuild failed; falling back: %s", exc)
+                self.load_recipes(self._source_path)
 
-            fw = self._fw_settings
             if fw.notify_status_bar:
                 total_nodes = sum(len(t.model_to_node) for t in self._file_tabs)
                 total_cycles = sum(t.cycle_count for t in self._file_tabs)
@@ -5519,6 +5530,60 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
             if fw.notify_sound_on_cycle and cycles:
                 QtWidgets.QApplication.beep()
+
+    def _apply_watcher_diff(self) -> None:
+        """Compute and apply the project diff. Raises on any failure."""
+        from craftgraph.model_diff import compute_diff
+        from craftgraph.parser import parse_directory, parse_file
+        from craftgraph.sync import apply_file_diff
+
+        if self._source_path is None:
+            raise RuntimeError("no source path; nothing to diff against")
+
+        if self._source_path.is_file():
+            new_files = [parse_file(self._source_path)]
+        else:
+            new_files = parse_directory(self._source_path)
+
+        old_files = [
+            tab.parsed_file for tab in self._file_tabs if tab.parsed_file is not None
+        ]
+        diff = compute_diff(old_files, new_files)
+
+        for path in diff.removed_paths:
+            self._close_tab_by_source_path(path)
+
+        for old_pf, new_pf, file_diff in diff.changed_files:
+            tab = self._tab_for_source_path(old_pf.source_path)
+            if tab is None:
+                raise RuntimeError(f"no tab for changed file {old_pf.source_path}")
+            apply_file_diff(file_tab=tab, diff=file_diff, new_parsed_file=new_pf)
+            connect_hierarchy(tab.graph, [new_pf], tab.model_to_node)
+            connect_ingredients(tab.graph, [new_pf], tab.model_to_node)
+
+        for new_pf in diff.added_files:
+            tab = self._create_file_tab(new_pf)
+            self._file_tabs.append(tab)
+            self._graph_stack.addWidget(tab.graph.widget)
+            self._editor_stack.addWidget(tab.editor)
+            self._tab_bar.addTab(new_pf.source_path.stem)
+            self._tab_bar.setTabToolTip(
+                self._tab_bar.count() - 1,
+                str(new_pf.source_path),
+            )
+
+        known_ids = frozenset(i.lower() for i in self._get_id_words())
+        for tab in self._file_tabs:
+            if tab.parsed_file is None:
+                continue
+            highlight_cycle_edges(tab.graph, [tab.parsed_file], tab.model_to_node)
+            update_node_issue_overlays(
+                tab.graph,
+                [tab.parsed_file],
+                tab.model_to_node,
+                known_ids,
+            )
+            update_child_count_labels(tab.model_to_node)
 
     def _flash_tab_bar(self) -> None:
         """Briefly highlight the tab bar to signal an external change."""
