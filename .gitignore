@@ -33,3 +33,7 @@ craftgraph.html
 
 # Testing sandbox
 test_sandbox/
+
+# Stray screen captures dropped at the repo root by Windows Snip & Sketch
+/Screenshot*.png
+/Screenshot*.jpg
