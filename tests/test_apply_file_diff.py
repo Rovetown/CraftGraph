@@ -230,3 +230,65 @@ class TestApplyModifyPassFields:
 
         result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
         assert result.nodes_modified == []
+
+
+class TestApplyModifyPassTopology:
+    def test_ingredient_count_change_replaces_node(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.sync import apply_file_diff
+
+        old = ModifiedRecipe(
+            item_id="Titanium",
+            amount_crafted=1,
+            ingredients=[Ingredient("Lithium", 1)],
+        )
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = old
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        old_pf.modified_recipes.append(old)
+        tab = _make_tab(graph, parsed_file=old_pf, model_to_node={id(old): node})
+        old_node_id = node.id
+
+        new = ModifiedRecipe(
+            item_id="Titanium",
+            amount_crafted=1,
+            ingredients=[
+                Ingredient("Lithium", 1),
+                Ingredient("Magnetite", 2),
+            ],
+        )
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.modified_recipes.append(new)
+        diff = FileDiff(added=[], removed=[], modified=[(old, new)])
+
+        result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+
+        # Old node ID is gone; a fresh node exists with model_ref=new.
+        assert old_node_id not in {n.id for n in graph.all_nodes()}
+        assert id(new) in tab.model_to_node
+        new_node = tab.model_to_node[id(new)]
+        assert new_node.model_ref is new
+        assert result.nodes_deleted_ids == [old_node_id]
+        assert new_node in result.nodes_created
+
+    def test_linked_item_ids_change_replaces_node(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.sync import apply_file_diff
+
+        old = ModifiedRecipe(item_id="Titanium", linked_item_ids=["A"])
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = old
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        old_pf.modified_recipes.append(old)
+        tab = _make_tab(graph, parsed_file=old_pf, model_to_node={id(old): node})
+        old_node_id = node.id
+
+        new = ModifiedRecipe(item_id="Titanium", linked_item_ids=["A", "B"])
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.modified_recipes.append(new)
+        diff = FileDiff(added=[], removed=[], modified=[(old, new)])
+
+        result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+
+        assert old_node_id in result.nodes_deleted_ids
+        assert id(new) in tab.model_to_node

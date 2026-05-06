@@ -2170,5 +2170,17 @@ def _topology_rebuild_node(
     new_entry: object,
     result: ApplyResult,
 ) -> None:
-    """Lands in Task 10."""
-    raise NotImplementedError("topology rebuild lands in Task 10")
+    """Delete the existing node and recreate it from the new model.
+
+    Used when port-topology-affecting fields change (Ingredients,
+    LinkedItemIDs). Future TODO 2.2a tracks an in-place port mutation that
+    would preserve edges; for now the delete-and-re-add path is correct
+    and cheap.
+    """
+    old_node_id = node.id
+    file_tab.graph.delete_node(node)
+    result.nodes_deleted_ids.append(old_node_id)
+
+    new_node = _create_node_for_entry(file_tab.graph, new_entry)
+    file_tab.model_to_node[id(new_entry)] = new_node
+    result.nodes_created.append(new_node)
