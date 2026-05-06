@@ -134,3 +134,56 @@ class TestApplyRemovePass:
         result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
 
         assert result.nodes_deleted_ids == []
+
+
+class TestApplyAddPass:
+    def test_added_recipe_creates_node(self, graph):
+        from craftgraph.sync import apply_file_diff
+
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        tab = _make_tab(graph, parsed_file=old_pf)
+
+        new_recipe = ModifiedRecipe(item_id="Titanium")
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.modified_recipes.append(new_recipe)
+        diff = FileDiff(added=[new_recipe], removed=[], modified=[])
+
+        result = apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+
+        assert id(new_recipe) in tab.model_to_node
+        node = tab.model_to_node[id(new_recipe)]
+        assert node.model_ref is new_recipe
+        assert result.nodes_created == [node]
+
+    def test_added_alias_recipe_uses_alias_node(self, graph):
+        from craftgraph.models import AliasRecipe
+        from craftgraph.qt_nodes import AliasRecipeNode
+        from craftgraph.sync import apply_file_diff
+
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        tab = _make_tab(graph, parsed_file=old_pf)
+
+        alias = AliasRecipe(item_id="MyAlias", display_name="My Alias")
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.alias_recipes.append(alias)
+        diff = FileDiff(added=[alias], removed=[], modified=[])
+
+        apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+        node = tab.model_to_node[id(alias)]
+        assert isinstance(node, AliasRecipeNode)
+
+    def test_added_fabricator_uses_fab_node(self, graph):
+        from craftgraph.models import CustomFabricator
+        from craftgraph.qt_nodes import FabricatorNode
+        from craftgraph.sync import apply_file_diff
+
+        old_pf = ParsedFile(source_path=Path("f.txt"))
+        tab = _make_tab(graph, parsed_file=old_pf)
+
+        fab = CustomFabricator(item_id="MyFab")
+        new_pf = ParsedFile(source_path=Path("f.txt"))
+        new_pf.custom_fabricators.append(fab)
+        diff = FileDiff(added=[fab], removed=[], modified=[])
+
+        apply_file_diff(file_tab=tab, diff=diff, new_parsed_file=new_pf)
+        assert isinstance(tab.model_to_node[id(fab)], FabricatorNode)

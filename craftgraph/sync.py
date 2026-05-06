@@ -2065,9 +2065,63 @@ def _apply_remove_pass(file_tab: object, removed: list[object], result: ApplyRes
 
 
 def _apply_add_pass(file_tab: object, added: list[object], result: ApplyResult) -> None:
-    """Lands in Task 8."""
-    if added:
-        raise NotImplementedError("add pass lands in Task 8")
+    """Spawn a node for each newly-introduced model entry.
+
+    Dispatch is class-keyed; the node-creation helpers (``_create_recipe_node``
+    et al.) are the same ones ``populate_graph`` uses, so the rendered nodes
+    are identical to the full-reload case. Position defaults to (0, 0); the
+    watcher integration runs a layout pass over the diff's added node IDs.
+    """
+    for entry in added:
+        node = _create_node_for_entry(file_tab.graph, entry)
+        file_tab.model_to_node[id(entry)] = node
+        result.nodes_created.append(node)
+
+
+def _create_node_for_entry(graph: object, entry: object) -> object:
+    """Class-keyed dispatch to the existing per-block-type creators.
+
+    Most-specific subclass first, since ``CustomFood`` extends ``AliasRecipe``,
+    ``AliasRecipe`` extends ``AddedRecipe``, and ``AddedRecipe`` extends
+    ``ModifiedRecipe`` -- isinstance checks would route everything to
+    ``ModifiedRecipe`` if ordered loosest-first.
+    """
+    from craftgraph.models import (
+        AddedRecipe,
+        AliasRecipe,
+        CraftingTab,
+        CustomBioFuel,
+        CustomFabricator,
+        CustomFood,
+        CustomFragmentCount,
+        CustomSize,
+        ModifiedRecipe,
+        MovedRecipe,
+    )
+
+    cls = type(entry)
+    if cls is CustomFood or cls is AliasRecipe or cls is AddedRecipe or cls is ModifiedRecipe:
+        node, _ = _create_recipe_node(graph, entry, 0.0)
+        return node
+    if cls is CustomFabricator:
+        node, _ = _create_fab_node(graph, entry, 0.0)
+        return node
+    if cls is CraftingTab:
+        node, _ = _create_tab_node(graph, entry, 0.0)
+        return node
+    if cls is CustomSize:
+        node, _ = _create_size_node(graph, entry, 0.0)
+        return node
+    if cls is MovedRecipe:
+        node, _ = _create_moved_recipe_node(graph, entry, 0.0)
+        return node
+    if cls is CustomBioFuel:
+        node, _ = _create_bio_fuel_node(graph, entry, 0.0)
+        return node
+    if cls is CustomFragmentCount:
+        node, _ = _create_fragment_count_node(graph, entry, 0.0)
+        return node
+    raise TypeError(f"no node creator registered for {cls.__name__}")
 
 
 def _apply_modify_pass(
