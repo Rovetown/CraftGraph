@@ -267,3 +267,95 @@ def test_ingredient_count_change_parity(qapp, monkeypatch, baseline_copy, tmp_pa
     snap_b = _snapshot_window(win_b)
 
     assert snap_a == snap_b
+
+
+def test_unchanged_file_skipped(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Touching an unchanged file fires a watcher event but creates zero nodes."""
+    target_file = next(baseline_copy.glob("*.txt"))
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    nodes_before = sum(len(t.model_to_node) for t in win_a._file_tabs)
+    pre_node_ids = [
+        {n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs
+    ]
+
+    target_file.write_bytes(target_file.read_bytes())
+    win_a._on_watcher_rebuild([])
+
+    nodes_after = sum(len(t.model_to_node) for t in win_a._file_tabs)
+    assert nodes_after == nodes_before
+    post_node_ids = [
+        {n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs
+    ]
+    assert pre_node_ids == post_node_ids
+
+
+def test_cross_file_fab_rename_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Rename a CustomFabricator ItemID. Cross-file Path strings still resolve."""
+    fab_file = next(
+        (p for p in baseline_copy.glob("*.txt") if "CustomFabricators:" in p.read_text(encoding="utf-8")),
+        None,
+    )
+    if fab_file is None:
+        pytest.skip("no fabricator file in baseline")
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    text = fab_file.read_text(encoding="utf-8")
+    mutated = text.replace("ItemID: ", "ItemID: RenamedFab_", 1)
+    fab_file.write_text(mutated, encoding="utf-8")
+
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_added_file_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Drop a new .txt into the baseline; both paths produce the new tab."""
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    new_file = baseline_copy / "ParityAdded_Sizes.txt"
+    new_file.write_text(
+        "CustomSizes:\n"
+        "(\n"
+        "    ItemID: ParitySizeTest;\n"
+        "    Width: 2;\n"
+        "    Height: 2;\n"
+        ");\n",
+        encoding="utf-8",
+    )
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
+
+
+def test_removed_file_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+    """Delete a .txt; tab closes on path A, never appears on path B."""
+    target = next(baseline_copy.glob("*.txt"))
+
+    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a.load_recipes(baseline_copy)
+
+    target.unlink()
+    win_a._on_watcher_rebuild([])
+    snap_a = _snapshot_window(win_a)
+
+    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b.load_recipes(baseline_copy)
+    snap_b = _snapshot_window(win_b)
+
+    assert snap_a == snap_b
