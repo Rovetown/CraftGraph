@@ -2051,9 +2051,17 @@ def apply_file_diff(
 
 
 def _apply_remove_pass(file_tab: object, removed: list[object], result: ApplyResult) -> None:
-    """Lands in Task 7."""
-    if removed:
-        raise NotImplementedError("remove pass lands in Task 7")
+    """Drop nodes for entries that are gone in the new ParsedFile.
+
+    Done first so freed names / ports do not conflict with the add pass.
+    """
+    for entry in removed:
+        node = file_tab.model_to_node.pop(id(entry), None)
+        if node is None:
+            continue
+        node_id = node.id
+        file_tab.graph.delete_node(node)
+        result.nodes_deleted_ids.append(node_id)
 
 
 def _apply_add_pass(file_tab: object, added: list[object], result: ApplyResult) -> None:
