@@ -189,25 +189,30 @@ def test_add_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     assert snap_a == snap_b
 
 
+def _drop_first_alias(target_file: Path) -> None:
+    """Parse, remove the first alias recipe, and serialize back.
+
+    Avoids fragile text-level edits where inline ingredient lists contain
+    ``),`` boundaries that confuse naive substring searches.
+    """
+    from craftgraph.parser import parse_file
+    from craftgraph.serializer import serialize_file
+
+    pf = parse_file(target_file)
+    if not pf.alias_recipes:
+        pytest.skip("target file has no alias recipes")
+    pf.alias_recipes.pop(0)
+    target_file.write_text(serialize_file(pf), encoding="utf-8")
+
+
 def test_remove_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Delete the second recipe block; both paths produce the same nodes."""
+    """Delete one recipe; both paths produce the same nodes."""
     target_file = _multi_recipe_file(baseline_copy)
 
     win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
-    # Cut the second recipe block: from its ",\n(" boundary to the matching "),".
-    text = target_file.read_text(encoding="utf-8")
-    second_open = text.find("),\n(")
-    if second_open < 0:
-        pytest.skip("baseline target lacks an inter-recipe boundary")
-    block_start = second_open + 2  # position of '\n('
-    next_close = text.find("),", block_start) + 2
-    if next_close <= 1:
-        pytest.skip("baseline target lacks a recipe close after target block")
-    mutated = text[:block_start] + text[next_close:]
-    target_file.write_text(mutated, encoding="utf-8")
-
+    _drop_first_alias(target_file)
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
@@ -220,14 +225,19 @@ def test_remove_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
 
 def test_rename_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     """Rename the first ItemID; remove+add semantics produce parity."""
+    from craftgraph.parser import parse_file
+    from craftgraph.serializer import serialize_file
+
     target_file = _multi_recipe_file(baseline_copy)
 
     win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
-    text = target_file.read_text(encoding="utf-8")
-    mutated = text.replace("ItemID: ", "ItemID: ParityRenamed_", 1)
-    target_file.write_text(mutated, encoding="utf-8")
+    pf = parse_file(target_file)
+    if not pf.alias_recipes:
+        pytest.skip("target file has no alias recipes")
+    pf.alias_recipes[0].item_id = "ParityRenamed_" + pf.alias_recipes[0].item_id
+    target_file.write_text(serialize_file(pf), encoding="utf-8")
 
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
@@ -240,24 +250,21 @@ def test_rename_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
 
 
 def test_ingredient_count_change_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Bump one Required value; exercises topology fallback."""
-    import re
+    """Add one ingredient; exercises topology fallback."""
+    from craftgraph.models import Ingredient
+    from craftgraph.parser import parse_file
+    from craftgraph.serializer import serialize_file
 
     target_file = _multi_recipe_file(baseline_copy)
 
     win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
-    text = target_file.read_text(encoding="utf-8")
-    mutated = re.sub(
-        r"Required: (\d+);",
-        lambda m: f"Required: {int(m.group(1)) + 1};",
-        text,
-        count=1,
-    )
-    if mutated == text:
-        pytest.skip("baseline target lacks any Required: N; line")
-    target_file.write_text(mutated, encoding="utf-8")
+    pf = parse_file(target_file)
+    if not pf.alias_recipes:
+        pytest.skip("target file has no alias recipes")
+    pf.alias_recipes[0].ingredients.append(Ingredient(item_id="Copper", required=1))
+    target_file.write_text(serialize_file(pf), encoding="utf-8")
 
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
