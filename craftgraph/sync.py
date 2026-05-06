@@ -2007,3 +2007,66 @@ class UIToModelHandler:
                 if frag is model_obj:
                     return pf
         return None
+
+
+# ---------------------------------------------------------------------------
+# Incremental apply layer (TODO 2.2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ApplyResult:
+    """Summary of an ``apply_file_diff`` call. Useful for tests + telemetry."""
+
+    nodes_created: list[object] = field(default_factory=list)
+    nodes_deleted_ids: list[str] = field(default_factory=list)
+    nodes_modified: list[object] = field(default_factory=list)
+
+
+def apply_file_diff(
+    *,
+    file_tab: object,
+    diff: object,
+    new_parsed_file: object,
+) -> ApplyResult:
+    """Mutate ``file_tab`` in place to reflect ``diff``.
+
+    Three passes (order matters for hierarchy correctness):
+      1. Remove pass: drop nodes for entries that are gone.
+      2. Add pass: spawn nodes for new entries.
+      3. Modify pass: rebind model_ref + push field values; delete-and-re-add
+         when port topology changes.
+
+    Bypasses NodeGraphQt's undo stack via ``SyncGuard(suspend_undo_for=...)``.
+
+    On return, ``file_tab.parsed_file`` is replaced with ``new_parsed_file``.
+    """
+    result = ApplyResult()
+    with SyncGuard(suspend_undo_for=file_tab.graph):
+        _apply_remove_pass(file_tab, diff.removed, result)
+        _apply_add_pass(file_tab, diff.added, result)
+        _apply_modify_pass(file_tab, diff.modified, result)
+    file_tab.parsed_file = new_parsed_file
+    return result
+
+
+def _apply_remove_pass(file_tab: object, removed: list[object], result: ApplyResult) -> None:
+    """Lands in Task 7."""
+    if removed:
+        raise NotImplementedError("remove pass lands in Task 7")
+
+
+def _apply_add_pass(file_tab: object, added: list[object], result: ApplyResult) -> None:
+    """Lands in Task 8."""
+    if added:
+        raise NotImplementedError("add pass lands in Task 8")
+
+
+def _apply_modify_pass(
+    file_tab: object,
+    modified: list[tuple[object, object]],
+    result: ApplyResult,
+) -> None:
+    """Lands in Task 9."""
+    if modified:
+        raise NotImplementedError("modify pass lands in Task 9")
