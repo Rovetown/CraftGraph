@@ -213,6 +213,7 @@ class TestPopulateGraph:
 
         assert len(result) == 1
         node = result[id(recipe)]
+        node._maybe_build_widgets()
         assert node.name() == "Titanium (x2)"
         assert node.model_ref is recipe
         assert node.get_widget("amount_crafted").get_value() == "2"
@@ -223,6 +224,7 @@ class TestPopulateGraph:
         result = populate_graph(graph, [pf])
 
         node = result[id(recipe)]
+        node._maybe_build_widgets()
         assert node.get_widget("path").get_value() == "Fabricator/Resources"
 
     def test_alias_recipe_has_display_fields(self, graph):
@@ -235,6 +237,7 @@ class TestPopulateGraph:
         result = populate_graph(graph, [pf])
 
         node = result[id(recipe)]
+        node._maybe_build_widgets()
         assert node.get_widget("display_name").get_value() == "Super Item"
         assert node.get_widget("tooltip").get_value() == "A super item"
 
@@ -244,6 +247,7 @@ class TestPopulateGraph:
         result = populate_graph(graph, [pf])
 
         node = result[id(recipe)]
+        node._maybe_build_widgets()
         assert node.get_widget("food_value").get_value() == "50"
         assert node.get_widget("water_value").get_value() == "30"
 
@@ -275,6 +279,7 @@ class TestPopulateGraph:
         result = populate_graph(graph, [pf])
 
         node = result[id(fab)]
+        node._maybe_build_widgets()
         assert node.get_widget("item_id").get_value() == "MyFab"
         assert node.get_widget("display_name").get_value() == "My Fab"
 
@@ -285,6 +290,7 @@ class TestPopulateGraph:
 
         assert len(result) == 1
         node = result[id(tab)]
+        node._maybe_build_widgets()
         assert node.get_widget("tab_id").get_value() == "Resources"
 
     def test_multiple_files(self, graph):
