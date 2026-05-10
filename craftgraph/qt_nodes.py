@@ -229,6 +229,58 @@ def _install_lazy_widget_build() -> None:
 _install_lazy_widget_build()
 
 
+def _install_deserialize_eager_build() -> None:
+    """Force eager widget build during ``NodeGraph._deserialize`` (paste/duplicate).
+
+    NodeGraphQt's deserialization path creates a node via the factory, then
+    immediately writes properties via ``node.model.set_property(prop, val)``.
+    This bypasses our overridden ``set_property`` (which would trigger lazy
+    build) and asks the model directly for keys that only exist after widgets
+    are created. With lazy widget build the model raises
+    ``NodePropertyError: No property "<custom>"`` for every widget-backed
+    field. To keep paste/duplicate working without losing the lazy benefit
+    on the populate-graph load path, wrap ``NodeFactory.create_node_instance``
+    only while inside ``_deserialize`` and force the build there.
+
+    Idempotent via the ``_cg_deserialize_patched`` sentinel.
+    """
+    from NodeGraphQt.base.factory import NodeFactory
+    from NodeGraphQt.base.graph import NodeGraph
+
+    if getattr(NodeGraph, "_cg_deserialize_patched", False):
+        return
+
+    original_deserialize = NodeGraph._deserialize
+    original_create = NodeFactory.create_node_instance
+
+    def eager_create(self, node_type=None):
+        node = original_create(self, node_type)
+        if node is not None:
+            maybe_build = getattr(node, "_maybe_build_widgets", None)
+            if callable(maybe_build):
+                maybe_build()
+        return node
+
+    def patched_deserialize(self, data, relative_pos=False, pos=None, adjust_graph_style=True):
+        # Swap the factory's create method for the duration of the deserialize
+        # call so freshly-created nodes have their widgets built before
+        # NodeGraphQt writes properties via node.model.set_property.
+        NodeFactory.create_node_instance = eager_create  # type: ignore[method-assign]
+        try:
+            return original_deserialize(
+                self, data, relative_pos=relative_pos, pos=pos,
+                adjust_graph_style=adjust_graph_style,
+            )
+        finally:
+            NodeFactory.create_node_instance = original_create  # type: ignore[method-assign]
+
+    NodeGraph._deserialize = patched_deserialize  # type: ignore[method-assign]
+    NodeGraph._cg_deserialize_patched = True  # type: ignore[attr-defined]
+
+
+_install_deserialize_eager_build()
+
+
 def _install_stylesheet_cache(widget: object) -> None:
     """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
 
@@ -1902,6 +1954,13 @@ class SpriteNode(CraftGraphBaseNode):
     def __init__(self) -> None:
         super().__init__()
         self._node_uuid: str = uuid.uuid4().hex[:8]
+
+        # SpriteNode wires a textChanged listener to the file_path widget for
+        # self-preview and propagation. The lazy build defers widget creation
+        # to first paint, but this listener must be installed at __init__ time
+        # because the browse button below also needs the widget to exist.
+        # Force eager build for SpriteNode specifically.
+        self._maybe_build_widgets()
 
         # Self-preview: update header icon when file_path changes
         widget_item = self.get_widget("file_path")
