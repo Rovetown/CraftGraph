@@ -1884,3 +1884,48 @@ class TestLazyPropertyAccess:
         node.set_property("amount_crafted", "3")
         assert node._cg_widgets_pending is False
         assert int(node.get_property("amount_crafted")) == 3
+
+
+class TestPaintedFieldsNodeItem:
+    def test_subclass_paints_via_super(self, qapp, graph):
+        from PySide6.QtCore import QRectF
+
+        from craftgraph.painted_fields import FieldRect, FieldState
+        from craftgraph.pin_registry import PinType
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        item = PaintedFieldsNodeItem(name="test_node")
+        item._cg_field_rects = [
+            FieldRect(
+                name="x",
+                pin_type=PinType.STRING,
+                label_rect=QRectF(0, 0, 50, 22),
+                value_rect=QRectF(50, 0, 100, 22),
+                state=FieldState.NORMAL,
+            )
+        ]
+        br = item.boundingRect()
+        assert br.height() >= 22.0
+
+    def test_field_at_returns_hit_field(self, qapp, graph):
+        from PySide6.QtCore import QPointF, QRectF
+
+        from craftgraph.painted_fields import FieldRect, FieldState
+        from craftgraph.pin_registry import PinType
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        item = PaintedFieldsNodeItem(name="test_node")
+        item._cg_field_rects = [
+            FieldRect(
+                name="amount",
+                pin_type=PinType.INT,
+                label_rect=QRectF(0, 0, 50, 22),
+                value_rect=QRectF(50, 0, 100, 22),
+                state=FieldState.NORMAL,
+            )
+        ]
+        hit = item._field_at(QPointF(75, 10))
+        assert hit is not None
+        assert hit.name == "amount"
+        miss = item._field_at(QPointF(500, 500))
+        assert miss is None
