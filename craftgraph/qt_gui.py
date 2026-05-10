@@ -54,6 +54,7 @@ from craftgraph.project import (
     new_project,
     save_project,
 )
+from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.qt_nodes import (
     IDENTIFIER,
     NODE_COLOR_FIELD_FOR_CLASS,
@@ -3515,6 +3516,20 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     self._recent.add(Path(first.path), "folder")
                     self._rebuild_recent_menu()
 
+        # -- Floating-editor host for painted-field nodes ---------------------
+        # Owns three editor widgets total (string, int, combo) parented to
+        # the active graph viewer's viewport. Re-attached on tab switch.
+        self._floating_editor_host = FloatingEditorHost(parent=self)
+        self._floating_editor_host.committed.connect(self._on_floating_editor_committed)
+        self._floating_editor_host.attach(self.graph.viewer())
+        self._active_node_for_edit: object | None = None
+        # Wire any pre-existing nodes (placeholder tab + any tabs created
+        # synchronously during the launch flow above).
+        for tab in self._file_tabs:
+            tab.graph.node_created.connect(self._wire_node_signals)
+            for n in tab.graph.all_nodes():
+                self._wire_node_signals(n)
+
         # -- Deferred update check (runs after the event loop starts) --
         if self._check_for_updates:
             QtCore.QTimer.singleShot(_DEFERRED_TICK_MS, self._run_update_check)
@@ -3803,6 +3818,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._snap_moved_nodes(graph, moved)
 
         graph.viewer().moved_nodes.connect(_on_placeholder_moved)
+        # Wire field-edit signals on every newly-created node. The hasattr
+        # guard covers the early-init case (_create_placeholder_tab is called
+        # before _floating_editor_host is constructed in __init__).
+        if hasattr(self, "_floating_editor_host"):
+            graph.node_created.connect(self._wire_node_signals)
 
         self._minimap.attach(graph)
 
@@ -3827,6 +3847,45 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(name)
 
         self._attach_minimap_to_current_tab()
+
+        # Re-parent the floating-editor host onto the new tab's viewer and
+        # rewire any nodes that already exist on it. The hasattr guard covers
+        # the early-init case where _on_tab_changed fires before the host is
+        # constructed in __init__.
+        if hasattr(self, "_floating_editor_host"):
+            self._floating_editor_host._commit()
+            self._floating_editor_host.attach(self.graph.viewer())
+            for n in self.graph.all_nodes():
+                self._wire_node_signals(n)
+
+    # -- Floating-editor wiring ----------------------------------------------
+
+    def _on_floating_editor_committed(self, field_name: str, value: str) -> None:
+        node = self._active_node_for_edit
+        if node is None:
+            return
+        node.set_property(field_name, value)
+        self._active_node_for_edit = None
+
+    def _wire_node_signals(self, node: object) -> None:
+        if hasattr(node, "_ensure_signals"):
+            signals = node._ensure_signals()
+            signals.field_edit_requested.connect(self._on_field_edit_requested)
+
+    def _on_field_edit_requested(
+        self,
+        node: object,
+        field_name: str,
+        view_rect: object,
+        current_value: str,
+    ) -> None:
+        self._active_node_for_edit = node
+        self._floating_editor_host.summon(
+            field_name=field_name,
+            field_type=node._field_pin_type(field_name),
+            view_rect=view_rect,
+            current_value=current_value,
+        )
 
     # -- Minimap --------------------------------------------------------------
 
@@ -7721,6 +7780,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._setup_context_menus_for(graph)
         self._install_viewer_patches(graph)
         graph.node_created.connect(self._apply_node_header_tooltip)
+        # Wire field-edit signals on every newly-created node. The hasattr
+        # guard handles _create_file_tab being called from inside __init__
+        # before _floating_editor_host is constructed.
+        if hasattr(self, "_floating_editor_host"):
+            graph.node_created.connect(self._wire_node_signals)
 
         guard = SyncGuard()
         history = EditHistory(on_change=self._on_model_changed)

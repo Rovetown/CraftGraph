@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from NodeGraphQt import BaseNode
 from NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PortTypeEnum, ViewerEnum
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget, _NodeGroupBox
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -455,6 +455,38 @@ class PaintedFieldsNodeItem(_NodeItem):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             value_text,
         )
+
+    def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
+        """Translate a double-click into a window-level field-edit request."""
+        local_pos = event.pos()
+        # Some test paths and synthetic dispatches only set the scene position;
+        # fall back to mapping from scenePos when local is at origin.
+        if local_pos.isNull() and not event.scenePos().isNull():
+            local_pos = self.mapFromScene(event.scenePos())
+        rect = self._field_at(local_pos)
+        if rect is None or rect.state in (
+            FieldState.CONNECTED_TO_VARIABLE,
+            FieldState.DISABLED,
+        ):
+            super().mouseDoubleClickEvent(event)
+            return
+        node = getattr(self, "_cg_node", None)
+        if node is None or rect.value_rect is None:
+            super().mouseDoubleClickEvent(event)
+            return
+        scene = self.scene()
+        view = scene.views()[0] if scene and scene.views() else None
+        if view is None:
+            super().mouseDoubleClickEvent(event)
+            return
+        scene_rect = self.mapToScene(rect.value_rect).boundingRect()
+        view_rect = view.mapFromScene(scene_rect).boundingRect()
+        current = node.get_property(rect.name)
+        signals = node._ensure_signals()
+        signals.field_edit_requested.emit(
+            node, rect.name, view_rect, "" if current is None else str(current),
+        )
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +962,16 @@ class _WarningOverlay(QGraphicsItem):
 # ---------------------------------------------------------------------------
 
 
+class _NodeSignals(QObject):
+    """Signal carrier for CraftGraph nodes (BaseNode is not a QObject).
+
+    Carries ``field_edit_requested(node, field_name, view_rect, current_value)``
+    emitted by ``PaintedFieldsNodeItem.mouseDoubleClickEvent``.
+    """
+
+    field_edit_requested = Signal(object, str, object, str)
+
+
 class CraftGraphBaseNode(BaseNode):
     """Shared base for all CraftGraph node types.
 
@@ -1265,6 +1307,17 @@ class CraftGraphBaseNode(BaseNode):
             if fp.name == name:
                 return fp
         return None
+
+    def _ensure_signals(self) -> _NodeSignals:
+        """Lazily build the per-node Qt signal carrier."""
+        if not hasattr(self, "_cg_signals"):
+            self._cg_signals = _NodeSignals()
+        return self._cg_signals
+
+    def _field_pin_type(self, name: str) -> PinType | None:
+        """Return the PinType for the named field, or None if unknown."""
+        fp = self._get_field_pin(name)
+        return fp.pin_type if fp is not None else None
 
     def _on_field_changed(self, field_name: str, new_value: Any) -> None:
         """Auto-wired callback: widget value changed -> update model.

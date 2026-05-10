@@ -44,6 +44,35 @@ def window(qapp, monkeypatch, tmp_path):
     return CraftGraphWindow()
 
 
+class _MiniQtBot:
+    """Minimal qtbot stand-in: tracks widgets and closes them on teardown.
+
+    pytest-qt is not a project dependency. Tests that take a ``qtbot``
+    parameter only use ``addWidget`` for end-of-test cleanup, so a tiny
+    helper covers it without pulling in a new dev dep.
+    """
+
+    def __init__(self) -> None:
+        self._widgets: list[QtWidgets.QWidget] = []
+
+    def addWidget(self, widget: QtWidgets.QWidget) -> None:  # noqa: N802
+        self._widgets.append(widget)
+
+    def cleanup(self) -> None:
+        for widget in self._widgets:
+            try:
+                widget.close()
+            except RuntimeError:
+                continue
+
+
+@pytest.fixture
+def qtbot():
+    bot = _MiniQtBot()
+    yield bot
+    bot.cleanup()
+
+
 # ---------------------------------------------------------------------------
 # Window basics
 # ---------------------------------------------------------------------------
@@ -6638,3 +6667,50 @@ class TestPanZoomProfiler:
         prof_files = list(diag_dir.glob("panzoom_*.prof"))
         assert len(prof_files) == 1
         assert prof_files[0].stat().st_size > 0
+
+
+class TestFloatingEditorIntegration:
+    def test_double_click_field_summons_editor(self, qapp, qtbot, tmp_path, monkeypatch):
+        """Double-clicking on a ModifiedRecipeNode's amount_crafted field
+        opens the int editor pre-filled with the current value."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
+        from craftgraph import app_dirs
+        from craftgraph.models import ModifiedRecipe
+        from craftgraph.qt_gui import CraftGraphWindow
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+
+        win = CraftGraphWindow()
+        qtbot.addWidget(win)
+        # Switch from welcome screen to editor so the graph viewer's
+        # viewport (which parents the floating editors) is on-screen.
+        win._show_editor()
+        win.show()
+        qapp.processEvents()
+
+        graph = win.graph
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=7)
+        node.populate_from_model()
+        node._maybe_build_widgets()
+        qapp.processEvents()
+
+        # Find the FieldRect for amount_crafted and emit double-click on it.
+        rect = next(r for r in node.view._cg_field_rects if r.name == "amount_crafted")
+        scene_pt = node.view.mapToScene(rect.value_rect.center())
+
+        ev = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMouseDoubleClick)
+        ev.setScenePos(scene_pt)
+        ev.setButton(Qt.MouseButton.LeftButton)
+        node.view.mouseDoubleClickEvent(ev)
+        qapp.processEvents()
+
+        host = win._floating_editor_host
+        assert host._active_field_name == "amount_crafted"
+        assert host._int_editor.isVisible()
+        assert host._int_editor.text() == "7"
+
+        win.close()
