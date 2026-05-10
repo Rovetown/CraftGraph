@@ -99,6 +99,7 @@ class TestFieldInputPorts:
 
     def test_modified_recipe_has_field_ports(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         port = node.get_input("field_item_id")
         assert port is not None
 
@@ -106,6 +107,7 @@ class TestFieldInputPorts:
         from craftgraph.qt_nodes import PORT_COLOR_VARIABLE
 
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         port = node.get_input("field_item_id")
         assert port.color == PORT_COLOR_VARIABLE
 
@@ -116,16 +118,19 @@ class TestFieldInputPorts:
 
     def test_added_recipe_has_path_field_port(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         port = node.get_input("field_path")
         assert port is not None
 
     def test_custom_food_has_food_value_field_port(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="Test")
+        node._maybe_build_widgets()
         port = node.get_input("field_food_value")
         assert port is not None
 
     def test_fabricator_has_model_field_port(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Test")
+        node._maybe_build_widgets()
         port = node.get_input("field_model")
         assert port is not None
 
@@ -135,12 +140,14 @@ class TestFieldDisableEnable:
 
     def test_disable_field_disables_widget(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         node.disable_field("item_id")
         widget = node.get_widget("item_id")
         assert not widget.get_custom_widget().isEnabled()
 
     def test_enable_field_re_enables_widget(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         node.disable_field("item_id")
         node.enable_field("item_id")
         widget = node.get_widget("item_id")
@@ -220,6 +227,7 @@ class TestModifiedRecipeRegistry:
         from craftgraph.pin_registry import PinType
 
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        node._maybe_build_widgets()
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -265,6 +273,7 @@ class TestModifiedRecipeRegistry:
     def test_new_fields_present(self, graph):
         """Fields that were missing before Phase A should now exist."""
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        node._maybe_build_widgets()
         assert node.get_widget("linked_item_ids") is not None
         assert node.get_widget("unlocks") is not None
         assert node.get_widget("unlocked_by") is not None
@@ -289,6 +298,7 @@ class TestAddedRecipeRegistry:
 
     def test_own_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        node._maybe_build_widgets()
         assert node.get_widget("path") is not None
         assert node.get_widget("pda_group") is not None
         assert node.get_widget("pda_category") is not None
@@ -315,11 +325,13 @@ class TestAddedRecipeRegistry:
 class TestAliasRecipeRegistry:
     def test_inherits_added_fields(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        node._maybe_build_widgets()
         assert node.get_widget("path") is not None
         assert node.get_widget("pda_group") is not None
 
     def test_own_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        node._maybe_build_widgets()
         assert node.get_widget("display_name") is not None
         assert node.get_widget("tooltip") is not None
         assert node.get_widget("functional_id") is not None
@@ -339,11 +351,13 @@ class TestAliasRecipeRegistry:
 class TestCustomFoodRegistry:
     def test_inherits_alias_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node._maybe_build_widgets()
         assert node.get_widget("display_name") is not None
         assert node.get_widget("tooltip") is not None
 
     def test_all_food_stat_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node._maybe_build_widgets()
         for field_name in (
             "food_value",
             "water_value",
@@ -355,6 +369,7 @@ class TestCustomFoodRegistry:
 
     def test_food_type_and_drink_sound(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node._maybe_build_widgets()
         assert node.get_widget("food_type") is not None
         assert node.get_widget("use_drink_sound") is not None
 
@@ -398,6 +413,7 @@ class TestModifiedRecipeNode:
 
     def test_widgets_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
+        node._maybe_build_widgets()
         assert node.get_widget("item_id") is not None
         assert node.get_widget("amount_crafted") is not None
 
@@ -449,6 +465,7 @@ class TestAddedRecipeNode:
 
     def test_path_widget(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
+        node._maybe_build_widgets()
         assert node.get_widget("path") is not None
 
     def test_node_color(self, graph):
@@ -467,11 +484,13 @@ class TestAddedRecipeNode:
 class TestAliasRecipeNode:
     def test_display_name_and_tooltip_widgets(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        node._maybe_build_widgets()
         assert node.get_widget("display_name") is not None
         assert node.get_widget("tooltip") is not None
 
     def test_inherits_path_widget(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
+        node._maybe_build_widgets()
         assert node.get_widget("path") is not None
 
     def test_node_color(self, graph):
@@ -484,11 +503,13 @@ class TestAliasRecipeNode:
 class TestCustomFoodNode:
     def test_food_stat_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node._maybe_build_widgets()
         assert node.get_widget("food_value") is not None
         assert node.get_widget("water_value") is not None
 
     def test_inherits_alias_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
+        node._maybe_build_widgets()
         assert node.get_widget("display_name") is not None
         assert node.get_widget("tooltip") is not None
         assert node.get_widget("path") is not None
@@ -508,6 +529,7 @@ class TestCustomFoodNode:
 class TestFabricatorNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        node._maybe_build_widgets()
         # SPLIT_OUTPUTS: typed output ports instead of single "children"
         for name in ("tabs_out", "added_out", "alias_out", "foods_out", "moved_out"):
             assert node.get_output(name) is not None, f"Missing output: {name}"
@@ -518,6 +540,7 @@ class TestFabricatorNode:
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        node._maybe_build_widgets()
         assert node.get_widget("item_id") is not None
         assert node.get_widget("display_name") is not None
         assert node.get_widget("model") is not None
@@ -561,6 +584,7 @@ class TestFabricatorRegistry:
         from craftgraph.pin_registry import PinType
 
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        node._maybe_build_widgets()
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -578,6 +602,7 @@ class TestFabricatorRegistry:
 
     def test_new_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
+        node._maybe_build_widgets()
         for name in (
             "tooltip",
             "color_tint",
@@ -622,6 +647,7 @@ class TestCraftingTabNode:
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="Tab1")
+        node._maybe_build_widgets()
         assert node.get_widget("tab_id") is not None
         assert node.get_widget("display_name") is not None
 
@@ -635,6 +661,7 @@ class TestCraftingTabNode:
 class TestMovedRecipeNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
+        node._maybe_build_widgets()
         # 5 field_* ports (no sprite_in)
         assert node.get_input("sprite_in") is None
         assert len(node.input_ports()) == 5
@@ -642,6 +669,7 @@ class TestMovedRecipeNode:
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.MovedRecipeNode", name="M1")
+        node._maybe_build_widgets()
         assert node.get_widget("item_id") is not None
         assert node.get_widget("old_path") is not None
         assert node.get_widget("new_path") is not None
@@ -658,6 +686,7 @@ class TestMovedRecipeNode:
 class TestCustomBioFuelNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
+        node._maybe_build_widgets()
         # 2 field_* ports (no sprite_in)
         assert node.get_input("sprite_in") is None
         assert len(node.input_ports()) == 2
@@ -665,6 +694,7 @@ class TestCustomBioFuelNode:
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CustomBioFuelNode", name="BF1")
+        node._maybe_build_widgets()
         assert node.get_widget("item_id") is not None
         assert node.get_widget("energy") is not None
 
@@ -683,6 +713,7 @@ class TestCustomBioFuelNode:
 class TestCustomFragmentCountNode:
     def test_ports(self, graph):
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
+        node._maybe_build_widgets()
         # 2 field_* ports (no sprite_in)
         assert node.get_input("sprite_in") is None
         assert len(node.input_ports()) == 2
@@ -690,6 +721,7 @@ class TestCustomFragmentCountNode:
 
     def test_widgets(self, graph):
         node = graph.create_node("com.craftgraph.CustomFragmentCountNode", name="FC1")
+        node._maybe_build_widgets()
         assert node.get_widget("item_id") is not None
         assert node.get_widget("fragments_to_scan") is not None
 
@@ -1042,6 +1074,7 @@ class TestCraftingTabRegistry:
         from craftgraph.pin_registry import PinType
 
         node = graph.create_node("com.craftgraph.CraftingTabNode", name="T1")
+        node._maybe_build_widgets()
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -1115,6 +1148,7 @@ class TestWidgetZOrder:
     def test_widget_z_values_descend(self, graph):
         """Proxy widgets should have descending z-values (topmost highest)."""
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab")
+        node._maybe_build_widgets()
         widgets = list(node.view.widgets.values())
         assert len(widgets) > 2
         z_values = [w.zValue() for w in widgets]
@@ -1128,6 +1162,7 @@ class TestWidgetZOrder:
         from NodeGraphQt.constants import Z_VAL_NODE_WIDGET
 
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         widgets = list(node.view.widgets.values())
         assert len(widgets) > 0
         assert widgets[0].zValue() > Z_VAL_NODE_WIDGET
@@ -1137,6 +1172,7 @@ class TestWidgetOverride:
     def test_string_without_override_creates_text_input(self, graph):
         """A STRING FieldPin without widget_override should render as text input."""
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="Test")
+        node._maybe_build_widgets()
         widget = node.get_widget("path")
         assert widget is not None
         inner = widget.get_custom_widget()
@@ -1158,6 +1194,7 @@ class TestOverflowTooltips:
         node = graph.create_node(
             "com.craftgraph.ModifiedRecipeNode", name="Test",
         )
+        node._maybe_build_widgets()
         widget_item = node.get_widget("item_id")
         assert widget_item is not None
         qt_widget = widget_item.get_custom_widget()
@@ -1169,6 +1206,7 @@ class TestOverflowTooltips:
         node = graph.create_node(
             "com.craftgraph.ModifiedRecipeNode", name="Test",
         )
+        node._maybe_build_widgets()
         widget_item = node.get_widget("amount_crafted")
         assert widget_item is not None
         qt_widget = widget_item.get_custom_widget()
@@ -1182,6 +1220,7 @@ class TestOverflowTooltips:
         node = graph.create_node(
             "com.craftgraph.FabricatorNode", name="Test",
         )
+        node._maybe_build_widgets()
         widget_item = node.get_widget("model")
         assert widget_item is not None
         qt_widget = widget_item.get_custom_widget()
@@ -1203,6 +1242,7 @@ class TestSpriteNodeSelfPreview:
         if not _SPRITE_PATH.exists():
             pytest.skip("Reference sprite not found")
         node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        node._maybe_build_widgets()
         node.set_property("file_path", str(_SPRITE_PATH))
         assert node.sprite_path == _SPRITE_PATH
         pixmap = node.view._icon_item.pixmap()
@@ -1213,6 +1253,7 @@ class TestSpriteNodeSelfPreview:
         if not _SPRITE_PATH.exists():
             pytest.skip("Reference sprite not found")
         node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
+        node._maybe_build_widgets()
         node.set_property("file_path", str(_SPRITE_PATH))
         assert node.sprite_path is not None
         node.set_property("file_path", "")
@@ -1281,6 +1322,7 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        alias._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         in_port = alias.get_input("sprite_in")
         out_port.connect_to(in_port)
@@ -1296,6 +1338,7 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        alias._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         in_port = alias.get_input("sprite_in")
         out_port.connect_to(in_port)
@@ -1312,7 +1355,9 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        alias._maybe_build_widgets()
         tab = graph.create_node("com.craftgraph.CraftingTabNode")
+        tab._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         out_port.connect_to(alias.get_input("sprite_in"))
         out_port.connect_to(tab.get_input("sprite_in"))
@@ -1335,6 +1380,7 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        alias._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         out_port.connect_to(alias.get_input("sprite_in"))
 
@@ -1348,6 +1394,7 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         tab = graph.create_node("com.craftgraph.CraftingTabNode")
+        tab._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         out_port.connect_to(tab.get_input("sprite_in"))
 
@@ -1361,6 +1408,7 @@ class TestSpriteNodePropagation:
             pytest.skip("Reference sprite not found")
         sprite = graph.create_node("com.craftgraph.SpriteNode", name="S1")
         alias = graph.create_node("com.craftgraph.AliasRecipeNode")
+        alias._maybe_build_widgets()
         out_port = sprite.get_output("sprite_out")
         out_port.connect_to(alias.get_input("sprite_in"))
 
@@ -1760,3 +1808,79 @@ class TestPortBoundingRectCache:
         # Same dimensions but distinct cached objects -- caller must not be
         # able to mutate one port's rect and affect another.
         assert port_a.boundingRect() is not port_b.boundingRect()
+
+
+class TestLazyWidgetBuild:
+    def test_widgets_not_built_on_create(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert node._cg_widgets_pending is True
+
+    def test_widgets_built_on_first_paint(self, qapp, graph):
+        from PySide6.QtGui import QPainter
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        opt = QStyleOptionGraphicsItem()
+        # painting into a null QPainter does nothing, but the patch fires.
+        node.view.paint(QPainter(), opt, None)
+        assert node._cg_widgets_pending is False
+
+    def test_paint_patch_is_class_level_idempotent(self, qapp, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        # Two separate nodes share the same patched paint -- not per-instance.
+        n1 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        n2 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert type(n1.view).paint is type(n2.view).paint
+        # Sentinel set on the class.
+        assert getattr(type(n1.view), "_cg_lazy_build_patched", False) is True
+
+
+class TestLazyPopulate:
+    def test_populate_before_paint_defers(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        node.populate_from_model()
+        # Widgets still pending; populate marked as deferred.
+        assert node._cg_widgets_pending is True
+        assert node._cg_pending_populate is True
+
+    def test_paint_replays_deferred_populate(self, qapp, graph):
+        from PySide6.QtGui import QPainter
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        node.populate_from_model()
+
+        opt = QStyleOptionGraphicsItem()
+        node.view.paint(QPainter(), opt, None)
+
+        # Widgets exist now AND the model values landed (not defaults).
+        assert node._cg_widgets_pending is False
+        assert int(node.get_property("amount_crafted")) == 5
+
+
+class TestLazyPropertyAccess:
+    def test_get_property_triggers_build(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=7)
+        node.populate_from_model()
+        # No paint, but reading should still see the populated value.
+        assert int(node.get_property("amount_crafted")) == 7
+        assert node._cg_widgets_pending is False
+
+    def test_set_property_triggers_build(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.set_property("amount_crafted", "3")
+        assert node._cg_widgets_pending is False
+        assert int(node.get_property("amount_crafted")) == 3

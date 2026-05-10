@@ -184,6 +184,103 @@ def _install_port_bounding_rect_cache() -> None:
 _install_port_bounding_rect_cache()
 
 
+def _install_lazy_widget_build() -> None:
+    """Patch ``NodeItem.paint`` once at module load to build widgets on first paint.
+
+    Class-level (not per-instance) so Qt's C++ vtable dispatch hits the wrap on
+    every paint, mirroring ``_install_node_paint_timing`` and
+    ``_install_port_bounding_rect_cache``. The previous attempt at lazy widget
+    construction installed a per-instance wrapper on ``view.paint`` and
+    triggered heap corruption (``0xc0000374``) on a second consecutive run of
+    the regression suite; the class-level pattern avoids that.
+
+    Install order: this runs AFTER ``_install_node_paint_timing``. The
+    timing patch captures the unmodified ``NodeItem.paint`` as its
+    ``original_paint``; this patch then captures the timing wrapper as its
+    ``original_paint``. Each paint therefore runs:
+    lazy-build wrapper -> timing wrapper -> original ``NodeItem.paint``.
+    Both wrappers always forward to ``original_paint`` (the timing wrapper
+    short-circuits to it when ``perf_diag.is_paint_recording()`` is False),
+    so the lazy-build trigger fires reliably regardless of recording state.
+
+    Idempotent via the ``_cg_lazy_build_patched`` class sentinel.
+    """
+    from NodeGraphQt.qgraphics.node_base import NodeItem
+
+    if getattr(NodeItem, "_cg_lazy_build_patched", False):
+        return
+
+    original_paint = NodeItem.paint
+
+    def patched_paint(self, painter, option, widget=None):
+        # ``_cg_node`` is stamped in ``CraftGraphBaseNode.__init__``. NodeItem
+        # itself has no back-reference to its BaseNode, so we set one there.
+        node = getattr(self, "_cg_node", None)
+        if node is not None:
+            maybe_build = getattr(node, "_maybe_build_widgets", None)
+            if callable(maybe_build):
+                maybe_build()
+        original_paint(self, painter, option, widget)
+
+    NodeItem.paint = patched_paint  # type: ignore[method-assign]
+    NodeItem._cg_lazy_build_patched = True  # type: ignore[attr-defined]
+
+
+_install_lazy_widget_build()
+
+
+def _install_deserialize_eager_build() -> None:
+    """Force eager widget build during ``NodeGraph._deserialize`` (paste/duplicate).
+
+    NodeGraphQt's deserialization path creates a node via the factory, then
+    immediately writes properties via ``node.model.set_property(prop, val)``.
+    This bypasses our overridden ``set_property`` (which would trigger lazy
+    build) and asks the model directly for keys that only exist after widgets
+    are created. With lazy widget build the model raises
+    ``NodePropertyError: No property "<custom>"`` for every widget-backed
+    field. To keep paste/duplicate working without losing the lazy benefit
+    on the populate-graph load path, wrap ``NodeFactory.create_node_instance``
+    only while inside ``_deserialize`` and force the build there.
+
+    Idempotent via the ``_cg_deserialize_patched`` sentinel.
+    """
+    from NodeGraphQt.base.factory import NodeFactory
+    from NodeGraphQt.base.graph import NodeGraph
+
+    if getattr(NodeGraph, "_cg_deserialize_patched", False):
+        return
+
+    original_deserialize = NodeGraph._deserialize
+    original_create = NodeFactory.create_node_instance
+
+    def eager_create(self, node_type=None):
+        node = original_create(self, node_type)
+        if node is not None:
+            maybe_build = getattr(node, "_maybe_build_widgets", None)
+            if callable(maybe_build):
+                maybe_build()
+        return node
+
+    def patched_deserialize(self, data, relative_pos=False, pos=None, adjust_graph_style=True):
+        # Swap the factory's create method for the duration of the deserialize
+        # call so freshly-created nodes have their widgets built before
+        # NodeGraphQt writes properties via node.model.set_property.
+        NodeFactory.create_node_instance = eager_create  # type: ignore[method-assign]
+        try:
+            return original_deserialize(
+                self, data, relative_pos=relative_pos, pos=pos,
+                adjust_graph_style=adjust_graph_style,
+            )
+        finally:
+            NodeFactory.create_node_instance = original_create  # type: ignore[method-assign]
+
+    NodeGraph._deserialize = patched_deserialize  # type: ignore[method-assign]
+    NodeGraph._cg_deserialize_patched = True  # type: ignore[attr-defined]
+
+
+_install_deserialize_eager_build()
+
+
 def _install_stylesheet_cache(widget: object) -> None:
     """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
 
@@ -802,14 +899,20 @@ class CraftGraphBaseNode(BaseNode):
         # NodeItem.paint wrap (see _install_node_paint_timing) can attribute
         # paint cost to the right CraftGraph node class.
         self.view._cg_node_class_name = type(self).__name__
+        # Back-reference to this BaseNode so the class-level paint wrap
+        # installed in _install_lazy_widget_build can find _maybe_build_widgets.
+        # NodeItem itself has no built-in pointer back to its BaseNode.
+        self.view._cg_node = self
 
         self.set_color(*self.NODE_COLOR)
         if self.HAS_SPRITE_PORT:
             self.add_input("sprite_in", multi_input=False, color=PORT_COLOR_SPRITE)
-        self._build_from_registry()
         self._build_outputs()
-        self._fix_widget_z_order()
-        self.validate_required_fields()
+        # Per-field widgets, z-order, and validation are deferred to first paint
+        # via _maybe_build_widgets (triggered by the class-level NodeItem.paint
+        # wrapper installed in _install_lazy_widget_build).
+        self._cg_widgets_pending = True
+        self._cg_pending_populate = False
 
     @property
     def model_ref(self) -> Any:
@@ -976,6 +1079,43 @@ class CraftGraphBaseNode(BaseNode):
         for idx, widget in enumerate(widgets):
             widget.setZValue(base_z - idx)
 
+    def _maybe_build_widgets(self) -> None:
+        """Build per-field widgets and replay any deferred populate_from_model.
+
+        Idempotent: returns immediately if the build already ran. Called from
+        the class-level NodeItem.paint wrapper and (in Tasks 2 and 3) from
+        populate_from_model / get_property / set_property so any path that
+        touches widget state forces the build.
+        """
+        if not self._cg_widgets_pending:
+            return
+        self._build_from_registry()
+        self._fix_widget_z_order()
+        self._cg_widgets_pending = False
+        if self._cg_pending_populate:
+            self._cg_pending_populate = False
+            # populate_from_model itself calls validate_required_fields,
+            # validate_paired_fields, and update_title_from_model, so we
+            # do not need to re-run them here.
+            self.populate_from_model()
+        else:
+            # No deferred populate, but red borders for required-empty fields
+            # still need to apply against the default values.
+            self.validate_required_fields()
+            self.validate_paired_fields()
+
+    def get_property(self, name: str) -> Any:
+        # Guard for calls during super().__init__ before _cg_widgets_pending exists.
+        if getattr(self, "_cg_widgets_pending", False):
+            self._maybe_build_widgets()
+        return super().get_property(name)
+
+    def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
+        # Guard for calls during super().__init__ before _cg_widgets_pending exists.
+        if getattr(self, "_cg_widgets_pending", False):
+            self._maybe_build_widgets()
+        super().set_property(name, value, push_undo=push_undo)
+
     # -- Edit history and model population ----------------------------------
 
     def set_edit_history(self, history: EditHistory) -> None:
@@ -985,10 +1125,18 @@ class CraftGraphBaseNode(BaseNode):
     def populate_from_model(self) -> None:
         """Set all widget values from the model_ref's fields.
 
-        Uses the _populating guard to prevent _on_field_changed from
-        firing during programmatic population (which would corrupt
+        Lazy: if widgets are not yet built (the first paint has not fired),
+        flag this populate to be replayed inside ``_maybe_build_widgets``
+        rather than running now -- writing into non-existent widgets would
+        fail silently and leave the node showing default values.
+
+        Otherwise: uses the _populating guard to prevent _on_field_changed
+        from firing during programmatic population (which would corrupt
         the undo stack).
         """
+        if self._cg_widgets_pending:
+            self._cg_pending_populate = True
+            return
         if self._model_ref is None:
             return
         self._populating = True
@@ -1806,6 +1954,13 @@ class SpriteNode(CraftGraphBaseNode):
     def __init__(self) -> None:
         super().__init__()
         self._node_uuid: str = uuid.uuid4().hex[:8]
+
+        # SpriteNode wires a textChanged listener to the file_path widget for
+        # self-preview and propagation. The lazy build defers widget creation
+        # to first paint, but this listener must be installed at __init__ time
+        # because the browse button below also needs the widget to exist.
+        # Force eager build for SpriteNode specifically.
+        self._maybe_build_widgets()
 
         # Self-preview: update header icon when file_path changes
         widget_item = self.get_widget("file_path")
