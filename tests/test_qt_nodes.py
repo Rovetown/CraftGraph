@@ -1760,3 +1760,29 @@ class TestPortBoundingRectCache:
         # Same dimensions but distinct cached objects -- caller must not be
         # able to mutate one port's rect and affect another.
         assert port_a.boundingRect() is not port_b.boundingRect()
+
+
+class TestLazyWidgetBuild:
+    def test_widgets_not_built_on_create(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert node._cg_widgets_pending is True
+
+    def test_widgets_built_on_first_paint(self, qapp, graph):
+        from PySide6.QtGui import QPainter
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        opt = QStyleOptionGraphicsItem()
+        # painting into a null QPainter does nothing, but the patch fires.
+        node.view.paint(QPainter(), opt, None)
+        assert node._cg_widgets_pending is False
+
+    def test_paint_patch_is_class_level_idempotent(self, qapp, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        # Two separate nodes share the same patched paint -- not per-instance.
+        n1 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        n2 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert type(n1.view).paint is type(n2.view).paint
+        # Sentinel set on the class.
+        assert getattr(type(n1.view), "_cg_lazy_build_patched", False) is True

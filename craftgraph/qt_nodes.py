@@ -184,6 +184,51 @@ def _install_port_bounding_rect_cache() -> None:
 _install_port_bounding_rect_cache()
 
 
+def _install_lazy_widget_build() -> None:
+    """Patch ``NodeItem.paint`` once at module load to build widgets on first paint.
+
+    Class-level (not per-instance) so Qt's C++ vtable dispatch hits the wrap on
+    every paint, mirroring ``_install_node_paint_timing`` and
+    ``_install_port_bounding_rect_cache``. The previous attempt at lazy widget
+    construction installed a per-instance wrapper on ``view.paint`` and
+    triggered heap corruption (``0xc0000374``) on a second consecutive run of
+    the regression suite; the class-level pattern avoids that.
+
+    Install order: this runs AFTER ``_install_node_paint_timing``. The
+    timing patch captures the unmodified ``NodeItem.paint`` as its
+    ``original_paint``; this patch then captures the timing wrapper as its
+    ``original_paint``. Each paint therefore runs:
+    lazy-build wrapper -> timing wrapper -> original ``NodeItem.paint``.
+    Both wrappers always forward to ``original_paint`` (the timing wrapper
+    short-circuits to it when ``perf_diag.is_paint_recording()`` is False),
+    so the lazy-build trigger fires reliably regardless of recording state.
+
+    Idempotent via the ``_cg_lazy_build_patched`` class sentinel.
+    """
+    from NodeGraphQt.qgraphics.node_base import NodeItem
+
+    if getattr(NodeItem, "_cg_lazy_build_patched", False):
+        return
+
+    original_paint = NodeItem.paint
+
+    def patched_paint(self, painter, option, widget=None):
+        # ``_cg_node`` is stamped in ``CraftGraphBaseNode.__init__``. NodeItem
+        # itself has no back-reference to its BaseNode, so we set one there.
+        node = getattr(self, "_cg_node", None)
+        if node is not None:
+            maybe_build = getattr(node, "_maybe_build_widgets", None)
+            if callable(maybe_build):
+                maybe_build()
+        original_paint(self, painter, option, widget)
+
+    NodeItem.paint = patched_paint  # type: ignore[method-assign]
+    NodeItem._cg_lazy_build_patched = True  # type: ignore[attr-defined]
+
+
+_install_lazy_widget_build()
+
+
 def _install_stylesheet_cache(widget: object) -> None:
     """Install a setStyleSheet no-op cache on a single *widget* (per-instance).
 
@@ -802,14 +847,20 @@ class CraftGraphBaseNode(BaseNode):
         # NodeItem.paint wrap (see _install_node_paint_timing) can attribute
         # paint cost to the right CraftGraph node class.
         self.view._cg_node_class_name = type(self).__name__
+        # Back-reference to this BaseNode so the class-level paint wrap
+        # installed in _install_lazy_widget_build can find _maybe_build_widgets.
+        # NodeItem itself has no built-in pointer back to its BaseNode.
+        self.view._cg_node = self
 
         self.set_color(*self.NODE_COLOR)
         if self.HAS_SPRITE_PORT:
             self.add_input("sprite_in", multi_input=False, color=PORT_COLOR_SPRITE)
-        self._build_from_registry()
         self._build_outputs()
-        self._fix_widget_z_order()
-        self.validate_required_fields()
+        # Per-field widgets, z-order, and validation are deferred to first paint
+        # via _maybe_build_widgets (triggered by the class-level NodeItem.paint
+        # wrapper installed in _install_lazy_widget_build).
+        self._cg_widgets_pending = True
+        self._cg_pending_populate = False
 
     @property
     def model_ref(self) -> Any:
@@ -975,6 +1026,31 @@ class CraftGraphBaseNode(BaseNode):
         base_z = Z_VAL_NODE_WIDGET + len(widgets)
         for idx, widget in enumerate(widgets):
             widget.setZValue(base_z - idx)
+
+    def _maybe_build_widgets(self) -> None:
+        """Build per-field widgets and replay any deferred populate_from_model.
+
+        Idempotent: returns immediately if the build already ran. Called from
+        the class-level NodeItem.paint wrapper and (in Tasks 2 and 3) from
+        populate_from_model / get_property / set_property so any path that
+        touches widget state forces the build.
+        """
+        if not self._cg_widgets_pending:
+            return
+        self._build_from_registry()
+        self._fix_widget_z_order()
+        self._cg_widgets_pending = False
+        if self._cg_pending_populate:
+            self._cg_pending_populate = False
+            # populate_from_model itself calls validate_required_fields,
+            # validate_paired_fields, and update_title_from_model, so we
+            # do not need to re-run them here.
+            self.populate_from_model()
+        else:
+            # No deferred populate, but red borders for required-empty fields
+            # still need to apply against the default values.
+            self.validate_required_fields()
+            self.validate_paired_fields()
 
     # -- Edit history and model population ----------------------------------
 
