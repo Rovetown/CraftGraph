@@ -1929,3 +1929,51 @@ class TestPaintedFieldsNodeItem:
         assert hit.name == "amount"
         miss = item._field_at(QPointF(500, 500))
         assert miss is None
+
+
+class TestModifiedRecipeNoWidgets:
+    def test_no_qline_edits_built(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node._maybe_build_widgets()
+        for name in ("item_id", "amount_crafted", "linked_item_ids",
+                     "unlocks", "unlocked_by", "force_unlock_at_start"):
+            assert node.get_widget(name) is None, f"widget exists for {name}"
+
+    def test_get_property_still_works(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        node.populate_from_model()
+        node._maybe_build_widgets()
+        assert node.get_property("item_id") == "Titanium"
+        assert int(node.get_property("amount_crafted")) == 5
+
+    def test_view_is_painted_node_item(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
+
+    def test_field_rects_populated_after_build(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node._maybe_build_widgets()
+        names = [r.name for r in node.view._cg_field_rects]
+        assert len(names) == 6
+        assert "ingredients" not in names
+
+    def test_subclass_added_recipe_keeps_widgets(self, graph):
+        """Type-guard verification: AddedRecipeNode (subclass) keeps embedded widgets."""
+        from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
+
+        node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
+        node._maybe_build_widgets()
+        # View must NOT be PaintedFieldsNodeItem.
+        assert not isinstance(node.view, PaintedFieldsNodeItem)
+        # Widgets ARE built for subclass (old behaviour).
+        assert node.get_widget("item_id") is not None

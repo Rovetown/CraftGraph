@@ -957,8 +957,11 @@ class CraftGraphBaseNode(BaseNode):
     # Pairs of optional fields that should both be set or both be empty.
     PAIRED_FIELDS: list[tuple[str, str]] = []
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, qgraphics_item: type | None = None) -> None:
+        if qgraphics_item is not None:
+            super().__init__(qgraphics_item)
+        else:
+            super().__init__()
         self.set_port_deletion_allowed(True)
         self._model_ref: Any = None
         self._sprite_path: Path | None = None
@@ -1489,12 +1492,121 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     ]
 
     def __init__(self) -> None:
-        super().__init__()
+        qgraphics = PaintedFieldsNodeItem if type(self) is ModifiedRecipeNode else None
+        super().__init__(qgraphics_item=qgraphics)
 
         # Structural ports (not registry-driven)
         self.add_input("hierarchy", multi_input=False, color=PORT_COLOR_HIERARCHY)
         self.add_input("ingredient_0", multi_input=False, color=PORT_COLOR_INGREDIENT)
         _add_hierarchy_accept_constraints(self, "hierarchy")
+
+    def _build_from_registry(self) -> None:
+        """Register fields as hidden properties + build the painted field grid.
+
+        Direct ModifiedRecipeNode instances only. Subclasses (AddedRecipe,
+        AliasRecipe, CustomFood) fall through to the base-class behavior.
+        """
+        if type(self) is not ModifiedRecipeNode:
+            super()._build_from_registry()
+            return
+
+        from craftgraph.painted_fields import compute_field_grid
+        from NodeGraphQt.constants import NodePropWidgetEnum
+
+        self._cg_field_values: dict[str, str] = {}
+        for fp in self.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            default = "" if fp.default is None else str(fp.default)
+            self.create_property(
+                fp.name,
+                default,
+                widget_type=NodePropWidgetEnum.HIDDEN.value,
+            )
+            self._cg_field_values[fp.name] = default
+            if not self.IS_VARIABLE:
+                port = self.add_input(
+                    f"field_{fp.name}",
+                    multi_input=False,
+                    color=PORT_COLOR_VARIABLE,
+                    display_name=True,
+                )
+                if port is not None and fp.label:
+                    port_item = port.view
+                    node_item = self.view
+                    text_item = node_item.get_input_text_item(port_item)
+                    if text_item is not None:
+                        text_item.setPlainText(fp.label)
+
+        rects = compute_field_grid(
+            registry=self.FIELD_REGISTRY,
+            node_width=180.0,
+            row_height=22.0,
+            label_fraction=0.4,
+        )
+        self.view._cg_field_rects = rects
+        self.view._cg_field_values = self._cg_field_values
+
+    def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
+        super().set_property(name, value, push_undo=push_undo)
+        if type(self) is not ModifiedRecipeNode:
+            return
+        if hasattr(self, "_cg_field_values") and name in self._cg_field_values:
+            self._cg_field_values[name] = "" if value is None else str(value)
+            if hasattr(self, "view"):
+                self.view._cg_field_values = self._cg_field_values
+                self.view.update()
+
+    def validate_required_fields(self) -> None:
+        if type(self) is not ModifiedRecipeNode:
+            super().validate_required_fields()
+            return
+
+        from craftgraph.painted_fields import FieldState
+
+        rects_by_name = {r.name: r for r in getattr(self.view, "_cg_field_rects", [])}
+        for fp in self.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST or not fp.required:
+                continue
+            rect = rects_by_name.get(fp.name)
+            if rect is None:
+                continue
+            value = self.get_property(fp.name) if self._cg_widgets_pending is False else ""
+            empty = value is None or (isinstance(value, str) and not value.strip())
+            rect.state = FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
+        if hasattr(self, "view"):
+            self.view.update()
+
+    def disable_field(self, name: str) -> None:
+        if type(self) is not ModifiedRecipeNode:
+            super().disable_field(name)
+            return
+        from craftgraph.painted_fields import FieldState
+
+        for rect in getattr(self.view, "_cg_field_rects", []):
+            if rect.name == name:
+                rect.state = FieldState.CONNECTED_TO_VARIABLE
+                self.view.update()
+                return
+
+    def enable_field(self, name: str) -> None:
+        if type(self) is not ModifiedRecipeNode:
+            super().enable_field(name)
+            return
+        from craftgraph.painted_fields import FieldState
+
+        for rect in getattr(self.view, "_cg_field_rects", []):
+            if rect.name == name:
+                rect.state = FieldState.NORMAL
+                self.view.update()
+                return
+
+    def get_field_state(self, name: str):
+        """Return the FieldState for a painted field, or None if unknown."""
+        for rect in getattr(self.view, "_cg_field_rects", []):
+            if rect.name == name:
+                return rect.state
+        return None
 
     # -- dynamic ingredient slots ------------------------------------------
 
