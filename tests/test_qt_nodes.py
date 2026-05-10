@@ -139,19 +139,23 @@ class TestFieldDisableEnable:
     """Tests for disable_field / enable_field stash behavior."""
 
     def test_disable_field_disables_widget(self, graph):
+        from craftgraph.painted_fields import FieldState
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
         node._maybe_build_widgets()
         node.disable_field("item_id")
-        widget = node.get_widget("item_id")
-        assert not widget.get_custom_widget().isEnabled()
+        # Painted-fields path: state flips to CONNECTED_TO_VARIABLE, no embedded widget.
+        assert node.get_field_state("item_id") is FieldState.CONNECTED_TO_VARIABLE
 
     def test_enable_field_re_enables_widget(self, graph):
+        from craftgraph.painted_fields import FieldState
+
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
         node._maybe_build_widgets()
         node.disable_field("item_id")
         node.enable_field("item_id")
-        widget = node.get_widget("item_id")
-        assert widget.get_custom_widget().isEnabled()
+        # Painted-fields path: state flips back to NORMAL after enable_field.
+        assert node.get_field_state("item_id") is FieldState.NORMAL
 
     def test_disable_nonexistent_field_is_noop(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
@@ -223,15 +227,16 @@ class TestModifiedRecipeRegistry:
     """Tests for ModifiedRecipeNode FIELD_REGISTRY migration."""
 
     def test_all_registry_fields_have_widgets(self, graph):
-        """Every non-INGREDIENT_LIST field should have a widget."""
+        """Every non-INGREDIENT_LIST field should have a painted FieldRect."""
         from craftgraph.pin_registry import PinType
 
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
+        rect_names = {r.name for r in node.view._cg_field_rects}
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
-            assert node.get_widget(fp.name) is not None, f"Missing widget: {fp.name}"
+            assert fp.name in rect_names, f"Missing painted field: {fp.name}"
 
     def test_output_pins_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
@@ -271,13 +276,14 @@ class TestModifiedRecipeRegistry:
         assert node.get_property("force_unlock_at_start") == "YES"
 
     def test_new_fields_present(self, graph):
-        """Fields that were missing before Phase A should now exist."""
+        """Fields that were missing before Phase A should now exist as painted fields."""
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
-        assert node.get_widget("linked_item_ids") is not None
-        assert node.get_widget("unlocks") is not None
-        assert node.get_widget("unlocked_by") is not None
-        assert node.get_widget("force_unlock_at_start") is not None
+        rect_names = {r.name for r in node.view._cg_field_rects}
+        assert "linked_item_ids" in rect_names
+        assert "unlocks" in rect_names
+        assert "unlocked_by" in rect_names
+        assert "force_unlock_at_start" in rect_names
 
     def test_dynamic_ingredient_slots_still_work(self, graph):
         """Dynamic ingredient port behavior must survive the migration."""
@@ -414,8 +420,10 @@ class TestModifiedRecipeNode:
     def test_widgets_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
-        assert node.get_widget("item_id") is not None
-        assert node.get_widget("amount_crafted") is not None
+        # Painted-fields path: fields are FieldRects on the view, not widgets.
+        rect_names = {r.name for r in node.view._cg_field_rects}
+        assert "item_id" in rect_names
+        assert "amount_crafted" in rect_names
 
     def test_dynamic_slot_on_connect(self, graph):
         """Connecting to ingredient_0 should spawn ingredient_1."""
@@ -993,15 +1001,16 @@ class TestSerialization:
 
 class TestWidgetProperties:
     def test_recipe_item_id_set_get(self, graph):
+        # Painted-fields path: ModifiedRecipeNode stores values as properties only.
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node.set_property("item_id", "Titanium")
-        assert node.get_widget("item_id").get_value() == "Titanium"
+        assert node.get_property("item_id") == "Titanium"
 
     def test_recipe_amount_set_get(self, graph):
-        """NodeSpinBox.get_value() returns a string (NodeGraphQt stores all values as str)."""
+        """Painted-fields path: int values stored as-is on the property store."""
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
-        node.set_property("amount_crafted", 5)
-        assert node.get_widget("amount_crafted").get_value() == "5"
+        node.set_property("amount_crafted", "5")
+        assert node.get_property("amount_crafted") == "5"
 
     def test_fab_model_set_get(self, graph):
         node = graph.create_node("com.craftgraph.FabricatorNode", name="Fab1")
@@ -1158,10 +1167,14 @@ class TestWidgetZOrder:
             )
 
     def test_first_widget_above_z_val_node_widget(self, graph):
-        """First widget z-value should be above the base Z_VAL_NODE_WIDGET."""
+        """First widget z-value should be above the base Z_VAL_NODE_WIDGET.
+
+        Uses FabricatorNode because ModifiedRecipeNode no longer carries
+        embedded widgets after the painted-fields pilot.
+        """
         from NodeGraphQt.constants import Z_VAL_NODE_WIDGET
 
-        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Test")
+        node = graph.create_node("com.craftgraph.FabricatorNode", name="Test")
         node._maybe_build_widgets()
         widgets = list(node.view.widgets.values())
         assert len(widgets) > 0
@@ -1190,9 +1203,15 @@ class TestOverflowTooltips:
     """Node field widgets update their tooltip to the current text value."""
 
     def test_string_field_tooltip_updates_on_text_change(self, graph):
-        """QLineEdit tooltip tracks the field's text content."""
+        """QLineEdit tooltip tracks the field's text content.
+
+        Uses AddedRecipeNode because direct ModifiedRecipeNode instances
+        no longer carry embedded widgets after the painted-fields pilot.
+        Per-field tooltips for painted ModifiedRecipeNode fields are not
+        carried (tooltip lives on the painted text, future work).
+        """
         node = graph.create_node(
-            "com.craftgraph.ModifiedRecipeNode", name="Test",
+            "com.craftgraph.AddedRecipeNode", name="Test",
         )
         node._maybe_build_widgets()
         widget_item = node.get_widget("item_id")
@@ -1202,9 +1221,13 @@ class TestOverflowTooltips:
         assert qt_widget.toolTip() == "VeryLongItemIDThatWouldBeTruncated"
 
     def test_int_field_tooltip_updates_on_value_change(self, graph):
-        """Int editor tooltip tracks the displayed value."""
+        """Int editor tooltip tracks the displayed value.
+
+        Uses AddedRecipeNode because direct ModifiedRecipeNode instances
+        no longer carry embedded widgets after the painted-fields pilot.
+        """
         node = graph.create_node(
-            "com.craftgraph.ModifiedRecipeNode", name="Test",
+            "com.craftgraph.AddedRecipeNode", name="Test",
         )
         node._maybe_build_widgets()
         widget_item = node.get_widget("amount_crafted")

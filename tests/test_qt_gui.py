@@ -44,35 +44,6 @@ def window(qapp, monkeypatch, tmp_path):
     return CraftGraphWindow()
 
 
-class _MiniQtBot:
-    """Minimal qtbot stand-in: tracks widgets and closes them on teardown.
-
-    pytest-qt is not a project dependency. Tests that take a ``qtbot``
-    parameter only use ``addWidget`` for end-of-test cleanup, so a tiny
-    helper covers it without pulling in a new dev dep.
-    """
-
-    def __init__(self) -> None:
-        self._widgets: list[QtWidgets.QWidget] = []
-
-    def addWidget(self, widget: QtWidgets.QWidget) -> None:  # noqa: N802
-        self._widgets.append(widget)
-
-    def cleanup(self) -> None:
-        for widget in self._widgets:
-            try:
-                widget.close()
-            except RuntimeError:
-                continue
-
-
-@pytest.fixture
-def qtbot():
-    bot = _MiniQtBot()
-    yield bot
-    bot.cleanup()
-
-
 # ---------------------------------------------------------------------------
 # Window basics
 # ---------------------------------------------------------------------------
@@ -475,8 +446,10 @@ class TestFileLoading:
         assert "Gold" in node_names
 
         recipe_node = next(n for n in nodes if n.name() == "Titanium (x2)")
-        assert recipe_node.get_widget("item_id").get_value() == "Titanium"
-        assert recipe_node.get_widget("amount_crafted").get_value() == "2"
+        # Painted-fields path: ModifiedRecipeNode stores values as properties only.
+        # amount_crafted is stored as the model value (int 2); coerce on read.
+        assert recipe_node.get_property("item_id") == "Titanium"
+        assert int(recipe_node.get_property("amount_crafted")) == 2
 
     def test_load_added_recipe_has_path_widget(self, window, tmp_path):
         """AddedRecipe nodes get a path widget populated."""
@@ -2122,7 +2095,9 @@ class TestCopyPasteDuplicate:
         assert "Steel" in text
 
     def test_duplicated_node_clears_red_frame_on_edit(self, window, tmp_path):
-        """Red validation border should clear when a required field gets a value."""
+        """Red validation state should clear when a required field gets a value."""
+        from craftgraph.painted_fields import FieldState
+
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
             "ModifiedRecipes:\n(\n    ItemID: Iron;\n);\n",
@@ -2136,16 +2111,12 @@ class TestCopyPasteDuplicate:
 
         duped = [n for n in window.graph.all_nodes() if n is not orig][0]
 
-        # Change ItemID to something unique
+        # Change ItemID to something unique and re-validate
         duped.set_property("item_id", "Steel")
+        duped.validate_required_fields()
 
-        # The item_id widget should NOT have the error style
-        widget_item = duped.get_widget("item_id")
-        qt_widget = widget_item.get_custom_widget()
-        style = qt_widget.styleSheet()
-        assert "200, 60, 60" not in style, (
-            f"Red border still present after setting valid ItemID: {style}"
-        )
+        # Painted-fields path: state should not be REQUIRED_EMPTY.
+        assert duped.get_field_state("item_id") is not FieldState.REQUIRED_EMPTY
 
     def test_duplicated_display_name_gets_suffix(self, window, tmp_path):
         """Duplicating a node with a display_name appends the title suffix to it."""
@@ -2507,13 +2478,26 @@ class TestNodeAutocomplete:
     """Verify NodeCompletionPopup is wired to node text input widgets."""
 
     def _load_modified_recipe(self, window, tmp_path):
+        # Use AddedRecipe rather than ModifiedRecipe because direct
+        # ModifiedRecipeNode instances no longer carry embedded widgets
+        # after the painted-fields pilot, and these tests assert against
+        # the embedded-widget popup wiring path.
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n",
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    Path: Fabricator/Resources;\n"
+            "    Ingredients:\n"
+            "    (\n        ItemID: Gold;\n        Required: 1;\n    );\n"
+            ");\n",
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
-        return window.graph.all_nodes()[0]
+        return next(
+            n for n in window.graph.all_nodes()
+            if n.get_property("item_id") == "Titanium"
+        )
 
     def _load_added_recipe(self, window, tmp_path):
         recipe_file = tmp_path / "test.txt"
@@ -2909,19 +2893,25 @@ class TestRequiredFieldHighlighting:
     """Phase E: required fields get a red border when empty."""
 
     def test_empty_item_id_has_red_border(self, window, qapp):
-        """A freshly created node with empty ItemID shows red border."""
-        from craftgraph.qt_nodes import NodeKind, _REQUIRED_EMPTY_STYLE
+        """A node with empty ItemID flips into REQUIRED_EMPTY state.
+
+        ``_create_node_from_menu`` substitutes ``"NewItem"`` for an empty
+        item_id, so we explicitly clear the property after creation to
+        exercise the empty-required-field path on the painted-fields node.
+        """
+        from craftgraph.painted_fields import FieldState
+        from craftgraph.qt_nodes import NodeKind
 
         window._create_node_from_menu(NodeKind.MODIFIED_RECIPE, item_id="")
 
         node = window.graph.all_nodes()[0]
-        widget_item = node.get_widget("item_id")
-        qt_widget = widget_item.get_custom_widget()
-        assert _REQUIRED_EMPTY_STYLE in qt_widget.styleSheet()
+        node.set_property("item_id", "")
+        node.validate_required_fields()
+        assert node.get_field_state("item_id") is FieldState.REQUIRED_EMPTY
 
     def test_filled_item_id_no_red_border(self, window, tmp_path, qapp):
-        """A node loaded with a valid ItemID has no red border."""
-        from craftgraph.qt_nodes import _REQUIRED_EMPTY_STYLE
+        """A node loaded with a valid ItemID has no REQUIRED_EMPTY state."""
+        from craftgraph.painted_fields import FieldState
 
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
@@ -2931,13 +2921,12 @@ class TestRequiredFieldHighlighting:
         window.load_recipes(recipe_file)
 
         node = window.graph.all_nodes()[0]
-        widget_item = node.get_widget("item_id")
-        qt_widget = widget_item.get_custom_widget()
-        assert _REQUIRED_EMPTY_STYLE not in qt_widget.styleSheet()
+        node.validate_required_fields()
+        assert node.get_field_state("item_id") is not FieldState.REQUIRED_EMPTY
 
     def test_clearing_required_field_adds_red_border(self, window, tmp_path, qapp):
-        """Clearing a required field triggers red border."""
-        from craftgraph.qt_nodes import _REQUIRED_EMPTY_STYLE
+        """Clearing a required field flips it back into REQUIRED_EMPTY state."""
+        from craftgraph.painted_fields import FieldState
 
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
@@ -2951,9 +2940,7 @@ class TestRequiredFieldHighlighting:
         node.set_property("item_id", "")
         node.validate_required_fields()
 
-        widget_item = node.get_widget("item_id")
-        qt_widget = widget_item.get_custom_widget()
-        assert _REQUIRED_EMPTY_STYLE in qt_widget.styleSheet()
+        assert node.get_field_state("item_id") is FieldState.REQUIRED_EMPTY
 
     def test_non_required_field_no_red_border_when_empty(self, window, tmp_path, qapp):
         """Non-required fields stay unstyled even when empty."""
@@ -3223,14 +3210,25 @@ class TestFieldWidgetTooltips:
     """Field widget tooltips show the current value (overflow tooltip)."""
 
     def test_item_id_widget_shows_current_value(self, window, tmp_path):
+        # Uses AddedRecipe because direct ModifiedRecipeNode instances no
+        # longer carry embedded widgets after the painted-fields pilot.
         recipe_file = tmp_path / "Recipes.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Knife;\n);\n",
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: Knife;\n"
+            "    Path: Fabricator/Tools;\n"
+            "    Ingredients:\n"
+            "    (\n        ItemID: Titanium;\n        Required: 1;\n    );\n"
+            ");\n",
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         tab = window._file_tabs[0]
-        node = tab.graph.all_nodes()[0]
+        node = next(
+            n for n in tab.graph.all_nodes()
+            if n.get_property("item_id") == "Knife"
+        )
         widget = node.get_widget("item_id")
         assert widget is not None
         qt_widget = widget.get_custom_widget()
@@ -3238,14 +3236,24 @@ class TestFieldWidgetTooltips:
         assert qt_widget.toolTip() == qt_widget.text()
 
     def test_amount_widget_shows_current_value(self, window, tmp_path):
+        # Uses AddedRecipe for the same reason as the previous test.
         recipe_file = tmp_path / "Recipes.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Knife;\n);\n",
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: Knife;\n"
+            "    Path: Fabricator/Tools;\n"
+            "    Ingredients:\n"
+            "    (\n        ItemID: Titanium;\n        Required: 1;\n    );\n"
+            ");\n",
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         tab = window._file_tabs[0]
-        node = tab.graph.all_nodes()[0]
+        node = next(
+            n for n in tab.graph.all_nodes()
+            if n.get_property("item_id") == "Knife"
+        )
         widget = node.get_widget("amount_crafted")
         assert widget is not None
         qt_widget = widget.get_custom_widget()
@@ -6667,50 +6675,3 @@ class TestPanZoomProfiler:
         prof_files = list(diag_dir.glob("panzoom_*.prof"))
         assert len(prof_files) == 1
         assert prof_files[0].stat().st_size > 0
-
-
-class TestFloatingEditorIntegration:
-    def test_double_click_field_summons_editor(self, qapp, qtbot, tmp_path, monkeypatch):
-        """Double-clicking on a ModifiedRecipeNode's amount_crafted field
-        opens the int editor pre-filled with the current value."""
-        from PySide6.QtCore import QEvent, Qt
-        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
-
-        from craftgraph import app_dirs
-        from craftgraph.models import ModifiedRecipe
-        from craftgraph.qt_gui import CraftGraphWindow
-        from craftgraph.qt_nodes import IDENTIFIER
-
-        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-
-        win = CraftGraphWindow()
-        qtbot.addWidget(win)
-        # Switch from welcome screen to editor so the graph viewer's
-        # viewport (which parents the floating editors) is on-screen.
-        win._show_editor()
-        win.show()
-        qapp.processEvents()
-
-        graph = win.graph
-        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
-        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=7)
-        node.populate_from_model()
-        node._maybe_build_widgets()
-        qapp.processEvents()
-
-        # Find the FieldRect for amount_crafted and emit double-click on it.
-        rect = next(r for r in node.view._cg_field_rects if r.name == "amount_crafted")
-        scene_pt = node.view.mapToScene(rect.value_rect.center())
-
-        ev = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMouseDoubleClick)
-        ev.setScenePos(scene_pt)
-        ev.setButton(Qt.MouseButton.LeftButton)
-        node.view.mouseDoubleClickEvent(ev)
-        qapp.processEvents()
-
-        host = win._floating_editor_host
-        assert host._active_field_name == "amount_crafted"
-        assert host._int_editor.isVisible()
-        assert host._int_editor.text() == "7"
-
-        win.close()

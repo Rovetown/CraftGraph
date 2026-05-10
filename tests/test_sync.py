@@ -216,7 +216,8 @@ class TestPopulateGraph:
         node._maybe_build_widgets()
         assert node.name() == "Titanium (x2)"
         assert node.model_ref is recipe
-        assert node.get_widget("amount_crafted").get_value() == "2"
+        # Painted-fields path: ModifiedRecipeNode stores values as properties only.
+        assert int(node.get_property("amount_crafted")) == 2
 
     def test_added_recipe_has_path(self, graph):
         recipe = AddedRecipe(item_id="Alloy", path="Fabricator/Resources")
