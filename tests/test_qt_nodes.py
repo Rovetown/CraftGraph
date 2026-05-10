@@ -1786,3 +1786,33 @@ class TestLazyWidgetBuild:
         assert type(n1.view).paint is type(n2.view).paint
         # Sentinel set on the class.
         assert getattr(type(n1.view), "_cg_lazy_build_patched", False) is True
+
+
+class TestLazyPopulate:
+    def test_populate_before_paint_defers(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        node.populate_from_model()
+        # Widgets still pending; populate marked as deferred.
+        assert node._cg_widgets_pending is True
+        assert node._cg_pending_populate is True
+
+    def test_paint_replays_deferred_populate(self, qapp, graph):
+        from PySide6.QtGui import QPainter
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
+        node.populate_from_model()
+
+        opt = QStyleOptionGraphicsItem()
+        node.view.paint(QPainter(), opt, None)
+
+        # Widgets exist now AND the model values landed (not defaults).
+        assert node._cg_widgets_pending is False
+        assert int(node.get_property("amount_crafted")) == 5

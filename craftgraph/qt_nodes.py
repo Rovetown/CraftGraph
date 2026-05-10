@@ -1061,10 +1061,18 @@ class CraftGraphBaseNode(BaseNode):
     def populate_from_model(self) -> None:
         """Set all widget values from the model_ref's fields.
 
-        Uses the _populating guard to prevent _on_field_changed from
-        firing during programmatic population (which would corrupt
+        Lazy: if widgets are not yet built (the first paint has not fired),
+        flag this populate to be replayed inside ``_maybe_build_widgets``
+        rather than running now -- writing into non-existent widgets would
+        fail silently and leave the node showing default values.
+
+        Otherwise: uses the _populating guard to prevent _on_field_changed
+        from firing during programmatic population (which would corrupt
         the undo stack).
         """
+        if self._cg_widgets_pending:
+            self._cg_pending_populate = True
+            return
         if self._model_ref is None:
             return
         self._populating = True
