@@ -1816,3 +1816,23 @@ class TestLazyPopulate:
         # Widgets exist now AND the model values landed (not defaults).
         assert node._cg_widgets_pending is False
         assert int(node.get_property("amount_crafted")) == 5
+
+
+class TestLazyPropertyAccess:
+    def test_get_property_triggers_build(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        from craftgraph.models import ModifiedRecipe
+
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=7)
+        node.populate_from_model()
+        # No paint, but reading should still see the populated value.
+        assert int(node.get_property("amount_crafted")) == 7
+        assert node._cg_widgets_pending is False
+
+    def test_set_property_triggers_build(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node.set_property("amount_crafted", "3")
+        assert node._cg_widgets_pending is False
+        assert int(node.get_property("amount_crafted")) == 3

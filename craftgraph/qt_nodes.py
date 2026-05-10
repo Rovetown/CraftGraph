@@ -1052,6 +1052,18 @@ class CraftGraphBaseNode(BaseNode):
             self.validate_required_fields()
             self.validate_paired_fields()
 
+    def get_property(self, name: str) -> Any:
+        # Guard for calls during super().__init__ before _cg_widgets_pending exists.
+        if getattr(self, "_cg_widgets_pending", False):
+            self._maybe_build_widgets()
+        return super().get_property(name)
+
+    def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
+        # Guard for calls during super().__init__ before _cg_widgets_pending exists.
+        if getattr(self, "_cg_widgets_pending", False):
+            self._maybe_build_widgets()
+        super().set_property(name, value, push_undo=push_undo)
+
     # -- Edit history and model population ----------------------------------
 
     def set_edit_history(self, history: EditHistory) -> None:
