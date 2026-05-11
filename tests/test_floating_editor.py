@@ -124,3 +124,52 @@ class TestFloatingEditorHost:
         # Pool size is the headline HWND-saving claim. Lock it.
         editors = (host._string_editor, host._int_editor, host._combo_editor, host._float_editor)
         assert len({id(e) for e in editors}) == 4
+
+
+class TestFloatingEditorSubclassRegistries:
+    """Summon the right editor for fields declared on each recipe subclass's registry."""
+
+    def test_alias_string_field_uses_string_editor(self, qapp, host):
+        from craftgraph.qt_nodes import AliasRecipeNode
+
+        # display_name is a STRING FieldPin declared on AliasRecipeNode.
+        fp = next(p for p in AliasRecipeNode.FIELD_REGISTRY if p.name == "display_name")
+        host.summon(
+            field_name=fp.name,
+            field_type=fp.pin_type,
+            view_rect=QRect(10, 10, 100, 22),
+            current_value="My Mod",
+        )
+        assert host._string_editor.isVisible()
+        assert host._string_editor.text() == "My Mod"
+
+    def test_custom_food_float_field_uses_float_editor(self, qapp, host):
+        from craftgraph.qt_nodes import CustomFoodNode
+
+        # decay_rate_mod is a FLOAT FieldPin declared on CustomFoodNode.
+        fp = next(p for p in CustomFoodNode.FIELD_REGISTRY if p.name == "decay_rate_mod")
+        host.summon(
+            field_name=fp.name,
+            field_type=fp.pin_type,
+            view_rect=QRect(10, 10, 100, 22),
+            current_value="0.5",
+        )
+        assert host._float_editor.isVisible()
+        assert host._float_editor.text() == "0.5"
+
+    def test_custom_food_float_commit_emits_value(self, qapp, host):
+        from craftgraph.qt_nodes import CustomFoodNode
+
+        fp = next(p for p in CustomFoodNode.FIELD_REGISTRY if p.name == "decay_rate_mod")
+        committed: list[tuple[str, str]] = []
+        host.committed.connect(lambda n, v: committed.append((n, v)))
+        host.summon(
+            field_name=fp.name,
+            field_type=fp.pin_type,
+            view_rect=QRect(10, 10, 100, 22),
+            current_value="0.0",
+        )
+        host._float_editor.setText("2.5")
+        host._float_editor.returnPressed.emit()
+        qapp.processEvents()
+        assert committed == [("decay_rate_mod", "2.5")]
