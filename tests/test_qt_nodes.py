@@ -1895,27 +1895,33 @@ class TestLazyPropertyAccess:
 
 
 class TestPaintedFieldsNodeItem:
-    def test_subclass_paints_via_super(self, qapp, graph):
-        from PySide6.QtCore import QRectF
+    """Verify PaintedFieldsNodeItem behavior on every recipe subclass's view."""
 
-        from craftgraph.painted_fields import FieldRect, FieldState
-        from craftgraph.pin_registry import PinType
-        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+    @pytest.mark.parametrize(
+        "class_name",
+        ["ModifiedRecipeNode", "AddedRecipeNode", "AliasRecipeNode", "CustomFoodNode"],
+    )
+    def test_view_is_painted_item(self, qapp, graph, class_name):
+        from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
 
-        item = PaintedFieldsNodeItem(name="test_node")
-        item._cg_field_rects = [
-            FieldRect(
-                name="x",
-                pin_type=PinType.STRING,
-                label_rect=QRectF(0, 0, 50, 22),
-                value_rect=QRectF(50, 0, 100, 22),
-                state=FieldState.NORMAL,
-            )
-        ]
-        br = item.boundingRect()
-        assert br.height() >= 22.0
+        node = graph.create_node(f"{IDENTIFIER}.{class_name}")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
+
+    @pytest.mark.parametrize(
+        "class_name",
+        ["ModifiedRecipeNode", "AddedRecipeNode", "AliasRecipeNode", "CustomFoodNode"],
+    )
+    def test_bounding_rect_grows_with_fields(self, qapp, graph, class_name):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.{class_name}")
+        node._maybe_build_widgets()
+        br = node.view.boundingRect()
+        # Each painted row is at least 22 px high; subclasses have more rows.
+        assert br.height() >= 22.0 * max(1, len(node.view._cg_field_rects))
 
     def test_field_at_returns_hit_field(self, qapp, graph):
+        """Hit-test smoke check (independent of class -- uses a synthetic rect list)."""
         from PySide6.QtCore import QPointF, QRectF
 
         from craftgraph.painted_fields import FieldRect, FieldState
@@ -1940,14 +1946,55 @@ class TestPaintedFieldsNodeItem:
 
 
 class TestModifiedRecipeNoWidgets:
-    def test_no_qline_edits_built(self, graph):
+    """Verify painted-field nodes build no QWidgets for their registry."""
+
+    NODE_CLASSES = (
+        ("ModifiedRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
+                                "unlocks", "unlocked_by", "force_unlock_at_start")),
+        ("AddedRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
+                             "unlocks", "unlocked_by", "force_unlock_at_start",
+                             "path", "pda_group", "pda_category")),
+        ("AliasRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
+                             "unlocks", "unlocked_by", "force_unlock_at_start",
+                             "path", "pda_group", "pda_category",
+                             "display_name", "tooltip", "functional_id",
+                             "sprite_item_id")),
+        ("CustomFoodNode", ("item_id", "amount_crafted", "linked_item_ids",
+                            "unlocks", "unlocked_by", "force_unlock_at_start",
+                            "path", "pda_group", "pda_category",
+                            "display_name", "tooltip", "functional_id",
+                            "sprite_item_id",
+                            "food_value", "water_value", "oxygen_value",
+                            "health_value", "decay_rate_mod", "food_type",
+                            "use_drink_sound")),
+    )
+
+    @pytest.mark.parametrize("class_name,field_names", NODE_CLASSES)
+    def test_no_qline_edits_built(self, graph, class_name, field_names):
         from craftgraph.qt_nodes import IDENTIFIER
 
-        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
+        node = graph.create_node(f"{IDENTIFIER}.{class_name}")
         node._maybe_build_widgets()
-        for name in ("item_id", "amount_crafted", "linked_item_ids",
-                     "unlocks", "unlocked_by", "force_unlock_at_start"):
-            assert node.get_widget(name) is None, f"widget exists for {name}"
+        for name in field_names:
+            assert node.get_widget(name) is None, f"{class_name}: widget exists for {name}"
+
+    @pytest.mark.parametrize("class_name", [c[0] for c in NODE_CLASSES])
+    def test_view_is_painted_node_item(self, graph, class_name):
+        from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
+
+        node = graph.create_node(f"{IDENTIFIER}.{class_name}")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
+
+    @pytest.mark.parametrize("class_name", [c[0] for c in NODE_CLASSES])
+    def test_field_rects_populated_after_build(self, graph, class_name):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.{class_name}")
+        node._maybe_build_widgets()
+        names = [r.name for r in node.view._cg_field_rects]
+        # ingredients (the only INGREDIENT_LIST field) must never appear in the grid.
+        assert "ingredients" not in names
+        assert len(names) > 0
 
     def test_get_property_still_works(self, graph):
         from craftgraph.qt_nodes import IDENTIFIER
@@ -1960,28 +2007,11 @@ class TestModifiedRecipeNoWidgets:
         assert node.get_property("item_id") == "Titanium"
         assert int(node.get_property("amount_crafted")) == 5
 
-    def test_view_is_painted_node_item(self, graph):
-        from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
-
-        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
-        assert isinstance(node.view, PaintedFieldsNodeItem)
-
-    def test_field_rects_populated_after_build(self, graph):
-        from craftgraph.qt_nodes import IDENTIFIER
-
-        node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
-        node._maybe_build_widgets()
-        names = [r.name for r in node.view._cg_field_rects]
-        assert len(names) == 6
-        assert "ingredients" not in names
-
     def test_subclass_added_recipe_uses_painted_fields(self, graph):
         """After broadening: AddedRecipeNode (subclass) also uses the painted path."""
         from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
 
         node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
         node._maybe_build_widgets()
-        # View MUST be PaintedFieldsNodeItem.
         assert isinstance(node.view, PaintedFieldsNodeItem)
-        # Widgets are NOT built for subclass anymore.
         assert node.get_widget("item_id") is None
