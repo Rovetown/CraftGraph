@@ -1547,8 +1547,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     ]
 
     def __init__(self) -> None:
-        qgraphics = PaintedFieldsNodeItem if type(self) is ModifiedRecipeNode else None
-        super().__init__(qgraphics_item=qgraphics)
+        super().__init__(qgraphics_item=PaintedFieldsNodeItem)
 
         # Structural ports (not registry-driven)
         self.add_input("hierarchy", multi_input=False, color=PORT_COLOR_HIERARCHY)
@@ -1558,13 +1557,10 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     def _build_from_registry(self) -> None:
         """Register fields as hidden properties + build the painted field grid.
 
-        Direct ModifiedRecipeNode instances only. Subclasses (AddedRecipe,
-        AliasRecipe, CustomFood) fall through to the base-class behavior.
+        Applies to every recipe-chain node (ModifiedRecipe and its subclasses:
+        AddedRecipe, AliasRecipe, CustomFood). Each subclass's own
+        FIELD_REGISTRY drives the grid layout via compute_field_grid.
         """
-        if type(self) is not ModifiedRecipeNode:
-            super()._build_from_registry()
-            return
-
         from craftgraph.painted_fields import compute_field_grid
         from NodeGraphQt.constants import NodePropWidgetEnum
 
@@ -1604,8 +1600,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
 
     def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
         super().set_property(name, value, push_undo=push_undo)
-        if type(self) is not ModifiedRecipeNode:
-            return
         if hasattr(self, "_cg_field_values") and name in self._cg_field_values:
             self._cg_field_values[name] = "" if value is None else str(value)
             if hasattr(self, "view"):
@@ -1613,10 +1607,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
                 self.view.update()
 
     def validate_required_fields(self) -> None:
-        if type(self) is not ModifiedRecipeNode:
-            super().validate_required_fields()
-            return
-
         from craftgraph.painted_fields import FieldState
 
         rects_by_name = {r.name: r for r in getattr(self.view, "_cg_field_rects", [])}
@@ -1633,9 +1623,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
             self.view.update()
 
     def disable_field(self, name: str) -> None:
-        if type(self) is not ModifiedRecipeNode:
-            super().disable_field(name)
-            return
         from craftgraph.painted_fields import FieldState
 
         for rect in getattr(self.view, "_cg_field_rects", []):
@@ -1645,9 +1632,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
                 return
 
     def enable_field(self, name: str) -> None:
-        if type(self) is not ModifiedRecipeNode:
-            super().enable_field(name)
-            return
         from craftgraph.painted_fields import FieldState
 
         for rect in getattr(self.view, "_cg_field_rects", []):
@@ -2240,11 +2224,11 @@ class SpriteNode(CraftGraphBaseNode):
                 target.set_sprite(path)
                 # Update the sprite_item_id model field (e.g. for CraftingTab,
                 # AliasRecipe) so the value gets serialized to the .txt file.
-                if target.get_widget("sprite_item_id") is not None:
+                if "sprite_item_id" in target.model.custom_properties:
                     target.set_property("sprite_item_id", path.stem)
             else:
                 target.clear_sprite()
-                if target.get_widget("sprite_item_id") is not None:
+                if "sprite_item_id" in target.model.custom_properties:
                     target.set_property("sprite_item_id", "")
 
 

@@ -3880,11 +3880,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         current_value: str,
     ) -> None:
         self._active_node_for_edit = node
+        completer_words: list[str] | None = None
+        if field_name in self._ID_WIDGET_NAMES:
+            completer_words = self._get_id_words()
+        elif field_name in self._PATH_WIDGET_NAMES:
+            completer_words = self._path_words
         self._floating_editor_host.summon(
             field_name=field_name,
             field_type=node._field_pin_type(field_name),
             view_rect=view_rect,
             current_value=current_value,
+            completer_words=completer_words,
         )
 
     # -- Minimap --------------------------------------------------------------

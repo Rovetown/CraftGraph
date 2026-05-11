@@ -305,9 +305,13 @@ class TestAddedRecipeRegistry:
     def test_own_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         node._maybe_build_widgets()
-        assert node.get_widget("path") is not None
-        assert node.get_widget("pda_group") is not None
-        assert node.get_widget("pda_category") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("path") == ""
+        assert node.get_property("pda_group") == ""
+        assert node.get_property("pda_category") == ""
+        assert node.get_widget("path") is None
+        assert node.get_widget("pda_group") is None
+        assert node.get_widget("pda_category") is None
 
     def test_populate_path(self, graph):
         from craftgraph.models import AddedRecipe
@@ -332,16 +336,24 @@ class TestAliasRecipeRegistry:
     def test_inherits_added_fields(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         node._maybe_build_widgets()
-        assert node.get_widget("path") is not None
-        assert node.get_widget("pda_group") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("path") == ""
+        assert node.get_property("pda_group") == ""
+        assert node.get_widget("path") is None
+        assert node.get_widget("pda_group") is None
 
     def test_own_fields_present(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         node._maybe_build_widgets()
-        assert node.get_widget("display_name") is not None
-        assert node.get_widget("tooltip") is not None
-        assert node.get_widget("functional_id") is not None
-        assert node.get_widget("sprite_item_id") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("display_name") == ""
+        assert node.get_property("tooltip") == ""
+        assert node.get_property("functional_id") == ""
+        assert node.get_property("sprite_item_id") == ""
+        assert node.get_widget("display_name") is None
+        assert node.get_widget("tooltip") is None
+        assert node.get_widget("functional_id") is None
+        assert node.get_widget("sprite_item_id") is None
 
     def test_nullable_string_roundtrip(self, graph):
         from craftgraph.models import AliasRecipe
@@ -358,12 +370,16 @@ class TestCustomFoodRegistry:
     def test_inherits_alias_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node._maybe_build_widgets()
-        assert node.get_widget("display_name") is not None
-        assert node.get_widget("tooltip") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("display_name") == ""
+        assert node.get_property("tooltip") == ""
+        assert node.get_widget("display_name") is None
+        assert node.get_widget("tooltip") is None
 
     def test_all_food_stat_fields(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node._maybe_build_widgets()
+        # Painted-fields path: properties registered, no embedded widgets.
         for field_name in (
             "food_value",
             "water_value",
@@ -371,13 +387,17 @@ class TestCustomFoodRegistry:
             "health_value",
             "decay_rate_mod",
         ):
-            assert node.get_widget(field_name) is not None, f"Missing: {field_name}"
+            assert node.get_property(field_name) is not None, f"Missing: {field_name}"
+            assert node.get_widget(field_name) is None, f"Unexpected widget: {field_name}"
 
     def test_food_type_and_drink_sound(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node._maybe_build_widgets()
-        assert node.get_widget("food_type") is not None
-        assert node.get_widget("use_drink_sound") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("food_type") is not None
+        assert node.get_property("use_drink_sound") is not None
+        assert node.get_widget("food_type") is None
+        assert node.get_widget("use_drink_sound") is None
 
     def test_populate_food_stats(self, graph):
         from craftgraph.models import CustomFood
@@ -471,10 +491,12 @@ class TestAddedRecipeNode:
         assert node.get_input("hierarchy") is not None
         assert node.get_input("ingredient_0") is not None
 
-    def test_path_widget(self, graph):
+    def test_path_property_registered(self, graph):
         node = graph.create_node("com.craftgraph.AddedRecipeNode", name="A1")
         node._maybe_build_widgets()
-        assert node.get_widget("path") is not None
+        # Painted-fields path: property registered, no embedded widget.
+        assert node.get_property("path") == ""
+        assert node.get_widget("path") is None
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_ADDED_RECIPE
@@ -490,16 +512,21 @@ class TestAddedRecipeNode:
 
 
 class TestAliasRecipeNode:
-    def test_display_name_and_tooltip_widgets(self, graph):
+    def test_display_name_and_tooltip_properties_registered(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         node._maybe_build_widgets()
-        assert node.get_widget("display_name") is not None
-        assert node.get_widget("tooltip") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("display_name") == ""
+        assert node.get_property("tooltip") == ""
+        assert node.get_widget("display_name") is None
+        assert node.get_widget("tooltip") is None
 
-    def test_inherits_path_widget(self, graph):
+    def test_inherits_path_property_registered(self, graph):
         node = graph.create_node("com.craftgraph.AliasRecipeNode", name="Al1")
         node._maybe_build_widgets()
-        assert node.get_widget("path") is not None
+        # Painted-fields path: property registered, no embedded widget.
+        assert node.get_property("path") == ""
+        assert node.get_widget("path") is None
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_ALIAS_RECIPE
@@ -509,18 +536,25 @@ class TestAliasRecipeNode:
 
 
 class TestCustomFoodNode:
-    def test_food_stat_widgets(self, graph):
+    def test_food_stat_properties_registered(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node._maybe_build_widgets()
-        assert node.get_widget("food_value") is not None
-        assert node.get_widget("water_value") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("food_value") is not None
+        assert node.get_property("water_value") is not None
+        assert node.get_widget("food_value") is None
+        assert node.get_widget("water_value") is None
 
-    def test_inherits_alias_widgets(self, graph):
+    def test_inherits_alias_properties_registered(self, graph):
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
         node._maybe_build_widgets()
-        assert node.get_widget("display_name") is not None
-        assert node.get_widget("tooltip") is not None
-        assert node.get_widget("path") is not None
+        # Painted-fields path: properties registered, no embedded widgets.
+        assert node.get_property("display_name") == ""
+        assert node.get_property("tooltip") == ""
+        assert node.get_property("path") == ""
+        assert node.get_widget("display_name") is None
+        assert node.get_widget("tooltip") is None
+        assert node.get_widget("path") is None
 
     def test_node_color(self, graph):
         from craftgraph.qt_nodes import NODE_COLOR_CUSTOM_FOOD
@@ -1181,19 +1215,6 @@ class TestWidgetZOrder:
         assert widgets[0].zValue() > Z_VAL_NODE_WIDGET
 
 
-class TestWidgetOverride:
-    def test_string_without_override_creates_text_input(self, graph):
-        """A STRING FieldPin without widget_override should render as text input."""
-        node = graph.create_node("com.craftgraph.AddedRecipeNode", name="Test")
-        node._maybe_build_widgets()
-        widget = node.get_widget("path")
-        assert widget is not None
-        inner = widget.get_custom_widget()
-        from PySide6.QtWidgets import QLineEdit
-
-        assert isinstance(inner, QLineEdit)
-
-
 # ---------------------------------------------------------------------------
 # Overflow tooltips (Task 2)
 # ---------------------------------------------------------------------------
@@ -1201,42 +1222,6 @@ class TestWidgetOverride:
 
 class TestOverflowTooltips:
     """Node field widgets update their tooltip to the current text value."""
-
-    def test_string_field_tooltip_updates_on_text_change(self, graph):
-        """QLineEdit tooltip tracks the field's text content.
-
-        Uses AddedRecipeNode because direct ModifiedRecipeNode instances
-        no longer carry embedded widgets after the painted-fields pilot.
-        Per-field tooltips for painted ModifiedRecipeNode fields are not
-        carried (tooltip lives on the painted text, future work).
-        """
-        node = graph.create_node(
-            "com.craftgraph.AddedRecipeNode", name="Test",
-        )
-        node._maybe_build_widgets()
-        widget_item = node.get_widget("item_id")
-        assert widget_item is not None
-        qt_widget = widget_item.get_custom_widget()
-        qt_widget.setText("VeryLongItemIDThatWouldBeTruncated")
-        assert qt_widget.toolTip() == "VeryLongItemIDThatWouldBeTruncated"
-
-    def test_int_field_tooltip_updates_on_value_change(self, graph):
-        """Int editor tooltip tracks the displayed value.
-
-        Uses AddedRecipeNode because direct ModifiedRecipeNode instances
-        no longer carry embedded widgets after the painted-fields pilot.
-        """
-        node = graph.create_node(
-            "com.craftgraph.AddedRecipeNode", name="Test",
-        )
-        node._maybe_build_widgets()
-        widget_item = node.get_widget("amount_crafted")
-        assert widget_item is not None
-        qt_widget = widget_item.get_custom_widget()
-        # _IntEditWidget has a _edit QLineEdit inside
-        inner_edit = qt_widget._edit
-        qt_widget.setValue(42)
-        assert inner_edit.toolTip() == "42"
 
     def test_combo_field_tooltip_updates_on_selection(self, graph):
         """Combo box tooltip tracks the selected item text."""
@@ -1990,13 +1975,13 @@ class TestModifiedRecipeNoWidgets:
         assert len(names) == 6
         assert "ingredients" not in names
 
-    def test_subclass_added_recipe_keeps_widgets(self, graph):
-        """Type-guard verification: AddedRecipeNode (subclass) keeps embedded widgets."""
+    def test_subclass_added_recipe_uses_painted_fields(self, graph):
+        """After broadening: AddedRecipeNode (subclass) also uses the painted path."""
         from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
 
         node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
         node._maybe_build_widgets()
-        # View must NOT be PaintedFieldsNodeItem.
-        assert not isinstance(node.view, PaintedFieldsNodeItem)
-        # Widgets ARE built for subclass (old behaviour).
-        assert node.get_widget("item_id") is not None
+        # View MUST be PaintedFieldsNodeItem.
+        assert isinstance(node.view, PaintedFieldsNodeItem)
+        # Widgets are NOT built for subclass anymore.
+        assert node.get_widget("item_id") is None

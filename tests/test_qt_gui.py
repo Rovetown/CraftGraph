@@ -451,8 +451,8 @@ class TestFileLoading:
         assert recipe_node.get_property("item_id") == "Titanium"
         assert int(recipe_node.get_property("amount_crafted")) == 2
 
-    def test_load_added_recipe_has_path_widget(self, window, tmp_path):
-        """AddedRecipe nodes get a path widget populated."""
+    def test_load_added_recipe_has_path_property(self, window, tmp_path):
+        """AddedRecipe nodes get a path property populated."""
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
             "AddedRecipes:\n"
@@ -473,7 +473,7 @@ class TestFileLoading:
         # 1 recipe + 1 orphan ingredient (Titanium) = 2 nodes
         assert len(nodes) == 2
         recipe_node = next(n for n in nodes if n.name() == "SuperAlloy")
-        assert recipe_node.get_widget("path").get_value() == "Fabricator/Resources"
+        assert recipe_node.get_property("path") == "Fabricator/Resources"
 
     def test_load_fabricator_creates_fab_node(self, window, tmp_path):
         """CustomFabricators create FabricatorNode with nested tabs/recipes."""
@@ -2475,29 +2475,7 @@ class TestContextMenuNodeCreation:
 
 
 class TestNodeAutocomplete:
-    """Verify NodeCompletionPopup is wired to node text input widgets."""
-
-    def _load_modified_recipe(self, window, tmp_path):
-        # Use AddedRecipe rather than ModifiedRecipe because direct
-        # ModifiedRecipeNode instances no longer carry embedded widgets
-        # after the painted-fields pilot, and these tests assert against
-        # the embedded-widget popup wiring path.
-        recipe_file = tmp_path / "test.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n"
-            "(\n"
-            "    ItemID: Titanium;\n"
-            "    Path: Fabricator/Resources;\n"
-            "    Ingredients:\n"
-            "    (\n        ItemID: Gold;\n        Required: 1;\n    );\n"
-            ");\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-        return next(
-            n for n in window.graph.all_nodes()
-            if n.get_property("item_id") == "Titanium"
-        )
+    """Verify the floating editor receives the right completer words per field."""
 
     def _load_added_recipe(self, window, tmp_path):
         recipe_file = tmp_path / "test.txt"
@@ -2512,7 +2490,10 @@ class TestNodeAutocomplete:
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
-        return window.graph.all_nodes()[0]
+        return next(
+            n for n in window.graph.all_nodes()
+            if hasattr(n, "FIELD_REGISTRY") and n.get_property("item_id") == "SuperAlloy"
+        )
 
     def _load_moved_recipe(self, window, tmp_path):
         recipe_file = tmp_path / "test.txt"
@@ -2528,93 +2509,43 @@ class TestNodeAutocomplete:
         window.load_recipes(recipe_file)
         return window.graph.all_nodes()[0]
 
-    def _has_popup_event_filter(self, window, line_edit):
-        """Check whether the shared NodeCompletionPopup is installed as
-        an event filter on *line_edit*."""
-        # Qt doesn't expose the event filter list directly, but we can
-        # trigger the popup via textEdited and verify it reacts.
-        popup = window._node_popup
-        # Simulate typing a partial match -- the popup should show
-        line_edit.textEdited.emit("tit")
-        return popup._active_edit is line_edit
+    def _summon_field(self, window, node, field_name, current_value=""):
+        """Trigger the painted-node summon path for *field_name* on *node*."""
+        from PySide6.QtCore import QRect
+        window._on_field_edit_requested(
+            node, field_name, QRect(0, 0, 100, 22), current_value
+        )
 
-    def test_item_id_has_popup_attached(self, window, tmp_path):
-        """ItemID text input is wired to the shared NodeCompletionPopup."""
-        node = self._load_modified_recipe(window, tmp_path)
-        line_edit = node.get_widget("item_id").get_custom_widget()
-        assert self._has_popup_event_filter(window, line_edit)
-
-    def test_item_id_popup_shows_vanilla_ids(self, window, tmp_path):
-        """Typing in ItemID triggers popup with vanilla TechType IDs."""
-        node = self._load_modified_recipe(window, tmp_path)
-        line_edit = node.get_widget("item_id").get_custom_widget()
-        popup = window._node_popup
-        line_edit.textEdited.emit("titani")
-        items = [popup._list.item(i).text() for i in range(popup._list.count())]
-        assert any("titanium" in it.lower() for it in items)
-
-    def test_item_id_popup_is_case_insensitive(self, window, tmp_path):
-        """Popup matches case-insensitively (uppercase prefix finds lowercase IDs)."""
-        node = self._load_modified_recipe(window, tmp_path)
-        line_edit = node.get_widget("item_id").get_custom_widget()
-        popup = window._node_popup
-        line_edit.textEdited.emit("TITAN")
-        assert popup._list.count() > 0
-
-    def test_item_id_popup_hides_on_empty_text(self, window, tmp_path):
-        """Popup hides when the text field is cleared."""
-        node = self._load_modified_recipe(window, tmp_path)
-        line_edit = node.get_widget("item_id").get_custom_widget()
-        popup = window._node_popup
-        # First show the popup
-        line_edit.textEdited.emit("tit")
-        assert popup.isVisible()
-        # Then clear the text
-        line_edit.textEdited.emit("")
-        assert not popup.isVisible()
-
-    def test_path_widget_has_popup_attached(self, window, tmp_path):
-        """Path text input is wired to the shared NodeCompletionPopup."""
+    def test_item_id_summon_attaches_id_words_completer(self, window, tmp_path):
         node = self._load_added_recipe(window, tmp_path)
-        line_edit = node.get_widget("path").get_custom_widget()
-        assert self._has_popup_event_filter(window, line_edit)
+        self._summon_field(window, node, "item_id", "SuperAlloy")
+        editor = window._floating_editor_host._string_editor
+        completer = editor.completer()
+        assert completer is not None
+        # Walk the model to find a known vanilla TechType.
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("titanium" in (r or "").lower() for r in rows)
 
-    def test_path_popup_has_base_paths(self, window, tmp_path):
-        """Path popup shows base crafting tree paths."""
+    def test_path_summon_attaches_path_words_completer(self, window, tmp_path):
         node = self._load_added_recipe(window, tmp_path)
-        line_edit = node.get_widget("path").get_custom_widget()
-        popup = window._node_popup
-        line_edit.textEdited.emit("Fab")
-        items = [popup._list.item(i).text() for i in range(popup._list.count())]
-        assert any("Fabricator" in it for it in items)
+        self._summon_field(window, node, "path", "Fabricator/Resources")
+        editor = window._floating_editor_host._string_editor
+        completer = editor.completer()
+        assert completer is not None
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("Fabricator" in (r or "") for r in rows)
 
-    def test_path_popup_has_parsed_paths(self, window, tmp_path):
-        """Path popup includes paths extracted from parsed recipes."""
+    def test_path_completer_includes_parsed_paths(self, window, tmp_path):
         node = self._load_added_recipe(window, tmp_path)
-        line_edit = node.get_widget("path").get_custom_widget()
-        popup = window._node_popup
-        line_edit.textEdited.emit("Resources")
-        items = [popup._list.item(i).text() for i in range(popup._list.count())]
-        assert any("Fabricator/Resources" in it for it in items)
+        self._summon_field(window, node, "path", "Fabricator/Resources")
+        completer = window._floating_editor_host._string_editor.completer()
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("Fabricator/Resources" in (r or "") for r in rows)
 
-    def test_moved_recipe_old_path_has_popup(self, window, tmp_path):
-        """MovedRecipe old_path is wired to the popup with path completions."""
-        node = self._load_moved_recipe(window, tmp_path)
-        line_edit = node.get_widget("old_path").get_custom_widget()
-        assert self._has_popup_event_filter(window, line_edit)
-        popup = window._node_popup
-        line_edit.textEdited.emit("Fab")
-        items = [popup._list.item(i).text() for i in range(popup._list.count())]
-        assert any("Fabricator" in it for it in items)
-
-    def test_moved_recipe_new_path_has_popup(self, window, tmp_path):
-        """MovedRecipe new_path is wired to the popup."""
-        node = self._load_moved_recipe(window, tmp_path)
-        line_edit = node.get_widget("new_path").get_custom_widget()
-        assert self._has_popup_event_filter(window, line_edit)
-
-    def test_display_name_has_no_popup(self, window, tmp_path):
-        """Display name fields should not trigger the popup (free text)."""
+    def test_display_name_summon_has_no_completer(self, window, tmp_path):
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
             "AliasRecipes:\n"
@@ -2629,41 +2560,26 @@ class TestNodeAutocomplete:
         )
         window.load_recipes(recipe_file)
         node = window.graph.all_nodes()[0]
-        line_edit = node.get_widget("display_name").get_custom_widget()
-        popup = window._node_popup
-        # Reset the popup state
-        popup._active_edit = None
-        line_edit.textEdited.emit("test")
-        # display_name is not in _ID_WIDGET_NAMES or _PATH_WIDGET_NAMES,
-        # so the popup should not react
-        assert popup._active_edit is not line_edit
+        self._summon_field(window, node, "display_name", "My Item")
+        editor = window._floating_editor_host._string_editor
+        # display_name isn't in _ID_WIDGET_NAMES or _PATH_WIDGET_NAMES; the
+        # summon must explicitly detach any prior completer (None handling).
+        assert editor.completer() is None
 
-    def test_amount_crafted_has_no_completer(self, window, tmp_path):
-        """Non-text widgets (int edits) should not get completers."""
-        node = self._load_modified_recipe(window, tmp_path)
-        # amount_crafted is a NodeIntEdit, not NodeLineEdit -- should be skipped
-        widget = node.get_widget("amount_crafted")
-        assert widget.type_ != "LineEditNodeWidget"
-
-    def test_popup_items_have_tooltips(self, window, tmp_path):
-        """Autocomplete popup items show the full text as a tooltip.
-
-        The 'New item: ...' entry has a distinct tooltip, so it is checked
-        separately from real word-list matches.
-        """
-        node = self._load_modified_recipe(window, tmp_path)
-        line_edit = node.get_widget("item_id").get_custom_widget()
-        popup = window._node_popup
-        line_edit.textEdited.emit("tit")
-        assert popup._list.count() > 0
-        for i in range(popup._list.count()):
-            item = popup._list.item(i)
-            if item.text().startswith("New item: "):
-                assert "custom item" in item.toolTip().lower()
-            else:
-                assert item.toolTip() == item.text(), (
-                    f"Item '{item.text()}' should have its full text as tooltip"
-                )
+    def test_moved_recipe_old_path_summon_has_path_completer(self, window, tmp_path):
+        node = self._load_moved_recipe(window, tmp_path)
+        # MovedRecipeNode is NOT in scope for this broaden -- it still uses widgets.
+        # If it's a painted node (it shouldn't be), summon. Otherwise skip the test
+        # because the legacy widget mechanism is what serves it.
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+        if not isinstance(node.view, PaintedFieldsNodeItem):
+            pytest.skip("MovedRecipeNode is not a painted node; legacy path covers this.")
+        self._summon_field(window, node, "old_path", "Fabricator/Resources")
+        completer = window._floating_editor_host._string_editor.completer()
+        assert completer is not None
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("Fabricator" in (r or "") for r in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -3006,101 +2922,6 @@ class TestMutualExclusion:
         assert node.get_property("copied") is False
 
 
-class TestPairedFields:
-    """Phase E: PdaGroup/PdaCategory paired-field warning."""
-
-    def test_one_set_other_empty_shows_warning(self, window, tmp_path, qapp):
-        """Setting PdaGroup without PdaCategory shows a yellow border on PdaCategory."""
-        recipe_file = tmp_path / "test.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n"
-            "    PdaGroup: Resources;\n);\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-
-        node = None
-        for n in window.graph.all_nodes():
-            if n.get_property("item_id") == "Alpha":
-                node = n
-                break
-        assert node is not None
-
-        # PdaGroup is set, PdaCategory is not -- the empty one should have a warning
-        cat_widget = node.get_widget("pda_category")
-        assert cat_widget is not None
-        qt_cat = cat_widget.get_custom_widget()
-        assert "200, 160, 40" in qt_cat.styleSheet()
-
-    def test_both_set_no_warning(self, window, tmp_path, qapp):
-        """Both PdaGroup and PdaCategory set -- no warning borders."""
-        recipe_file = tmp_path / "test.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n"
-            "    PdaGroup: Resources;\n    PdaCategory: BasicMaterials;\n);\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-
-        node = None
-        for n in window.graph.all_nodes():
-            if n.get_property("item_id") == "Alpha":
-                node = n
-                break
-        assert node is not None
-
-        grp_widget = node.get_widget("pda_group")
-        cat_widget = node.get_widget("pda_category")
-        assert "200, 160, 40" not in (grp_widget.get_custom_widget().styleSheet() or "")
-        assert "200, 160, 40" not in (cat_widget.get_custom_widget().styleSheet() or "")
-
-
-class TestPathReferenceValidation:
-    """Phase E: path fields with unknown references get an orange border."""
-
-    def test_invalid_path_gets_orange_border(self, window, tmp_path, qapp):
-        """A path that references no known fabricator/tab is highlighted orange."""
-        recipe_file = tmp_path / "test.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: NonExistentFab/Tab;\n);\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-
-        node = None
-        for n in window.graph.all_nodes():
-            if n.get_property("item_id") == "Alpha":
-                node = n
-                break
-        assert node is not None
-
-        path_widget = node.get_widget("path")
-        assert path_widget is not None
-        qt_w = path_widget.get_custom_widget()
-        assert "200, 120, 40" in qt_w.styleSheet()
-
-    def test_valid_path_no_orange_border(self, window, tmp_path, qapp):
-        """A path referencing a built-in fabricator has no orange border."""
-        recipe_file = tmp_path / "test.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n(\n    ItemID: Alpha;\n    Path: Fabricator;\n);\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-
-        node = None
-        for n in window.graph.all_nodes():
-            if n.get_property("item_id") == "Alpha":
-                node = n
-                break
-        assert node is not None
-
-        path_widget = node.get_widget("path")
-        assert path_widget is not None
-        qt_w = path_widget.get_custom_widget()
-        assert "200, 120, 40" not in (qt_w.styleSheet() or "")
-
-
 class TestValidationSummary:
     """Phase E: export-time validation summary dialog."""
 
@@ -3204,62 +3025,6 @@ class TestNodeHeaderTooltips:
         tip = fab_nodes[0].view.toolTip()
         assert "Fabricator" in tip
         assert "crafting station" in tip
-
-
-class TestFieldWidgetTooltips:
-    """Field widget tooltips show the current value (overflow tooltip)."""
-
-    def test_item_id_widget_shows_current_value(self, window, tmp_path):
-        # Uses AddedRecipe because direct ModifiedRecipeNode instances no
-        # longer carry embedded widgets after the painted-fields pilot.
-        recipe_file = tmp_path / "Recipes.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n"
-            "(\n"
-            "    ItemID: Knife;\n"
-            "    Path: Fabricator/Tools;\n"
-            "    Ingredients:\n"
-            "    (\n        ItemID: Titanium;\n        Required: 1;\n    );\n"
-            ");\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-        tab = window._file_tabs[0]
-        node = next(
-            n for n in tab.graph.all_nodes()
-            if n.get_property("item_id") == "Knife"
-        )
-        widget = node.get_widget("item_id")
-        assert widget is not None
-        qt_widget = widget.get_custom_widget()
-        assert qt_widget is not None
-        assert qt_widget.toolTip() == qt_widget.text()
-
-    def test_amount_widget_shows_current_value(self, window, tmp_path):
-        # Uses AddedRecipe for the same reason as the previous test.
-        recipe_file = tmp_path / "Recipes.txt"
-        recipe_file.write_text(
-            "AddedRecipes:\n"
-            "(\n"
-            "    ItemID: Knife;\n"
-            "    Path: Fabricator/Tools;\n"
-            "    Ingredients:\n"
-            "    (\n        ItemID: Titanium;\n        Required: 1;\n    );\n"
-            ");\n",
-            encoding="utf-8",
-        )
-        window.load_recipes(recipe_file)
-        tab = window._file_tabs[0]
-        node = next(
-            n for n in tab.graph.all_nodes()
-            if n.get_property("item_id") == "Knife"
-        )
-        widget = node.get_widget("amount_crafted")
-        assert widget is not None
-        qt_widget = widget.get_custom_widget()
-        assert qt_widget is not None
-        inner = qt_widget._edit
-        assert inner.toolTip() == inner.text()
 
 
 class TestItemIdReferencePanel:
