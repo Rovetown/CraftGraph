@@ -120,7 +120,7 @@ class TestFloatingEditorHost:
         assert host._int_editor.isVisible()
         assert not host._string_editor.isVisible()
 
-    def test_only_three_widgets_total(self, host):
+    def test_only_four_widgets_total(self, host):
         # Pool size is the headline HWND-saving claim. Lock it.
-        editors = (host._string_editor, host._int_editor, host._combo_editor)
-        assert len({id(e) for e in editors}) == 3
+        editors = (host._string_editor, host._int_editor, host._combo_editor, host._float_editor)
+        assert len({id(e) for e in editors}) == 4
