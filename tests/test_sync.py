@@ -226,7 +226,9 @@ class TestPopulateGraph:
 
         node = result[id(recipe)]
         node._maybe_build_widgets()
-        assert node.get_widget("path").get_value() == "Fabricator/Resources"
+        # Painted-fields path: AddedRecipeNode stores values as properties only.
+        assert node.get_property("path") == "Fabricator/Resources"
+        assert node.get_widget("path") is None
 
     def test_alias_recipe_has_display_fields(self, graph):
         recipe = AliasRecipe(
@@ -239,8 +241,10 @@ class TestPopulateGraph:
 
         node = result[id(recipe)]
         node._maybe_build_widgets()
-        assert node.get_widget("display_name").get_value() == "Super Item"
-        assert node.get_widget("tooltip").get_value() == "A super item"
+        # Painted-fields path: AliasRecipeNode stores values as properties only.
+        assert node.get_property("display_name") == "Super Item"
+        assert node.get_property("tooltip") == "A super item"
+        assert node.get_widget("display_name") is None
 
     def test_custom_food_has_stat_fields(self, graph):
         recipe = CustomFood(item_id="Snack", food_value=50, water_value=30)
@@ -249,8 +253,11 @@ class TestPopulateGraph:
 
         node = result[id(recipe)]
         node._maybe_build_widgets()
-        assert node.get_widget("food_value").get_value() == "50"
-        assert node.get_widget("water_value").get_value() == "30"
+        # Painted-fields path: CustomFoodNode stores values as properties only.
+        # INT fields return the raw int (convert_to_display falls through to case _:).
+        assert node.get_property("food_value") == 50
+        assert node.get_property("water_value") == 30
+        assert node.get_widget("food_value") is None
 
     def test_fabricator_creates_nested_nodes(self, graph):
         tab = CraftingTab(tab_id="Potions", display_name="Potions")
