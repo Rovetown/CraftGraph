@@ -1,18 +1,18 @@
 """Shared floating-editor pool for painted-field nodes.
 
-Three QWidget editors are constructed once per ``FloatingEditorHost``
+Four QWidget editors are constructed once per ``FloatingEditorHost``
 and reused across every field summon. The host parks the right editor
 over a target rect (in view coordinates), focuses it, and emits
 ``committed``/``cancelled`` when the user finishes.
 
-The pool is deliberately tiny: three widgets total per window, regardless
+The pool is deliberately tiny: four widgets total per window, regardless
 of node count. The HWND/widget cost is amortized.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
-from PySide6.QtGui import QFocusEvent, QIntValidator, QKeyEvent
+from PySide6.QtGui import QDoubleValidator, QFocusEvent, QIntValidator, QKeyEvent
 from PySide6.QtWidgets import QComboBox, QCompleter, QGraphicsView, QLineEdit, QWidget
 
 from craftgraph.pin_registry import PinType
@@ -44,7 +44,7 @@ class _CancellingComboBox(QComboBox):
 
 
 class FloatingEditorHost(QObject):
-    """Pool of three editor widgets that fly to a clicked field."""
+    """Pool of four editor widgets that fly to a clicked field."""
 
     committed = Signal(str, str)
     cancelled = Signal(str)
@@ -73,6 +73,13 @@ class FloatingEditorHost(QObject):
         self._combo_editor.escape_pressed.connect(self._cancel)
         self._combo_editor.installEventFilter(self)
 
+        self._float_editor = _CancellingLineEdit(self._parent_widget)
+        self._float_editor.setValidator(QDoubleValidator(self._float_editor))
+        self._float_editor.hide()
+        self._float_editor.returnPressed.connect(self._commit)
+        self._float_editor.escape_pressed.connect(self._cancel)
+        self._float_editor.installEventFilter(self)
+
         self._view: QGraphicsView | None = None
         self._active_field_name: str | None = None
         self._active_editor: _CancellingLineEdit | _CancellingComboBox | None = None
@@ -81,7 +88,12 @@ class FloatingEditorHost(QObject):
         """Re-parent each editor to ``view.viewport()`` so they float over it."""
         self._view = view
         viewport = view.viewport()
-        for editor in (self._string_editor, self._int_editor, self._combo_editor):
+        for editor in (
+            self._string_editor,
+            self._int_editor,
+            self._combo_editor,
+            self._float_editor,
+        ):
             editor.setParent(viewport)
             editor.hide()
 
@@ -139,6 +151,8 @@ class FloatingEditorHost(QObject):
             return self._int_editor
         if field_type is PinType.ENUM:
             return self._combo_editor
+        if field_type is PinType.FLOAT:
+            return self._float_editor
         return None
 
     def _commit(self) -> None:
@@ -186,7 +200,12 @@ class FloatingEditorHost(QObject):
 
     def close(self) -> None:
         """Tear down the editor pool. Call once per window lifetime."""
-        for editor in (self._string_editor, self._int_editor, self._combo_editor):
+        for editor in (
+            self._string_editor,
+            self._int_editor,
+            self._combo_editor,
+            self._float_editor,
+        ):
             editor.removeEventFilter(self)
             editor.hide()
             editor.setParent(None)
