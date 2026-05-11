@@ -1373,31 +1373,38 @@ class CraftGraphBaseNode(BaseNode):
                 break
 
     def validate_paired_fields(self) -> None:
-        """Warn when only one field in a paired set has a value."""
+        """Warn when only one field in a paired set has a value.
+
+        For painted-field nodes (PaintedFieldsNodeItem view), set the empty
+        partner's FieldState to PAIRED_INCOMPLETE. REQUIRED_EMPTY outranks
+        PAIRED_INCOMPLETE: a rect already flagged REQUIRED_EMPTY is left
+        alone, and clearing only touches rects currently flagged
+        PAIRED_INCOMPLETE.
+        """
+        from craftgraph.painted_fields import FieldState
+
+        rects_by_name = {
+            r.name: r for r in getattr(self.view, "_cg_field_rects", [])
+        }
+        if not rects_by_name:
+            return  # Not a painted node, nothing to do.
         for a, b in self.PAIRED_FIELDS:
-            wa = self.get_widget(a)
-            wb = self.get_widget(b)
-            if wa is None or wb is None:
-                continue
-            qa = wa.get_custom_widget()
-            qb = wb.get_custom_widget()
-            if qa is None or qb is None:
-                continue
             val_a = self.get_property(a)
             val_b = self.get_property(b)
             empty_a = val_a is None or (isinstance(val_a, str) and not val_a.strip())
             empty_b = val_b is None or (isinstance(val_b, str) and not val_b.strip())
             if empty_a != empty_b:
-                # One set, the other not -- warn on the empty one
-                style = "border: 1px solid rgb(200, 160, 40);"
-                if empty_a:
-                    qa.setStyleSheet(style)
-                else:
-                    qb.setStyleSheet(style)
+                target = a if empty_a else b
+                rect = rects_by_name.get(target)
+                if rect is not None and rect.state is FieldState.NORMAL:
+                    rect.state = FieldState.PAIRED_INCOMPLETE
             else:
-                # Both set or both empty -- clear any warning
-                qa.setStyleSheet("")
-                qb.setStyleSheet("")
+                for name in (a, b):
+                    rect = rects_by_name.get(name)
+                    if rect is not None and rect.state is FieldState.PAIRED_INCOMPLETE:
+                        rect.state = FieldState.NORMAL
+        if hasattr(self, "view"):
+            self.view.update()
 
     # -- Variable override helpers -------------------------------------------
 

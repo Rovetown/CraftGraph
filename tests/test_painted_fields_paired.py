@@ -20,6 +20,20 @@ def qapp():
     return app
 
 
+@pytest.fixture
+def graph(qapp):
+    """Fresh NodeGraph for each test."""
+    from NodeGraphQt import NodeGraph
+
+    from craftgraph.qt_nodes import all_node_classes
+
+    g = NodeGraph()
+    g.set_acyclic(False)
+    for cls in all_node_classes():
+        g.register_node(cls)
+    return g
+
+
 class TestFieldStatePairedIncomplete:
     def test_paired_incomplete_enum_value_exists(self):
         assert FieldState.PAIRED_INCOMPLETE
@@ -58,3 +72,55 @@ class TestPaintedFieldsPairedBorder:
             c.red() == orange.red() and c.green() == orange.green() and c.blue() == orange.blue()
             for c in colors
         ), f"No orange pen used; saw colors {[(c.red(), c.green(), c.blue()) for c in colors]}"
+
+
+class TestValidatePairedFieldsPaintedPath:
+    def _make_added_recipe_node(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+        node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
+        node._maybe_build_widgets()
+        return node
+
+    def test_paired_only_one_set_marks_partner(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        # pda_group set, pda_category empty
+        node.set_property("pda_group", "Resources", push_undo=False)
+        node.set_property("pda_category", "", push_undo=False)
+        node.validate_paired_fields()
+        states = {r.name: r.state for r in node.view._cg_field_rects}
+        assert states["pda_category"] is FieldState.PAIRED_INCOMPLETE
+        assert states["pda_group"] is FieldState.NORMAL
+
+    def test_paired_both_set_clears_incomplete(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        node.set_property("pda_group", "Resources", push_undo=False)
+        node.set_property("pda_category", "", push_undo=False)
+        node.validate_paired_fields()  # marks pda_category
+        node.set_property("pda_category", "Metals", push_undo=False)
+        node.validate_paired_fields()  # should clear
+        states = {r.name: r.state for r in node.view._cg_field_rects}
+        assert states["pda_category"] is FieldState.NORMAL
+        assert states["pda_group"] is FieldState.NORMAL
+
+    def test_paired_both_empty_clears_incomplete(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        # Force a PAIRED_INCOMPLETE state, then clear both fields.
+        node.set_property("pda_group", "Resources", push_undo=False)
+        node.validate_paired_fields()
+        node.set_property("pda_group", "", push_undo=False)
+        node.validate_paired_fields()
+        states = {r.name: r.state for r in node.view._cg_field_rects}
+        assert states["pda_category"] is FieldState.NORMAL
+        assert states["pda_group"] is FieldState.NORMAL
+
+    def test_required_empty_outranks_paired(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        # Pre-set pda_category to REQUIRED_EMPTY by hand to model the precedence rule.
+        for r in node.view._cg_field_rects:
+            if r.name == "pda_category":
+                r.state = FieldState.REQUIRED_EMPTY
+        node.set_property("pda_group", "Resources", push_undo=False)
+        node.validate_paired_fields()
+        states = {r.name: r.state for r in node.view._cg_field_rects}
+        # Stays REQUIRED_EMPTY -- paired logic must not downgrade it.
+        assert states["pda_category"] is FieldState.REQUIRED_EMPTY
