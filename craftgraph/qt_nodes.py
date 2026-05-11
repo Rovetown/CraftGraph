@@ -441,6 +441,8 @@ class PaintedFieldsNodeItem(_NodeItem):
             return
         if rect.state is FieldState.REQUIRED_EMPTY:
             painter.setPen(QPen(QColor(220, 60, 60), 1.5))
+        elif rect.state is FieldState.PAIRED_INCOMPLETE:
+            painter.setPen(QPen(QColor(200, 160, 40), 1.0))
         else:
             painter.setPen(QPen(QColor(80, 80, 80)))
         painter.drawRect(rect.value_rect)

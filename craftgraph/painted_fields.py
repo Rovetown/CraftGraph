@@ -23,6 +23,7 @@ class FieldState(Enum):
     DISABLED = "disabled"
     REQUIRED_EMPTY = "required_empty"
     CONNECTED_TO_VARIABLE = "connected_to_variable"
+    PAIRED_INCOMPLETE = "paired_incomplete"
 
 
 @dataclass
