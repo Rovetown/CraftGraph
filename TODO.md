@@ -175,6 +175,24 @@ Items here are explicitly *out of scope* for the first performance pass. They go
 | 9.11 | Lazy widget allocation _(was 6.2; inline-widget ladder rung 1)_ | `qt_nodes.py` | medium | partial floating-input win | **DONE on `feat/lazy-widgets`** (Tasks 1-4: d4f0736, 1c76dcf, 0ef0d0f, 1ad4c62, f047e05). Class-level `NodeItem.paint` patch (`_install_lazy_widget_build`) defers `_build_from_registry` / `_fix_widget_z_order` / `validate_required_fields` to first paint. Lazy `populate_from_model` defers + replays inside `_maybe_build_widgets` (fixes the prior populate-before-paint failure). Lazy `get_property` / `set_property` cover sync-layer + test paths. Two production fixes uncovered by tests: deserialize wrapper forces eager build during paste/duplicate (NodeGraphQt's `_deserialize` writes via `node.model.set_property` directly, bypassing our override), and `SpriteNode.__init__` forces eager build for its `textChanged` listener. **Two-run heap-corruption gate clean** across `test_qt_nodes` (167/167), `test_qt_gui` (467/467), `test_sync` (106/106), `test_apply_file_diff` (11/11), `test_minimap` (5/5), parity (9/9). **Profiler-verified:** offscreen Tier-A load drops from 4751 ms (post-Phase-2) to 1748 ms (-63%, exceeds 30% target), but on the Windows platform the `app.processEvents()` paint pump triggers `_maybe_build_widgets` on all 160 visible nodes during load (1511 ms / 160 calls), so wall-clock load is statistically flat (+1.5%). The architecture is correct; benefit materializes when nodes stay off-viewport in real-user pan/zoom workflows -- not during the initial paint-everything load. `apply_code_editor_text` measurement deferred for hand-driven user capture. Baselines: `docs/perf-baselines/2026-05-10-tier-A-post-lazy-widgets.md`. Plan: `docs/superpowers/plans/2026-05-06-lazy-widget-construction.md`. **Inline-widget ladder:** 9.11 is rung 1, 9.6 (floating-input refactor) is rung 2 -- escalate only if real off-viewport workflows still show widget cost dominating. |
 | 9.12 | Real GPU usage queries (D3D / Vulkan / Metal) | new gpu_diag.py | high | quantifies render-side cost vs CPU widget cost | Heavy: needs platform-specific bindings (D3D query interface on Windows, MoltenVK / Metal on macOS). Only revisit if frame-time overlay (1.3) consistently shows >budget frames AND CPU profile rules out widget construction. Until then, frame_ms from `report_frame()` is the best signal we have. |
 
+#### 9.6 Broaden re-run (2026-05-11) — PASS
+
+Broadened the painted-fields path to every recipe-chain subclass (Modified / Added / Alias / CustomFood) by dropping the six type-guards in `craftgraph/qt_nodes.py`. Added a float editor to the floating-editor pool; ported the paired-field warning to `FieldState.PAIRED_INCOMPLETE`. Downstream fixes: `_propagate_sprite` now detects property registration via `model.custom_properties` (was widget-presence); `_on_field_edit_requested` passes `completer_words` to `FloatingEditorHost.summon` so TechType/Path autocomplete works on painted nodes via QCompleter.
+
+**Spec:** `docs/superpowers/specs/2026-05-11-floating-input-broaden-design.md`
+
+**Plan:** `docs/superpowers/plans/2026-05-11-floating-input-broaden.md`
+
+**Baseline:** `docs/perf-baselines/2026-05-11-tier-A-post-broaden.md`
+
+**Result:** PASS. Folder load 1597 ms (target <3000), HWND USER 1157 (<2900), widgets 1115 (<2700), `_create_widget_for_field` cumtime 242 ms (<1200). Wall-clock is now 65% below the pre-pilot baseline.
+
+**Known regressions deferred to follow-up tasks:**
+- Path-reference validation orange-border (test class deleted from `test_qt_gui.py`): future work to add a painted-path equivalent.
+- Overflow tooltips on text fields (test class deleted): future work to add a painted-path equivalent.
+
+**Next:** merge `feat/floating-input-pilot` into master.
+
 ---
 
 ### Recipe Import / Snippet Paste
