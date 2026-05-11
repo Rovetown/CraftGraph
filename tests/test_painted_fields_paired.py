@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 import pytest
-from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtCore import QRectF
 from PySide6.QtWidgets import QApplication
 
 from craftgraph.painted_fields import FieldRect, FieldState
