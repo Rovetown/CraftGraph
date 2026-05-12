@@ -6,6 +6,8 @@ math by feeding synthetic ``PortRowGeometry`` dicts.
 
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from craftgraph.node_layout import PortRowGeometry
@@ -21,5 +23,5 @@ class TestPortRowGeometry:
 
     def test_is_frozen(self) -> None:
         row = PortRowGeometry(y=0.0, height=22.0, label_left=0.0, label_right=80.0)
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             row.y = 999.0  # type: ignore[misc]
