@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import FrozenInstanceError
 
 import pytest
+from PySide6.QtCore import QRectF as _QRectF
 
 from craftgraph.node_layout import NodeLayout, PortRowGeometry
 from craftgraph.painted_fields import FieldState
@@ -128,9 +129,6 @@ class TestNodeLayoutBuild:
         ).build()
         rect = layout.value_rects["x"]
         assert rect.width() >= 0.0
-
-
-from PySide6.QtCore import QRectF as _QRectF
 
 
 class _FakePortItem:
