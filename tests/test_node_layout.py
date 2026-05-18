@@ -128,3 +128,66 @@ class TestNodeLayoutBuild:
         ).build()
         rect = layout.value_rects["x"]
         assert rect.width() >= 0.0
+
+
+from PySide6.QtCore import QRectF as _QRectF
+
+
+class _FakePortItem:
+    def __init__(self, name: str, y: float, height: float = 22.0) -> None:
+        self._name = name
+        self._y = y
+        self._h = height
+
+    def name(self) -> str:
+        return self._name
+
+    def y(self) -> float:
+        return self._y
+
+    def boundingRect(self) -> _QRectF:
+        return _QRectF(0.0, 0.0, 12.0, self._h)
+
+
+class _FakeTextItem:
+    def __init__(self, x: float, width: float, height: float = 22.0) -> None:
+        self._x = x
+        self._w = width
+        self._h = height
+
+    def x(self) -> float:
+        return self._x
+
+    def boundingRect(self) -> _QRectF:
+        return _QRectF(0.0, 0.0, self._w, self._h)
+
+
+class _FakeNodeItem:
+    def __init__(self, items: list[tuple[_FakePortItem, _FakeTextItem]]) -> None:
+        self._input_items = dict(items)
+
+
+class TestCollectPortGeometry:
+    def test_returns_geometry_for_field_ports_only(self) -> None:
+        from craftgraph.node_layout import collect_port_geometry
+
+        items = [
+            (_FakePortItem("hierarchy", 0.0), _FakeTextItem(20.0, 60.0)),
+            (_FakePortItem("ingredient_0", 22.0), _FakeTextItem(20.0, 80.0)),
+            (_FakePortItem("field_item_id", 44.0), _FakeTextItem(20.0, 50.0)),
+            (_FakePortItem("field_amount", 66.0), _FakeTextItem(20.0, 60.0)),
+        ]
+        node_item = _FakeNodeItem(items)
+        rows = collect_port_geometry(node_item)
+        assert set(rows.keys()) == {"item_id", "amount"}
+        item_id_row = rows["item_id"]
+        assert item_id_row.y == 44.0
+        assert item_id_row.label_left == 20.0
+        assert item_id_row.label_right == 70.0
+        assert item_id_row.height == 22.0
+
+    def test_empty_input_items_returns_empty_dict(self) -> None:
+        from craftgraph.node_layout import collect_port_geometry
+
+        rows = collect_port_geometry(_FakeNodeItem([]))
+        assert rows == {}

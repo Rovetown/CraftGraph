@@ -11,6 +11,7 @@ The only Qt dependency in the core layout is ``QRectF``. The
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from PySide6.QtCore import QRectF
 
@@ -87,3 +88,32 @@ class NodeLayout:
         else:
             self.min_node_width = 0.0
         return self
+
+
+def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
+    """Extract per-field port geometry from a NodeGraphQt node item.
+
+    Walks ``node_item._input_items`` (an OrderedDict mapping port qgraphics
+    items to their label text items). Returns one ``PortRowGeometry`` per
+    port whose name starts with ``field_``, keyed by the unprefixed field
+    name.
+
+    Must be called after NodeGraphQt's ``align_ports`` has run for that
+    node (typically inside ``PaintedFieldsNodeItem.paint`` immediately
+    after ``super().paint(...)``); before that, ``port.y()`` may be 0.
+    """
+    rows: dict[str, PortRowGeometry] = {}
+    for port_item, text_item in node_item._input_items.items():
+        port_name = port_item.name()
+        if not port_name.startswith("field_"):
+            continue
+        field_name = port_name[len("field_"):]
+        text_rect = text_item.boundingRect()
+        port_rect = port_item.boundingRect()
+        rows[field_name] = PortRowGeometry(
+            y=port_item.y(),
+            height=max(port_rect.height(), text_rect.height()),
+            label_left=text_item.x(),
+            label_right=text_item.x() + text_rect.width(),
+        )
+    return rows
