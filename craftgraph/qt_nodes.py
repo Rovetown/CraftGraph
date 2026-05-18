@@ -1375,19 +1375,18 @@ class CraftGraphBaseNode(BaseNode):
     def validate_paired_fields(self) -> None:
         """Warn when only one field in a paired set has a value.
 
-        For painted-field nodes (PaintedFieldsNodeItem view), set the empty
-        partner's FieldState to PAIRED_INCOMPLETE. REQUIRED_EMPTY outranks
-        PAIRED_INCOMPLETE: a rect already flagged REQUIRED_EMPTY is left
-        alone, and clearing only touches rects currently flagged
-        PAIRED_INCOMPLETE.
+        Writes ``FieldState.PAIRED_INCOMPLETE`` on the empty partner.
+        REQUIRED_EMPTY outranks PAIRED_INCOMPLETE: a field already at
+        REQUIRED_EMPTY is left alone, and clearing only touches fields
+        currently at PAIRED_INCOMPLETE.
         """
         from craftgraph.painted_fields import FieldState
 
+        if not hasattr(self, "_cg_field_states"):
+            return
         rects_by_name = {
             r.name: r for r in getattr(self.view, "_cg_field_rects", [])
         }
-        if not rects_by_name:
-            return  # Not a painted node, nothing to do.
         for a, b in self.PAIRED_FIELDS:
             val_a = self.get_property(a)
             val_b = self.get_property(b)
@@ -1395,14 +1394,18 @@ class CraftGraphBaseNode(BaseNode):
             empty_b = val_b is None or (isinstance(val_b, str) and not val_b.strip())
             if empty_a != empty_b:
                 target = a if empty_a else b
-                rect = rects_by_name.get(target)
-                if rect is not None and rect.state is FieldState.NORMAL:
-                    rect.state = FieldState.PAIRED_INCOMPLETE
+                if self._cg_field_states.get(target) is FieldState.NORMAL:
+                    self._cg_field_states[target] = FieldState.PAIRED_INCOMPLETE
+                    rect = rects_by_name.get(target)
+                    if rect is not None:
+                        rect.state = FieldState.PAIRED_INCOMPLETE
             else:
                 for name in (a, b):
-                    rect = rects_by_name.get(name)
-                    if rect is not None and rect.state is FieldState.PAIRED_INCOMPLETE:
-                        rect.state = FieldState.NORMAL
+                    if self._cg_field_states.get(name) is FieldState.PAIRED_INCOMPLETE:
+                        self._cg_field_states[name] = FieldState.NORMAL
+                        rect = rects_by_name.get(name)
+                        if rect is not None:
+                            rect.state = FieldState.NORMAL
         if hasattr(self, "view"):
             self.view.update()
 
@@ -1568,10 +1571,11 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         AddedRecipe, AliasRecipe, CustomFood). Each subclass's own
         FIELD_REGISTRY drives the grid layout via compute_field_grid.
         """
-        from craftgraph.painted_fields import compute_field_grid
+        from craftgraph.painted_fields import FieldState, compute_field_grid
         from NodeGraphQt.constants import NodePropWidgetEnum
 
         self._cg_field_values: dict[str, str] = {}
+        self._cg_field_states: dict[str, FieldState] = {}
         for fp in self.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -1582,6 +1586,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
                 widget_type=NodePropWidgetEnum.HIDDEN.value,
             )
             self._cg_field_values[fp.name] = default
+            self._cg_field_states[fp.name] = FieldState.NORMAL
             if not self.IS_VARIABLE:
                 port = self.add_input(
                     f"field_{fp.name}",
@@ -1602,6 +1607,10 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
             row_height=22.0,
             label_fraction=0.4,
         )
+        # Stamp each rect with its tracked state so the rect dict and the
+        # state dict stay in sync until Task 5 deletes the rects path.
+        for rect in rects:
+            rect.state = self._cg_field_states.get(rect.name, FieldState.NORMAL)
         self.view._cg_field_rects = rects
         self.view._cg_field_values = self._cg_field_values
 
@@ -1616,43 +1625,53 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     def validate_required_fields(self) -> None:
         from craftgraph.painted_fields import FieldState
 
+        if not hasattr(self, "_cg_field_states"):
+            return
         rects_by_name = {r.name: r for r in getattr(self.view, "_cg_field_rects", [])}
         for fp in self.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST or not fp.required:
                 continue
-            rect = rects_by_name.get(fp.name)
-            if rect is None:
-                continue
             value = self.get_property(fp.name) if self._cg_widgets_pending is False else ""
             empty = value is None or (isinstance(value, str) and not value.strip())
-            rect.state = FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
+            new_state = FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
+            self._cg_field_states[fp.name] = new_state
+            rect = rects_by_name.get(fp.name)
+            if rect is not None:
+                rect.state = new_state
         if hasattr(self, "view"):
             self.view.update()
 
     def disable_field(self, name: str) -> None:
         from craftgraph.painted_fields import FieldState
 
+        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
+            return
+        self._cg_field_states[name] = FieldState.CONNECTED_TO_VARIABLE
         for rect in getattr(self.view, "_cg_field_rects", []):
             if rect.name == name:
                 rect.state = FieldState.CONNECTED_TO_VARIABLE
-                self.view.update()
-                return
+                break
+        if hasattr(self, "view"):
+            self.view.update()
 
     def enable_field(self, name: str) -> None:
         from craftgraph.painted_fields import FieldState
 
+        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
+            return
+        self._cg_field_states[name] = FieldState.NORMAL
         for rect in getattr(self.view, "_cg_field_rects", []):
             if rect.name == name:
                 rect.state = FieldState.NORMAL
-                self.view.update()
-                return
+                break
+        if hasattr(self, "view"):
+            self.view.update()
 
-    def get_field_state(self, name: str):
+    def get_field_state(self, name: str) -> "FieldState | None":
         """Return the FieldState for a painted field, or None if unknown."""
-        for rect in getattr(self.view, "_cg_field_rects", []):
-            if rect.name == name:
-                return rect.state
-        return None
+        if not hasattr(self, "_cg_field_states"):
+            return None
+        return self._cg_field_states.get(name)
 
     # -- dynamic ingredient slots ------------------------------------------
 

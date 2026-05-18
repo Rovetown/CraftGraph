@@ -116,6 +116,7 @@ class TestValidatePairedFieldsPaintedPath:
     def test_required_empty_outranks_paired(self, qapp, graph):
         node = self._make_added_recipe_node(graph)
         # Pre-set pda_category to REQUIRED_EMPTY by hand to model the precedence rule.
+        node._cg_field_states["pda_category"] = FieldState.REQUIRED_EMPTY
         for r in node.view._cg_field_rects:
             if r.name == "pda_category":
                 r.state = FieldState.REQUIRED_EMPTY
@@ -124,3 +125,24 @@ class TestValidatePairedFieldsPaintedPath:
         states = {r.name: r.state for r in node.view._cg_field_rects}
         # Stays REQUIRED_EMPTY -- paired logic must not downgrade it.
         assert states["pda_category"] is FieldState.REQUIRED_EMPTY
+
+
+class TestFieldStateAccessor:
+    def _make_added_recipe_node(self, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
+        node._maybe_build_widgets()
+        return node
+
+    def test_get_field_state_after_required_validation(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        node.validate_required_fields()
+        # ItemID is required; default is "" -> REQUIRED_EMPTY.
+        assert node.get_field_state("item_id") is FieldState.REQUIRED_EMPTY
+
+    def test_get_field_state_normal_after_filling_required(self, qapp, graph):
+        node = self._make_added_recipe_node(graph)
+        node.set_property("item_id", "Titanium", push_undo=False)
+        node.validate_required_fields()
+        assert node.get_field_state("item_id") is FieldState.NORMAL
