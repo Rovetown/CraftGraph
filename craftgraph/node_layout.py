@@ -47,6 +47,7 @@ class NodeLayout:
     port_rows: dict[str, PortRowGeometry]
     value_column_width: float = 100.0
     margin: float = 8.0
+    value_v_padding: float = 3.0
 
     value_rects: dict[str, QRectF] = field(default_factory=dict)
     hit_rects: dict[str, QRectF] = field(default_factory=dict)
@@ -57,15 +58,25 @@ class NodeLayout:
         self.value_rects = {}
         self.hit_rects = {}
         self.field_rects = []
+        if self.port_rows:
+            # All value rects share the same x so the column is left-aligned
+            # regardless of how wide each port's label happens to be.
+            value_left = (
+                max(row.label_right for row in self.port_rows.values()) + self.margin
+            )
+        else:
+            value_left = 0.0
+        value_width = max(self.value_column_width, 0.0)
         for fp in self.registry:
             if fp.pin_type is PinType.INGREDIENT_LIST:
                 continue
             row = self.port_rows.get(fp.name)
             if row is None:
                 continue
-            value_left = row.label_right + self.margin
-            value_width = max(self.value_column_width, 0.0)
-            value_rect = QRectF(value_left, row.y, value_width, row.height)
+            v_pad = min(self.value_v_padding, row.height / 2.0)
+            value_top = row.y + v_pad
+            value_height = max(row.height - 2 * v_pad, 0.0)
+            value_rect = QRectF(value_left, value_top, value_width, value_height)
             hit_rect = QRectF(
                 row.label_left,
                 row.y,
@@ -83,8 +94,7 @@ class NodeLayout:
                 )
             )
         if self.port_rows:
-            widest = max(row.label_right for row in self.port_rows.values())
-            self.min_node_width = widest + self.value_column_width + self.margin
+            self.min_node_width = value_left + value_width
         else:
             self.min_node_width = 0.0
         return self

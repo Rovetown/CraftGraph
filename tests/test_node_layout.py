@@ -59,6 +59,7 @@ class TestNodeLayoutBuild:
             port_rows={"item_id": _row(y=30.0, label_left=4.0, label_right=80.0)},
             value_column_width=100.0,
             margin=8.0,
+            value_v_padding=0.0,
         ).build()
         rect = layout.value_rects["item_id"]
         assert rect.x() == pytest.approx(80.0 + 8.0)
@@ -66,12 +67,43 @@ class TestNodeLayoutBuild:
         assert rect.width() == pytest.approx(100.0)
         assert rect.height() == pytest.approx(22.0)
 
+    def test_value_rect_v_padding_shrinks_height_and_offsets_y(self) -> None:
+        layout = NodeLayout(
+            registry=_registry(("item_id", PinType.STRING)),
+            port_rows={"item_id": _row(y=10.0, height=22.0)},
+            value_v_padding=3.0,
+        ).build()
+        rect = layout.value_rects["item_id"]
+        assert rect.y() == pytest.approx(13.0)
+        assert rect.height() == pytest.approx(16.0)
+
+    def test_all_value_rects_share_left_x(self) -> None:
+        """The fix for the staircase: every value rect uses max(label_right)+margin."""
+        layout = NodeLayout(
+            registry=_registry(
+                ("short", PinType.STRING),
+                ("longer_label", PinType.STRING),
+                ("mid", PinType.STRING),
+            ),
+            port_rows={
+                "short": _row(y=0.0, label_right=40.0),
+                "longer_label": _row(y=22.0, label_right=120.0),
+                "mid": _row(y=44.0, label_right=70.0),
+            },
+            margin=8.0,
+        ).build()
+        xs = [rect.x() for rect in layout.value_rects.values()]
+        assert len(xs) == 3
+        for x in xs:
+            assert x == pytest.approx(120.0 + 8.0)
+
     def test_hit_rect_unions_label_and_value(self) -> None:
         layout = NodeLayout(
             registry=_registry(("item_id", PinType.STRING)),
             port_rows={"item_id": _row(y=0.0, label_left=4.0, label_right=80.0)},
             value_column_width=100.0,
             margin=8.0,
+            value_v_padding=0.0,
         ).build()
         hit = layout.hit_rects["item_id"]
         assert hit.left() == pytest.approx(4.0)

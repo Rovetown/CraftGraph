@@ -471,8 +471,11 @@ class PaintedFieldsNodeItem(_NodeItem):
             value_text,
         )
 
-    def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
-        """Translate a double-click into a window-level field-edit request."""
+    def mousePressEvent(self, event: Any) -> None:  # noqa: N802
+        """Single left-click on a value rect opens the floating editor."""
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
         local_pos = event.pos()
         if local_pos.isNull() and not event.scenePos().isNull():
             local_pos = self.mapFromScene(event.scenePos())
@@ -481,16 +484,16 @@ class PaintedFieldsNodeItem(_NodeItem):
             FieldState.CONNECTED_TO_VARIABLE,
             FieldState.DISABLED,
         ):
-            super().mouseDoubleClickEvent(event)
+            super().mousePressEvent(event)
             return
         node = getattr(self, "_cg_node", None)
         if node is None or rect.value_rect is None:
-            super().mouseDoubleClickEvent(event)
+            super().mousePressEvent(event)
             return
         scene = self.scene()
         view = scene.views()[0] if scene and scene.views() else None
         if view is None:
-            super().mouseDoubleClickEvent(event)
+            super().mousePressEvent(event)
             return
         scene_rect = self.mapToScene(rect.value_rect).boundingRect()
         view_rect = view.mapFromScene(scene_rect).boundingRect()
