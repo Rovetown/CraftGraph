@@ -104,7 +104,7 @@ def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
     """
     rows: dict[str, PortRowGeometry] = {}
     for port_item, text_item in node_item._input_items.items():
-        port_name = port_item.name()
+        port_name = port_item.name
         if not port_name.startswith("field_"):
             continue
         field_name = port_name[len("field_"):]

@@ -386,32 +386,28 @@ _NodeItem.auto_switch_mode = _safe_auto_switch_mode  # type: ignore[assignment]
 
 
 class PaintedFieldsNodeItem(_NodeItem):
-    """NodeItem subclass that paints a field grid in place of embedded widgets.
+    """NodeItem subclass that paints a value-rect column aligned to port rows.
 
-    Owners (e.g. ``ModifiedRecipeNode``) populate ``_cg_field_rects`` after
-    the node's geometry is known. Double-click hit-tests against those rects;
-    Task 5 wires the hit into a window-level ``FloatingEditorHost.summon``.
+    Geometry is rebuilt every paint via ``craftgraph.node_layout.NodeLayout``,
+    so the value rects always track the framework's current port positions.
+    State (REQUIRED_EMPTY, PAIRED_INCOMPLETE, CONNECTED_TO_VARIABLE) is read
+    from the owning node's ``_cg_field_states`` dict.
     """
+
+    VALUE_COLUMN_WIDTH = 100.0
+    VALUE_COLUMN_MARGIN = 8.0
 
     def __init__(self, name: str = "node", parent: Any = None) -> None:
         super().__init__(name, parent)
         self._cg_field_rects: list[FieldRect] = []
-        self._cg_field_row_height: float = 22.0
+        self._cg_hit_rects: dict[str, QRectF] = {}
 
     def _field_at(self, local_pos: QPointF) -> FieldRect | None:
         for rect in self._cg_field_rects:
-            if rect.value_rect is not None and rect.value_rect.contains(local_pos):
-                return rect
-            if rect.label_rect is not None and rect.label_rect.contains(local_pos):
+            hit = self._cg_hit_rects.get(rect.name)
+            if hit is not None and hit.contains(local_pos):
                 return rect
         return None
-
-    def boundingRect(self) -> QRectF:
-        base = super().boundingRect()
-        extra = len(self._cg_field_rects) * self._cg_field_row_height
-        if extra > 0:
-            return base.adjusted(0, 0, 0, extra)
-        return base
 
     def paint(
         self,
@@ -420,23 +416,33 @@ class PaintedFieldsNodeItem(_NodeItem):
         widget: QWidget | None = None,
     ) -> None:
         super().paint(painter, option, widget)
-        if not self._cg_field_rects:
+        from craftgraph.node_layout import NodeLayout, collect_port_geometry
+
+        node = getattr(self, "_cg_node", None)
+        if node is None or not hasattr(node, "FIELD_REGISTRY"):
             return
+
+        port_rows = collect_port_geometry(self)
+        layout = NodeLayout(
+            registry=node.FIELD_REGISTRY,
+            port_rows=port_rows,
+            value_column_width=self.VALUE_COLUMN_WIDTH,
+            margin=self.VALUE_COLUMN_MARGIN,
+        ).build()
+
+        states = getattr(node, "_cg_field_states", {})
+        for rect in layout.field_rects:
+            rect.state = states.get(rect.name, FieldState.NORMAL)
+
+        self._cg_field_rects = layout.field_rects
+        self._cg_hit_rects = layout.hit_rects
+
         painter.save()
-        font = painter.font()
-        for rect in self._cg_field_rects:
+        for rect in layout.field_rects:
             self._paint_one_field(painter, rect)
-        painter.setFont(font)
         painter.restore()
 
     def _paint_one_field(self, painter: QPainter, rect: FieldRect) -> None:
-        painter.setPen(QPen(QColor(200, 200, 200)))
-        if rect.label_rect is not None:
-            painter.drawText(
-                rect.label_rect,
-                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                rect.name,
-            )
         if rect.value_rect is None:
             return
         if rect.state is FieldState.REQUIRED_EMPTY:
@@ -461,8 +467,6 @@ class PaintedFieldsNodeItem(_NodeItem):
     def mouseDoubleClickEvent(self, event: Any) -> None:  # noqa: N802
         """Translate a double-click into a window-level field-edit request."""
         local_pos = event.pos()
-        # Some test paths and synthetic dispatches only set the scene position;
-        # fall back to mapping from scenePos when local is at origin.
         if local_pos.isNull() and not event.scenePos().isNull():
             local_pos = self.mapFromScene(event.scenePos())
         rect = self._field_at(local_pos)

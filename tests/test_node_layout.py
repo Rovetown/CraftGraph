@@ -135,12 +135,9 @@ from PySide6.QtCore import QRectF as _QRectF
 
 class _FakePortItem:
     def __init__(self, name: str, y: float, height: float = 22.0) -> None:
-        self._name = name
+        self.name = name
         self._y = y
         self._h = height
-
-    def name(self) -> str:
-        return self._name
 
     def y(self) -> float:
         return self._y

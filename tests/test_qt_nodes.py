@@ -1933,11 +1933,12 @@ class TestPaintedFieldsNodeItem:
             FieldRect(
                 name="amount",
                 pin_type=PinType.INT,
-                label_rect=QRectF(0, 0, 50, 22),
+                label_rect=None,
                 value_rect=QRectF(50, 0, 100, 22),
                 state=FieldState.NORMAL,
             )
         ]
+        item._cg_hit_rects = {"amount": QRectF(0, 0, 150, 22)}
         hit = item._field_at(QPointF(75, 10))
         assert hit is not None
         assert hit.name == "amount"
