@@ -37,3 +37,6 @@ test_sandbox/
 # Stray screen captures dropped at the repo root by Windows Snip & Sketch
 /Screenshot*.png
 /Screenshot*.jpg
+
+# Ad-hoc reference screenshots (visual diff lookups, never project assets)
+/img*.png
