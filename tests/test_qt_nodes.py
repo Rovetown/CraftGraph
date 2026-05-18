@@ -227,16 +227,16 @@ class TestModifiedRecipeRegistry:
     """Tests for ModifiedRecipeNode FIELD_REGISTRY migration."""
 
     def test_all_registry_fields_have_widgets(self, graph):
-        """Every non-INGREDIENT_LIST field should have a painted FieldRect."""
+        """Every non-INGREDIENT_LIST field should be tracked in the state dict."""
         from craftgraph.pin_registry import PinType
 
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
-        rect_names = {r.name for r in node.view._cg_field_rects}
+        field_names = set(node._cg_field_states.keys())
         for fp in node.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
-            assert fp.name in rect_names, f"Missing painted field: {fp.name}"
+            assert fp.name in field_names, f"Missing painted field: {fp.name}"
 
     def test_output_pins_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
@@ -279,11 +279,11 @@ class TestModifiedRecipeRegistry:
         """Fields that were missing before Phase A should now exist as painted fields."""
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
-        rect_names = {r.name for r in node.view._cg_field_rects}
-        assert "linked_item_ids" in rect_names
-        assert "unlocks" in rect_names
-        assert "unlocked_by" in rect_names
-        assert "force_unlock_at_start" in rect_names
+        field_names = set(node._cg_field_states.keys())
+        assert "linked_item_ids" in field_names
+        assert "unlocks" in field_names
+        assert "unlocked_by" in field_names
+        assert "force_unlock_at_start" in field_names
 
     def test_dynamic_ingredient_slots_still_work(self, graph):
         """Dynamic ingredient port behavior must survive the migration."""
@@ -440,10 +440,10 @@ class TestModifiedRecipeNode:
     def test_widgets_exist(self, graph):
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         node._maybe_build_widgets()
-        # Painted-fields path: fields are FieldRects on the view, not widgets.
-        rect_names = {r.name for r in node.view._cg_field_rects}
-        assert "item_id" in rect_names
-        assert "amount_crafted" in rect_names
+        # Painted-fields path: fields are tracked in _cg_field_states, not widgets.
+        field_names = set(node._cg_field_states.keys())
+        assert "item_id" in field_names
+        assert "amount_crafted" in field_names
 
     def test_dynamic_slot_on_connect(self, graph):
         """Connecting to ingredient_0 should spawn ingredient_1."""
@@ -1992,7 +1992,7 @@ class TestModifiedRecipeNoWidgets:
 
         node = graph.create_node(f"{IDENTIFIER}.{class_name}")
         node._maybe_build_widgets()
-        names = [r.name for r in node.view._cg_field_rects]
+        names = list(node._cg_field_states.keys())
         # ingredients (the only INGREDIENT_LIST field) must never appear in the grid.
         assert "ingredients" not in names
         assert len(names) > 0

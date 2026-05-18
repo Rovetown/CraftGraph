@@ -1395,9 +1395,6 @@ class CraftGraphBaseNode(BaseNode):
 
         if not hasattr(self, "_cg_field_states"):
             return
-        rects_by_name = {
-            r.name: r for r in getattr(self.view, "_cg_field_rects", [])
-        }
         for a, b in self.PAIRED_FIELDS:
             val_a = self.get_property(a)
             val_b = self.get_property(b)
@@ -1407,16 +1404,10 @@ class CraftGraphBaseNode(BaseNode):
                 target = a if empty_a else b
                 if self._cg_field_states.get(target) is FieldState.NORMAL:
                     self._cg_field_states[target] = FieldState.PAIRED_INCOMPLETE
-                    rect = rects_by_name.get(target)
-                    if rect is not None:
-                        rect.state = FieldState.PAIRED_INCOMPLETE
             else:
                 for name in (a, b):
                     if self._cg_field_states.get(name) is FieldState.PAIRED_INCOMPLETE:
                         self._cg_field_states[name] = FieldState.NORMAL
-                        rect = rects_by_name.get(name)
-                        if rect is not None:
-                            rect.state = FieldState.NORMAL
         if hasattr(self, "view"):
             self.view.update()
 
@@ -1576,13 +1567,14 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         _add_hierarchy_accept_constraints(self, "hierarchy")
 
     def _build_from_registry(self) -> None:
-        """Register fields as hidden properties + build the painted field grid.
+        """Register fields as hidden properties + create field input ports.
 
         Applies to every recipe-chain node (ModifiedRecipe and its subclasses:
-        AddedRecipe, AliasRecipe, CustomFood). Each subclass's own
-        FIELD_REGISTRY drives the grid layout via compute_field_grid.
+        AddedRecipe, AliasRecipe, CustomFood). Painted geometry is built by
+        PaintedFieldsNodeItem.paint each frame from port positions; this
+        method only declares state.
         """
-        from craftgraph.painted_fields import FieldState, compute_field_grid
+        from craftgraph.painted_fields import FieldState
         from NodeGraphQt.constants import NodePropWidgetEnum
 
         self._cg_field_values: dict[str, str] = {}
@@ -1612,17 +1604,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
                     if text_item is not None:
                         text_item.setPlainText(fp.label)
 
-        rects = compute_field_grid(
-            registry=self.FIELD_REGISTRY,
-            node_width=180.0,
-            row_height=22.0,
-            label_fraction=0.4,
-        )
-        # Stamp each rect with its tracked state so the rect dict and the
-        # state dict stay in sync until Task 5 deletes the rects path.
-        for rect in rects:
-            rect.state = self._cg_field_states.get(rect.name, FieldState.NORMAL)
-        self.view._cg_field_rects = rects
         self.view._cg_field_values = self._cg_field_values
 
     def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
@@ -1638,17 +1619,14 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
 
         if not hasattr(self, "_cg_field_states"):
             return
-        rects_by_name = {r.name: r for r in getattr(self.view, "_cg_field_rects", [])}
         for fp in self.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST or not fp.required:
                 continue
             value = self.get_property(fp.name) if self._cg_widgets_pending is False else ""
             empty = value is None or (isinstance(value, str) and not value.strip())
-            new_state = FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
-            self._cg_field_states[fp.name] = new_state
-            rect = rects_by_name.get(fp.name)
-            if rect is not None:
-                rect.state = new_state
+            self._cg_field_states[fp.name] = (
+                FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
+            )
         if hasattr(self, "view"):
             self.view.update()
 
@@ -1658,10 +1636,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
             return
         self._cg_field_states[name] = FieldState.CONNECTED_TO_VARIABLE
-        for rect in getattr(self.view, "_cg_field_rects", []):
-            if rect.name == name:
-                rect.state = FieldState.CONNECTED_TO_VARIABLE
-                break
         if hasattr(self, "view"):
             self.view.update()
 
@@ -1671,10 +1645,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
             return
         self._cg_field_states[name] = FieldState.NORMAL
-        for rect in getattr(self.view, "_cg_field_rects", []):
-            if rect.name == name:
-                rect.state = FieldState.NORMAL
-                break
         if hasattr(self, "view"):
             self.view.update()
 
