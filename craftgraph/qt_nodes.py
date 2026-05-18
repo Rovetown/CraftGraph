@@ -409,6 +409,13 @@ class PaintedFieldsNodeItem(_NodeItem):
                 return rect
         return None
 
+    def calc_size(self, add_w: float = 0.0, add_h: float = 0.0) -> tuple[float, float]:
+        """Reserve horizontal space for the painted value column."""
+        return super().calc_size(
+            add_w + self.VALUE_COLUMN_WIDTH + self.VALUE_COLUMN_MARGIN,
+            add_h,
+        )
+
     def paint(
         self,
         painter: QPainter,

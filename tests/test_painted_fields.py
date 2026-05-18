@@ -140,3 +140,14 @@ class TestPaintedFieldsAlignToPortRows:
             assert rect.value_rect is not None
             label_right = text_item.x() + text_item.boundingRect().width()
             assert rect.value_rect.left() >= label_right
+
+
+class TestPaintedFieldsCalcSize:
+    def test_calc_size_reserves_value_column(self, qapp, graph):
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
+        node._maybe_build_widgets()
+        base_w, _ = type(node.view).__bases__[0].calc_size(node.view)
+        actual_w, _ = node.view.calc_size()
+        assert actual_w >= base_w + node.view.VALUE_COLUMN_WIDTH
