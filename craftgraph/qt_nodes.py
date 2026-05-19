@@ -1040,12 +1040,15 @@ class CraftGraphBaseNode(BaseNode):
     SPLIT_OUTPUTS: bool = False
     HAS_SPRITE_PORT: bool = False
     IS_VARIABLE: bool = False
+    USE_PAINTED_FIELDS: bool = True
     # Pairs of boolean fields where at most one can be True.
     MUTUAL_EXCLUSIONS: list[tuple[str, str]] = []
     # Pairs of optional fields that should both be set or both be empty.
     PAIRED_FIELDS: list[tuple[str, str]] = []
 
     def __init__(self, qgraphics_item: type | None = None) -> None:
+        if qgraphics_item is None and self.USE_PAINTED_FIELDS:
+            qgraphics_item = PaintedFieldsNodeItem
         if qgraphics_item is not None:
             super().__init__(qgraphics_item)
         else:
@@ -1150,7 +1153,10 @@ class CraftGraphBaseNode(BaseNode):
     # -- Registry-driven build methods --------------------------------------
 
     def _build_from_registry(self) -> None:
-        """Create widgets and field input ports for all declared field pins."""
+        """Create field state for painted nodes; widgets for legacy ones."""
+        if self.USE_PAINTED_FIELDS:
+            self._build_painted_registry()
+            return
         for fp in self.FIELD_REGISTRY:
             if fp.pin_type == PinType.INGREDIENT_LIST:
                 continue
@@ -1174,6 +1180,40 @@ class CraftGraphBaseNode(BaseNode):
                     text_item = node_item.get_input_text_item(port_item)
                     if text_item is not None:
                         text_item.setPlainText(fp.label)
+
+    def _build_painted_registry(self) -> None:
+        """Painted-fields variant: register hidden properties, no widgets."""
+        from craftgraph.painted_fields import FieldState
+        from NodeGraphQt.constants import NodePropWidgetEnum
+
+        self._cg_field_values: dict[str, str] = {}
+        self._cg_field_states: dict[str, FieldState] = {}
+        for fp in self.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST:
+                continue
+            default = "" if fp.default is None else str(fp.default)
+            self.create_property(
+                fp.name,
+                default,
+                widget_type=NodePropWidgetEnum.HIDDEN.value,
+            )
+            self._cg_field_values[fp.name] = default
+            self._cg_field_states[fp.name] = FieldState.NORMAL
+            if not self.IS_VARIABLE:
+                port = self.add_input(
+                    f"field_{fp.name}",
+                    multi_input=False,
+                    color=PORT_COLOR_VARIABLE,
+                    display_name=True,
+                )
+                if port is not None and fp.label:
+                    port_item = port.view
+                    node_item = self.view
+                    text_item = node_item.get_input_text_item(port_item)
+                    if text_item is not None:
+                        text_item.setPlainText(fp.label)
+
+        self.view._cg_field_values = self._cg_field_values
 
     def _create_widget_for_field(self, fp: FieldPin) -> None:
         """Create the appropriate widget for a single field pin."""
@@ -1592,52 +1632,12 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     ]
 
     def __init__(self) -> None:
-        super().__init__(qgraphics_item=PaintedFieldsNodeItem)
+        super().__init__()
 
         # Structural ports (not registry-driven)
         self.add_input("hierarchy", multi_input=False, color=PORT_COLOR_HIERARCHY)
         self.add_input("ingredient_0", multi_input=False, color=PORT_COLOR_INGREDIENT)
         _add_hierarchy_accept_constraints(self, "hierarchy")
-
-    def _build_from_registry(self) -> None:
-        """Register fields as hidden properties + create field input ports.
-
-        Applies to every recipe-chain node (ModifiedRecipe and its subclasses:
-        AddedRecipe, AliasRecipe, CustomFood). Painted geometry is built by
-        PaintedFieldsNodeItem.paint each frame from port positions; this
-        method only declares state.
-        """
-        from craftgraph.painted_fields import FieldState
-        from NodeGraphQt.constants import NodePropWidgetEnum
-
-        self._cg_field_values: dict[str, str] = {}
-        self._cg_field_states: dict[str, FieldState] = {}
-        for fp in self.FIELD_REGISTRY:
-            if fp.pin_type == PinType.INGREDIENT_LIST:
-                continue
-            default = "" if fp.default is None else str(fp.default)
-            self.create_property(
-                fp.name,
-                default,
-                widget_type=NodePropWidgetEnum.HIDDEN.value,
-            )
-            self._cg_field_values[fp.name] = default
-            self._cg_field_states[fp.name] = FieldState.NORMAL
-            if not self.IS_VARIABLE:
-                port = self.add_input(
-                    f"field_{fp.name}",
-                    multi_input=False,
-                    color=PORT_COLOR_VARIABLE,
-                    display_name=True,
-                )
-                if port is not None and fp.label:
-                    port_item = port.view
-                    node_item = self.view
-                    text_item = node_item.get_input_text_item(port_item)
-                    if text_item is not None:
-                        text_item.setPlainText(fp.label)
-
-        self.view._cg_field_values = self._cg_field_values
 
     def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
         super().set_property(name, value, push_undo=push_undo)
@@ -2138,6 +2138,7 @@ class OrphanIngredientNode(CraftGraphBaseNode):
     NODE_NAME = "Orphan Ingredient"
     NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
     IS_ORPHAN: bool = True
+    USE_PAINTED_FIELDS = False
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID"),
@@ -2207,6 +2208,7 @@ class SpriteNode(CraftGraphBaseNode):
 
     NODE_NAME = "Sprite"
     NODE_COLOR = NODE_COLOR_SPRITE
+    USE_PAINTED_FIELDS = False
 
     FIELD_REGISTRY = [
         FieldPin("file_path", PinType.STRING, label="File"),

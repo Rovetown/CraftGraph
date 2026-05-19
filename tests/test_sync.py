@@ -288,8 +288,8 @@ class TestPopulateGraph:
 
         node = result[id(fab)]
         node._maybe_build_widgets()
-        assert node.get_widget("item_id").get_value() == "MyFab"
-        assert node.get_widget("display_name").get_value() == "My Fab"
+        assert node.get_property("item_id") == "MyFab"
+        assert node.get_property("display_name") == "My Fab"
 
     def test_top_level_tab(self, graph):
         tab = CraftingTab(tab_id="Resources", display_name="Resources")
@@ -299,7 +299,7 @@ class TestPopulateGraph:
         assert len(result) == 1
         node = result[id(tab)]
         node._maybe_build_widgets()
-        assert node.get_widget("tab_id").get_value() == "Resources"
+        assert node.get_property("tab_id") == "Resources"
 
     def test_multiple_files(self, graph):
         r1 = ModifiedRecipe(item_id="A")
