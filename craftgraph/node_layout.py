@@ -91,6 +91,7 @@ class NodeLayout:
                     pin_type=fp.pin_type,
                     label_rect=None,
                     value_rect=value_rect,
+                    render_as=fp.render_as,
                 )
             )
         if self.port_rows:

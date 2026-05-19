@@ -185,3 +185,68 @@ class TestPaintedFieldsSingleClickEdit:
         event = self._make_event(item_id_rect.value_rect.center(), Qt.MouseButton.RightButton)
         node.view.mousePressEvent(event)
         assert not fired
+
+
+class TestRenderAsDispatch:
+    """render_as routes paint to either text or swatch path."""
+
+    def test_swatch_field_fills_value_rect(self, qapp, graph):
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QColor, QPainter, QPixmap
+        from craftgraph.painted_fields import FieldRect, FieldState
+        from craftgraph.pin_registry import PinType
+
+        node = TestPaintedFieldsAlignToPortRows._make_added_recipe_node(
+            TestPaintedFieldsAlignToPortRows(), graph
+        )
+        node.view._cg_field_values = {"swatch_field": "0.5, 0.25, 0.75, 1.0"}
+        rect = FieldRect(
+            name="swatch_field",
+            pin_type=PinType.CSV,
+            label_rect=None,
+            value_rect=QRectF(0, 0, 40, 20),
+            state=FieldState.NORMAL,
+            render_as="swatch",
+        )
+
+        pixmap = QPixmap(100, 100)
+        pixmap.fill(QColor("black"))
+        painter = QPainter(pixmap)
+        try:
+            node.view._paint_one_field(painter, rect)
+        finally:
+            painter.end()
+
+        center = pixmap.toImage().pixelColor(20, 10)
+        assert abs(center.redF() - 0.5) < 0.02
+        assert abs(center.greenF() - 0.25) < 0.02
+        assert abs(center.blueF() - 0.75) < 0.02
+
+    def test_text_field_does_not_fill(self, qapp, graph):
+        from PySide6.QtCore import QRectF
+        from PySide6.QtGui import QColor, QPainter, QPixmap
+        from craftgraph.painted_fields import FieldRect, FieldState
+        from craftgraph.pin_registry import PinType
+
+        node = TestPaintedFieldsAlignToPortRows._make_added_recipe_node(
+            TestPaintedFieldsAlignToPortRows(), graph
+        )
+        node.view._cg_field_values = {"text_field": "Titanium"}
+        rect = FieldRect(
+            name="text_field",
+            pin_type=PinType.STRING,
+            label_rect=None,
+            value_rect=QRectF(0, 0, 40, 20),
+            state=FieldState.NORMAL,
+        )
+
+        pixmap = QPixmap(100, 100)
+        pixmap.fill(QColor("black"))
+        painter = QPainter(pixmap)
+        try:
+            node.view._paint_one_field(painter, rect)
+        finally:
+            painter.end()
+
+        center = pixmap.toImage().pixelColor(20, 10)
+        assert center.redF() < 0.1  # still black inside rect (text only)

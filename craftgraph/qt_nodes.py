@@ -452,6 +452,14 @@ class PaintedFieldsNodeItem(_NodeItem):
     def _paint_one_field(self, painter: QPainter, rect: FieldRect) -> None:
         if rect.value_rect is None:
             return
+        if rect.render_as == "swatch":
+            self._paint_swatch_field(painter, rect)
+            return
+        self._paint_text_field(painter, rect)
+
+    def _paint_text_field(self, painter: QPainter, rect: FieldRect) -> None:
+        if rect.value_rect is None:
+            return
         if rect.state is FieldState.REQUIRED_EMPTY:
             painter.setPen(QPen(QColor(220, 60, 60), 1.5))
         elif rect.state is FieldState.PAIRED_INCOMPLETE:
@@ -470,6 +478,28 @@ class PaintedFieldsNodeItem(_NodeItem):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             value_text,
         )
+
+    def _paint_swatch_field(self, painter: QPainter, rect: FieldRect) -> None:
+        if rect.value_rect is None:
+            return
+        value_text = getattr(self, "_cg_field_values", {}).get(rect.name, "")
+        color = self._parse_swatch_color(value_text)
+        painter.fillRect(rect.value_rect, color)
+        painter.setPen(QPen(QColor(80, 80, 80)))
+        painter.drawRect(rect.value_rect)
+
+    @staticmethod
+    def _parse_swatch_color(value: str) -> QColor:
+        parts = [p.strip() for p in str(value).split(",") if p.strip()]
+        try:
+            comps = [max(0.0, min(1.0, float(p))) for p in parts[:4]]
+        except ValueError:
+            return QColor(60, 60, 60)
+        if len(comps) < 3:
+            return QColor(60, 60, 60)
+        r, g, b = comps[0], comps[1], comps[2]
+        a = comps[3] if len(comps) == 4 else 1.0
+        return QColor.fromRgbF(r, g, b, a)
 
     def mousePressEvent(self, event: Any) -> None:  # noqa: N802
         """Single left-click on a value rect opens the floating editor."""

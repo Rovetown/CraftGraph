@@ -34,3 +34,4 @@ class FieldRect:
     label_rect: QRectF | None
     value_rect: QRectF | None
     state: FieldState = FieldState.NORMAL
+    render_as: str = "text"
