@@ -76,21 +76,22 @@ class TestPaintedFieldsAlignToPortRows:
         node = self._make_added_recipe_node(graph)
         self._force_paint(node)
         port_rows_by_field = {}
-        for port_item, _text in node.view._input_items.items():
+        for port_item, text_item in node.view._input_items.items():
             name = port_item.name
             if name.startswith("field_"):
-                port_rows_by_field[name[len("field_"):]] = (
-                    port_item.y(),
+                row_h = max(
                     port_item.boundingRect().height(),
+                    text_item.boundingRect().height(),
                 )
+                port_rows_by_field[name[len("field_"):]] = (port_item.y(), row_h)
         rects_by_name = {r.name: r for r in node.view._cg_field_rects}
-        for field_name, (port_y, port_h) in port_rows_by_field.items():
+        for field_name, (port_y, row_h) in port_rows_by_field.items():
             rect = rects_by_name.get(field_name)
             assert rect is not None, f"missing rect for {field_name}"
             assert rect.value_rect is not None
-            port_center = port_y + port_h / 2.0
+            row_center = port_y + row_h / 2.0
             value_center = rect.value_rect.y() + rect.value_rect.height() / 2.0
-            assert abs(value_center - port_center) < 0.5
+            assert abs(value_center - row_center) < 0.5
 
     def test_value_rect_does_not_overlap_port_label(self, qapp, graph):
         node = self._make_added_recipe_node(graph)
