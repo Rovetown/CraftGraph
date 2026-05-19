@@ -3879,7 +3879,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         view_rect: object,
         current_value: str,
     ) -> None:
+        from craftgraph.qt_variable_nodes import ColorVarNode
+
         self._active_node_for_edit = node
+        if isinstance(node, ColorVarNode):
+            node.open_color_dialog()
+            return
         completer_words: list[str] | None = None
         if field_name in self._ID_WIDGET_NAMES:
             completer_words = self._get_id_words()

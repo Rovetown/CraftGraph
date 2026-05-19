@@ -170,16 +170,50 @@ class PathVarNode(VariableNode):
 
 
 class ColorVarNode(VariableNode):
-    """Holds an RGB color as comma-separated floats. Connects to CSV field pins."""
+    """Holds an RGB(A) color as comma-separated floats. Painted as a swatch."""
 
     NODE_NAME = "Color Variable"
 
     FIELD_REGISTRY = [
-        FieldPin("value", PinType.CSV, label="RGB", default="0.0, 0.0, 0.0"),
+        FieldPin(
+            "value",
+            PinType.CSV,
+            label="RGB",
+            default="0.0, 0.0, 0.0",
+            render_as="swatch",
+        ),
     ]
     OUTPUT_PINS = [
         OutputPin("value_out", label="Color", pin_color=PORT_COLOR_VAR_OUT),
     ]
+
+    def open_color_dialog(self) -> None:
+        """Open QColorDialog and write the chosen RGBA back to the value field."""
+        from PySide6.QtWidgets import QColorDialog
+
+        current = self._parse_current_color()
+        chosen = QColorDialog.getColor(current, None, "Pick color")
+        if not chosen.isValid():
+            return
+        formatted = (
+            f"{chosen.redF():.3f}, {chosen.greenF():.3f}, "
+            f"{chosen.blueF():.3f}, {chosen.alphaF():.3f}"
+        )
+        self.set_property("value", formatted)
+        self._cg_field_values["value"] = formatted
+
+    def _parse_current_color(self):
+        from PySide6.QtGui import QColor
+
+        parts = [p.strip() for p in self._cg_field_values.get("value", "").split(",")]
+        try:
+            comps = [max(0.0, min(1.0, float(p))) for p in parts[:4]]
+        except ValueError:
+            return QColor(0, 0, 0)
+        if len(comps) < 3:
+            return QColor(0, 0, 0)
+        a = comps[3] if len(comps) == 4 else 1.0
+        return QColor.fromRgbF(comps[0], comps[1], comps[2], a)
 
 
 class GetFabricatorNode(VariableNode):
