@@ -63,6 +63,7 @@ class FieldPin:
     preferred_var_kind: str | None = None
     widget_override: str | None = None
     help_text: str = ""
+    render_as: str = "text"
 
     @property
     def resolved_model_field(self) -> str:

@@ -301,3 +301,17 @@ class TestConvertToDisplay:
         fp = FieldPin("copied", PinType.BOOL, default=False)
         assert convert_to_display(fp, True) is True
         assert convert_to_display(fp, False) is False
+
+
+class TestFieldPinRenderAs:
+    def test_render_as_defaults_to_text(self):
+        from craftgraph.pin_registry import FieldPin, PinType
+
+        fp = FieldPin("value", PinType.STRING)
+        assert fp.render_as == "text"
+
+    def test_render_as_swatch_accepted(self):
+        from craftgraph.pin_registry import FieldPin, PinType
+
+        fp = FieldPin("value", PinType.CSV, render_as="swatch")
+        assert fp.render_as == "swatch"
