@@ -1046,6 +1046,54 @@ class CraftGraphBaseNode(BaseNode):
         if getattr(self, "_cg_widgets_pending", False):
             self._maybe_build_widgets()
         super().set_property(name, value, push_undo=push_undo)
+        # Mirror the new value into the painted-fields cache so the next paint
+        # picks it up. The view's reference is re-pointed in case anything
+        # rebuilt the dict in between.
+        if hasattr(self, "_cg_field_values") and name in self._cg_field_values:
+            self._cg_field_values[name] = "" if value is None else str(value)
+            if hasattr(self, "view"):
+                self.view._cg_field_values = self._cg_field_values
+                self.view.update()
+
+    def validate_required_fields(self) -> None:
+        from craftgraph.painted_fields import FieldState
+
+        if not hasattr(self, "_cg_field_states"):
+            return
+        for fp in self.FIELD_REGISTRY:
+            if fp.pin_type == PinType.INGREDIENT_LIST or not fp.required:
+                continue
+            value = self.get_property(fp.name) if self._cg_widgets_pending is False else ""
+            empty = value is None or (isinstance(value, str) and not value.strip())
+            self._cg_field_states[fp.name] = (
+                FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
+            )
+        if hasattr(self, "view"):
+            self.view.update()
+
+    def disable_field(self, name: str) -> None:
+        from craftgraph.painted_fields import FieldState
+
+        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
+            return
+        self._cg_field_states[name] = FieldState.CONNECTED_TO_VARIABLE
+        if hasattr(self, "view"):
+            self.view.update()
+
+    def enable_field(self, name: str) -> None:
+        from craftgraph.painted_fields import FieldState
+
+        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
+            return
+        self._cg_field_states[name] = FieldState.NORMAL
+        if hasattr(self, "view"):
+            self.view.update()
+
+    def get_field_state(self, name: str) -> "FieldState | None":
+        """Return the FieldState for a painted field, or None if unknown."""
+        if not hasattr(self, "_cg_field_states"):
+            return None
+        return self._cg_field_states.get(name)
 
     # -- Edit history and model population ----------------------------------
 
@@ -1097,21 +1145,6 @@ class CraftGraphBaseNode(BaseNode):
         amount = getattr(self._model_ref, "amount_crafted", 1)
         title = f"{item_id} (x{amount})" if amount > 1 else item_id
         self.set_name(title)
-
-    def validate_required_fields(self) -> None:
-        """Apply or remove red border on required fields based on emptiness."""
-        for fp in self.FIELD_REGISTRY:
-            if not fp.required:
-                continue
-            widget_item = self.get_widget(fp.name)
-            if widget_item is None:
-                continue
-            qt_widget = widget_item.get_custom_widget()
-            if qt_widget is None:
-                continue
-            value = self.get_property(fp.name)
-            empty = value is None or (isinstance(value, str) and not value.strip())
-            qt_widget.setStyleSheet(_REQUIRED_EMPTY_STYLE if empty else _REQUIRED_VALID_STYLE)
 
     def _get_field_pin(self, name: str) -> FieldPin | None:
         """Look up a FieldPin by widget/property name."""
@@ -1210,32 +1243,6 @@ class CraftGraphBaseNode(BaseNode):
         if hasattr(self, "view"):
             self.view.update()
 
-    # -- Variable override helpers -------------------------------------------
-
-    def disable_field(self, field_name: str) -> None:
-        """Gray out a field widget (variable node connected).
-
-        No-op if the field name does not match any widget.
-        """
-        widget_item = self.get_widget(field_name)
-        if widget_item is None:
-            return
-        qt_widget = widget_item.get_custom_widget()
-        if qt_widget is not None:
-            qt_widget.setEnabled(False)
-
-    def enable_field(self, field_name: str) -> None:
-        """Re-enable a field widget (variable node disconnected).
-
-        No-op if the field name does not match any widget.
-        """
-        widget_item = self.get_widget(field_name)
-        if widget_item is None:
-            return
-        qt_widget = widget_item.get_custom_widget()
-        if qt_widget is not None:
-            qt_widget.setEnabled(True)
-
     # -- Ingredient port label helpers ----------------------------------------
 
     def _set_ingredient_port_label(self, port: object, label: str) -> None:
@@ -1308,54 +1315,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         self.add_input("hierarchy", multi_input=False, color=PORT_COLOR_HIERARCHY)
         self.add_input("ingredient_0", multi_input=False, color=PORT_COLOR_INGREDIENT)
         _add_hierarchy_accept_constraints(self, "hierarchy")
-
-    def set_property(self, name: str, value: Any, push_undo: bool = True) -> None:
-        super().set_property(name, value, push_undo=push_undo)
-        if hasattr(self, "_cg_field_values") and name in self._cg_field_values:
-            self._cg_field_values[name] = "" if value is None else str(value)
-            if hasattr(self, "view"):
-                self.view._cg_field_values = self._cg_field_values
-                self.view.update()
-
-    def validate_required_fields(self) -> None:
-        from craftgraph.painted_fields import FieldState
-
-        if not hasattr(self, "_cg_field_states"):
-            return
-        for fp in self.FIELD_REGISTRY:
-            if fp.pin_type == PinType.INGREDIENT_LIST or not fp.required:
-                continue
-            value = self.get_property(fp.name) if self._cg_widgets_pending is False else ""
-            empty = value is None or (isinstance(value, str) and not value.strip())
-            self._cg_field_states[fp.name] = (
-                FieldState.REQUIRED_EMPTY if empty else FieldState.NORMAL
-            )
-        if hasattr(self, "view"):
-            self.view.update()
-
-    def disable_field(self, name: str) -> None:
-        from craftgraph.painted_fields import FieldState
-
-        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
-            return
-        self._cg_field_states[name] = FieldState.CONNECTED_TO_VARIABLE
-        if hasattr(self, "view"):
-            self.view.update()
-
-    def enable_field(self, name: str) -> None:
-        from craftgraph.painted_fields import FieldState
-
-        if not hasattr(self, "_cg_field_states") or name not in self._cg_field_states:
-            return
-        self._cg_field_states[name] = FieldState.NORMAL
-        if hasattr(self, "view"):
-            self.view.update()
-
-    def get_field_state(self, name: str) -> "FieldState | None":
-        """Return the FieldState for a painted field, or None if unknown."""
-        if not hasattr(self, "_cg_field_states"):
-            return None
-        return self._cg_field_states.get(name)
 
     # -- dynamic ingredient slots ------------------------------------------
 
