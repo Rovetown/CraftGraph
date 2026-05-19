@@ -19,16 +19,12 @@ from typing import Any
 
 
 class PinType(Enum):
-    """Widget type for a field pin.
+    """Type tag for a field pin.
 
-    Each variant maps to a widget factory method in CraftGraphBaseNode:
-      STRING -> add_text_input()
-      INT    -> add_int_edit()
-      FLOAT  -> add_float_edit()
-      BOOL   -> add_checkbox()
-      ENUM   -> add_combo_menu()
-      CSV    -> add_text_input() (comma-separated, parsed to list)
-      INGREDIENT_LIST -> skipped (handled by dynamic ingredient ports)
+    Painted-fields nodes render every type through the shared paint path;
+    INT/FLOAT/STRING/CSV/ENUM/BOOL become text or swatch in the value rect,
+    with the floating editor pool handling input. INGREDIENT_LIST is
+    skipped (handled by dynamic ingredient ports).
     """
 
     STRING = "string"

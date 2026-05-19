@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from NodeGraphQt import BaseNode
-from NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PortTypeEnum, ViewerEnum
+from NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PortTypeEnum
 from NodeGraphQt.widgets.node_widgets import NodeBaseWidget, _NodeGroupBox
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap
@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QGraphicsItem,
     QGraphicsView,
-    QHBoxLayout,
     QLineEdit,
     QPushButton,
     QStyleOptionGraphicsItem,
@@ -37,7 +36,6 @@ from PySide6.QtWidgets import (
 )
 
 from craftgraph.config import get_config
-from craftgraph.theme import scaled_pt
 from craftgraph.models import (
     FABRICATOR_MODELS,
     FOOD_MODELS,
@@ -637,256 +635,6 @@ def _render_sprite_pixmap(path: Path, size_px: int) -> QPixmap:
     )
 
 
-class _IntEditWidget(QWidget):
-    """Compact integer editor with explicit -/+ buttons.
-
-    Avoids the QSpinBox-in-QGraphicsProxyWidget bug where the up arrow
-    button intercepts clicks as text selection instead of incrementing.
-    """
-
-    valueChanged = Signal(int)
-
-    def __init__(
-        self,
-        value: int = 0,
-        min_value: int = 0,
-        max_value: int = 99,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._min = min_value
-        self._max = max_value
-
-        bg = ViewerEnum.BACKGROUND_COLOR.value
-        txt = tuple(255 - c for c in bg)
-        grid = ViewerEnum.GRID_COLOR.value
-
-        btn_style = (
-            "QPushButton {{ background: rgba({0},{1},{2},20);"
-            " border: 1px solid rgb({3},{4},{5});"
-            " border-radius: 3px;"
-            " color: rgba({6},{7},{8},150);"
-            " min-width: 18px; max-width: 18px;"
-            " min-height: 18px; max-height: 18px;"
-            f" font-size: {scaled_pt(11)}pt; font-weight: bold; }}}}"
-            " QPushButton:hover {{ background: rgba({0},{1},{2},60); }}"
-        ).format(*bg, *grid, *txt)
-
-        edit_style = (
-            "QLineEdit {{ background: rgba({0},{1},{2},20);"
-            " border: 1px solid rgb({3},{4},{5});"
-            " border-radius: 3px;"
-            " color: rgba({6},{7},{8},150);"
-            " selection-background-color: rgba({6},{7},{8},100); }}"
-        ).format(*bg, *grid, *txt)
-
-        self._minus_btn = QPushButton("-")
-        self._minus_btn.setStyleSheet(btn_style)
-        self._minus_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._minus_btn.clicked.connect(self._step_down)
-
-        self._edit = QLineEdit(str(value))
-        self._edit.setStyleSheet(edit_style)
-        self._edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._edit.setMaximumWidth(40)
-        self._edit.editingFinished.connect(self._on_editing_finished)
-
-        self._plus_btn = QPushButton("+")
-        self._plus_btn.setStyleSheet(btn_style)
-        self._plus_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._plus_btn.clicked.connect(self._step_up)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        layout.addWidget(self._minus_btn)
-        layout.addWidget(self._edit)
-        layout.addWidget(self._plus_btn)
-
-    def value(self) -> int:
-        try:
-            return max(self._min, min(self._max, int(self._edit.text())))
-        except ValueError:
-            return self._min
-
-    def setValue(self, v: int) -> None:
-        clamped = max(self._min, min(self._max, v))
-        if str(clamped) != self._edit.text():
-            self._edit.setText(str(clamped))
-            self.valueChanged.emit(clamped)
-
-    def _step_up(self) -> None:
-        self.setValue(self.value() + 1)
-
-    def _step_down(self) -> None:
-        self.setValue(self.value() - 1)
-
-    def _on_editing_finished(self) -> None:
-        self.setValue(self.value())
-
-
-class NodeIntEdit(NodeBaseWidget):
-    """Integer editor node widget using explicit -/+ buttons.
-
-    Drop-in replacement for ``NodeSpinBox`` that works reliably inside
-    ``QGraphicsProxyWidget``.
-    """
-
-    def __init__(
-        self,
-        parent: object = None,
-        name: str = "",
-        label: str = "",
-        value: int = 0,
-        min_value: int = 0,
-        max_value: int = 99,
-    ) -> None:
-        super().__init__(parent, name, label)
-        self.setZValue(Z_VAL_NODE_WIDGET + 1)
-        widget = _IntEditWidget(value, min_value, max_value)
-        widget.valueChanged.connect(self.on_value_changed)
-        self.set_custom_widget(widget)
-        self.widget().setMaximumWidth(140)
-
-    @property
-    def type_(self) -> str:  # type: ignore[override]
-        return "IntEditNodeWidget"
-
-    def get_value(self) -> str:
-        return str(self.get_custom_widget().value())
-
-    def set_value(self, value: int | str = 0) -> None:
-        v = int(value) if isinstance(value, str) else value
-        if v != self.get_custom_widget().value():
-            self.get_custom_widget().setValue(v)
-            self.on_value_changed()
-
-
-class _FloatEditWidget(QWidget):
-    """Compact float editor with explicit -/+ buttons.
-
-    Same UX as ``_IntEditWidget`` but operates on float values with a
-    configurable step size (default 10.0 for energy values).
-    """
-
-    valueChanged = Signal(float)
-
-    def __init__(
-        self,
-        value: float = 0.0,
-        min_value: float = 0.0,
-        max_value: float = 99999.0,
-        step: float = 10.0,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self._min = min_value
-        self._max = max_value
-        self._step = step
-
-        bg = ViewerEnum.BACKGROUND_COLOR.value
-        txt = tuple(255 - c for c in bg)
-        grid = ViewerEnum.GRID_COLOR.value
-
-        btn_style = (
-            "QPushButton {{ background: rgba({0},{1},{2},20);"
-            " border: 1px solid rgb({3},{4},{5});"
-            " border-radius: 3px;"
-            " color: rgba({6},{7},{8},150);"
-            " min-width: 18px; max-width: 18px;"
-            " min-height: 18px; max-height: 18px;"
-            f" font-size: {scaled_pt(11)}pt; font-weight: bold; }}}}"
-            " QPushButton:hover {{ background: rgba({0},{1},{2},60); }}"
-        ).format(*bg, *grid, *txt)
-
-        edit_style = (
-            "QLineEdit {{ background: rgba({0},{1},{2},20);"
-            " border: 1px solid rgb({3},{4},{5});"
-            " border-radius: 3px;"
-            " color: rgba({6},{7},{8},150);"
-            " selection-background-color: rgba({6},{7},{8},100); }}"
-        ).format(*bg, *grid, *txt)
-
-        self._minus_btn = QPushButton("-")
-        self._minus_btn.setStyleSheet(btn_style)
-        self._minus_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._minus_btn.clicked.connect(self._step_down)
-
-        self._edit = QLineEdit(str(value))
-        self._edit.setStyleSheet(edit_style)
-        self._edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._edit.setMaximumWidth(55)
-        self._edit.editingFinished.connect(self._on_editing_finished)
-
-        self._plus_btn = QPushButton("+")
-        self._plus_btn.setStyleSheet(btn_style)
-        self._plus_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._plus_btn.clicked.connect(self._step_up)
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        layout.addWidget(self._minus_btn)
-        layout.addWidget(self._edit)
-        layout.addWidget(self._plus_btn)
-
-    def value(self) -> float:
-        try:
-            return max(self._min, min(self._max, float(self._edit.text())))
-        except ValueError:
-            return self._min
-
-    def setValue(self, v: float) -> None:
-        clamped = max(self._min, min(self._max, v))
-        display = f"{clamped:g}"
-        if display != self._edit.text():
-            self._edit.setText(display)
-            self.valueChanged.emit(clamped)
-
-    def _step_up(self) -> None:
-        self.setValue(self.value() + self._step)
-
-    def _step_down(self) -> None:
-        self.setValue(self.value() - self._step)
-
-    def _on_editing_finished(self) -> None:
-        self.setValue(self.value())
-
-
-class NodeFloatEdit(NodeBaseWidget):
-    """Float editor node widget using explicit -/+ buttons."""
-
-    def __init__(
-        self,
-        parent: object = None,
-        name: str = "",
-        label: str = "",
-        value: float = 0.0,
-        min_value: float = 0.0,
-        max_value: float = 99999.0,
-        step: float = 10.0,
-    ) -> None:
-        super().__init__(parent, name, label)
-        self.setZValue(Z_VAL_NODE_WIDGET + 1)
-        widget = _FloatEditWidget(value, min_value, max_value, step)
-        widget.valueChanged.connect(self.on_value_changed)
-        self.set_custom_widget(widget)
-        self.widget().setMaximumWidth(140)
-
-    @property
-    def type_(self) -> str:  # type: ignore[override]
-        return "FloatEditNodeWidget"
-
-    def get_value(self) -> str:
-        return str(self.get_custom_widget().value())
-
-    def set_value(self, value: float | str = 0.0) -> None:
-        v = float(value) if isinstance(value, str) else value
-        if v != self.get_custom_widget().value():
-            self.get_custom_widget().setValue(v)
-            self.on_value_changed()
-
-
 def _to_pascal_case(text: str) -> str:
     """Convert a lowercase or mixed-case ID to PascalCase for display.
 
@@ -1226,23 +974,6 @@ class CraftGraphBaseNode(BaseNode):
                     self.add_combo_menu(fp.name, label=fp.label, items=items)
                 else:
                     self.add_text_input(fp.name, label=fp.label, text=str(fp.default or ""))
-            case PinType.INT:
-                self.add_int_edit(
-                    fp.name,
-                    label=fp.label,
-                    value=fp.default if fp.default is not None else 0,
-                    min_value=int(fp.min_val) if fp.min_val is not None else 0,
-                    max_value=int(fp.max_val) if fp.max_val is not None else 99,
-                )
-            case PinType.FLOAT:
-                self.add_float_edit(
-                    fp.name,
-                    label=fp.label,
-                    value=fp.default if fp.default is not None else 0.0,
-                    min_value=float(fp.min_val) if fp.min_val is not None else 0.0,
-                    max_value=float(fp.max_val) if fp.max_val is not None else 99999.0,
-                    step=fp.step,
-                )
             case PinType.BOOL:
                 self.add_checkbox(fp.name, label=fp.label, state=bool(fp.default))
             case PinType.ENUM:
@@ -1259,11 +990,6 @@ class CraftGraphBaseNode(BaseNode):
                 elif isinstance(qt_widget, QComboBox):
                     qt_widget.currentTextChanged.connect(qt_widget.setToolTip)
                     qt_widget.setToolTip(qt_widget.currentText())
-                elif hasattr(qt_widget, "_edit"):
-                    # _IntEditWidget / _FloatEditWidget: inner QLineEdit
-                    inner = qt_widget._edit
-                    inner.textChanged.connect(inner.setToolTip)
-                    inner.setToolTip(inner.text())
 
     def _build_outputs(self) -> None:
         """Create output ports from OUTPUT_PINS declarations."""
@@ -1509,62 +1235,6 @@ class CraftGraphBaseNode(BaseNode):
         qt_widget = widget_item.get_custom_widget()
         if qt_widget is not None:
             qt_widget.setEnabled(True)
-
-    # -- Custom widget helpers ----------------------------------------------
-
-    def add_int_edit(
-        self,
-        name: str,
-        label: str = "",
-        value: int = 0,
-        min_value: int = 0,
-        max_value: int = 99,
-    ) -> None:
-        """Add a ``NodeIntEdit`` widget (replaces ``add_spinbox``).
-
-        Uses explicit -/+ buttons instead of QSpinBox to avoid the
-        QGraphicsProxyWidget hit-testing bug with arrow buttons.
-
-        The ``parent=self.view`` argument is critical: NodeGraphQt's
-        built-in widgets (NodeLineEdit, NodeComboBox, etc.) receive
-        ``self.view`` (the NodeItem QGraphicsItem) as their parent in
-        their constructors. Without this, the QGraphicsProxyWidget is
-        a rootless orphan in the scene graph and never renders.
-        """
-        widget = NodeIntEdit(
-            parent=self.view,
-            name=name,
-            label=label,
-            value=value,
-            min_value=min_value,
-            max_value=max_value,
-        )
-        self.add_custom_widget(widget)
-
-    def add_float_edit(
-        self,
-        name: str,
-        label: str = "",
-        value: float = 0.0,
-        min_value: float = 0.0,
-        max_value: float = 99999.0,
-        step: float = 10.0,
-    ) -> None:
-        """Add a ``NodeFloatEdit`` widget for float properties.
-
-        Same parent-passing requirement as ``add_int_edit`` -- see its docstring.
-        """
-        widget = NodeFloatEdit(
-            parent=self.view,
-            name=name,
-            label=label,
-            value=value,
-            min_value=min_value,
-            max_value=max_value,
-            step=step,
-        )
-        self.add_custom_widget(widget)
-
 
     # -- Ingredient port label helpers ----------------------------------------
 
