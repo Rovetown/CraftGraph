@@ -112,10 +112,6 @@ def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
     Must be called after NodeGraphQt's ``align_ports`` has run for that
     node (typically inside ``PaintedFieldsNodeItem.paint`` immediately
     after ``super().paint(...)``); before that, ``port.y()`` may be 0.
-
-    For variable nodes (IS_VARIABLE) there are no field_ input ports, so
-    we fall back to the node's output port row and key it under the single
-    registered field's name (``value`` by convention).
     """
     rows: dict[str, PortRowGeometry] = {}
     for port_item, text_item in node_item._input_items.items():
@@ -131,24 +127,4 @@ def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
             label_left=text_item.x(),
             label_right=text_item.x() + text_rect.width(),
         )
-    if rows:
-        return rows
-    node = getattr(node_item, "_cg_node", None)
-    if node is None or not getattr(node, "IS_VARIABLE", False):
-        return rows
-    registry = getattr(node, "FIELD_REGISTRY", None) or []
-    fp = next((p for p in registry if p.pin_type is not PinType.INGREDIENT_LIST), None)
-    if fp is None:
-        return rows
-    out_items = getattr(node_item, "_output_items", None) or {}
-    for port_item, text_item in out_items.items():
-        port_rect = port_item.boundingRect()
-        text_rect = text_item.boundingRect()
-        rows[fp.name] = PortRowGeometry(
-            y=port_item.y(),
-            height=max(port_rect.height(), text_rect.height()),
-            label_left=0.0,
-            label_right=0.0,
-        )
-        break
     return rows
