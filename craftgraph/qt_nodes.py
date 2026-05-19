@@ -441,23 +441,26 @@ class PaintedFieldsNodeItem(_NodeItem):
         if node is None or not hasattr(node, "FIELD_REGISTRY"):
             return
 
-        port_rows = collect_port_geometry(self)
-        layout = NodeLayout(
-            registry=node.FIELD_REGISTRY,
-            port_rows=port_rows,
-            value_column_width=self.VALUE_COLUMN_WIDTH,
-            margin=self.VALUE_COLUMN_MARGIN,
-        ).build()
+        cached = getattr(self, "_cg_cached_layout", None)
+        if cached is None or getattr(self, "_cg_layout_dirty", True):
+            port_rows = collect_port_geometry(self)
+            cached = NodeLayout(
+                registry=node.FIELD_REGISTRY,
+                port_rows=port_rows,
+                value_column_width=self.VALUE_COLUMN_WIDTH,
+                margin=self.VALUE_COLUMN_MARGIN,
+            ).build()
+            self._cg_cached_layout = cached
+            self._cg_layout_dirty = False
+            self._cg_field_rects = cached.field_rects
+            self._cg_hit_rects = cached.hit_rects
 
         states = getattr(node, "_cg_field_states", {})
-        for rect in layout.field_rects:
+        for rect in cached.field_rects:
             rect.state = states.get(rect.name, FieldState.NORMAL)
 
-        self._cg_field_rects = layout.field_rects
-        self._cg_hit_rects = layout.hit_rects
-
         painter.save()
-        for rect in layout.field_rects:
+        for rect in cached.field_rects:
             self._paint_one_field(painter, rect)
         painter.restore()
 
@@ -1013,6 +1016,7 @@ class CraftGraphBaseNode(BaseNode):
                         text_item.setPlainText(fp.label)
 
         self.view._cg_field_values = self._cg_field_values
+        self.view._cg_layout_dirty = True
 
     def _create_widget_for_field(self, fp: FieldPin) -> None:
         """Create the appropriate widget for a single field pin."""
@@ -1389,6 +1393,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
             color=PORT_COLOR_INGREDIENT,
         )
         self._label_ingredient_port(in_port, out_port)
+        self.view._cg_layout_dirty = True
 
     def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
         """Remove redundant trailing empty ingredient slots on disconnect.
@@ -1402,12 +1407,16 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
         # Pop only when there are 2+ trailing empties, preserving one as the
         # next-slot placeholder.
+        popped = False
         while (
             len(ing_ports) > 1
             and not ing_ports[-1].connected_ports()
             and not ing_ports[-2].connected_ports()
         ):
             self.delete_input(ing_ports.pop())
+            popped = True
+        if popped:
+            self.view._cg_layout_dirty = True
 
     def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
         """Set the ingredient port label from the source node's item ID."""
@@ -1648,6 +1657,7 @@ class FabricatorNode(CraftGraphBaseNode):
             color=PORT_COLOR_INGREDIENT,
         )
         self._label_ingredient_port(in_port, out_port)
+        self.view._cg_layout_dirty = True
 
     def on_input_disconnected(self, in_port, out_port) -> None:  # type: ignore[override]
         """Remove redundant trailing empty ingredient slots on disconnect.
@@ -1659,12 +1669,16 @@ class FabricatorNode(CraftGraphBaseNode):
             return
         self._set_ingredient_port_label(in_port, "")
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
+        popped = False
         while (
             len(ing_ports) > 1
             and not ing_ports[-1].connected_ports()
             and not ing_ports[-2].connected_ports()
         ):
             self.delete_input(ing_ports.pop())
+            popped = True
+        if popped:
+            self.view._cg_layout_dirty = True
 
     def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
         """Set the ingredient port label from the source node's item ID."""
