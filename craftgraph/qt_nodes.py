@@ -624,25 +624,6 @@ def _patched_end_live_connection(self: _NodeViewer) -> None:
 _NodeViewer.start_live_connection = _patched_start_live_connection  # type: ignore[assignment]
 _NodeViewer.end_live_connection = _patched_end_live_connection  # type: ignore[assignment]
 
-
-_original_viewer_mouse_press = _NodeViewer.mousePressEvent
-
-
-def _patched_viewer_mouse_press(self: _NodeViewer, event: Any) -> None:
-    """Swallow MMB so the wheel button never engages the pan path.
-
-    NodeGraphQt sets ``MMB_state = True`` on middle-button press, which the
-    move handler reads to pan the viewport. Returning early before
-    delegating to the original handler means MMB clicks behave as no-ops.
-    """
-    if event.button() == Qt.MouseButton.MiddleButton:
-        event.accept()
-        return
-    _original_viewer_mouse_press(self, event)
-
-
-_NodeViewer.mousePressEvent = _patched_viewer_mouse_press  # type: ignore[assignment]
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

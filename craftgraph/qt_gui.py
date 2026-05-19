@@ -6499,17 +6499,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         with tab.sync_guard():
             editor.setPlainText(serialize_file(tab.parsed_file))
 
-        # Restore cursor position (clamped to new document length)
-        new_cursor = editor.textCursor()
-        doc_len = editor.document().characterCount() - 1
-        new_cursor.setPosition(min(anchor_pos, doc_len))
-        if anchor_pos != cursor_pos:
-            new_cursor.setPosition(
-                min(cursor_pos, doc_len),
-                QtGui.QTextCursor.MoveMode.KeepAnchor,
-            )
-        editor.setTextCursor(new_cursor)
-        editor.verticalScrollBar().setValue(scroll_val)
+            # Restore cursor position (clamped to new document length)
+            new_cursor = editor.textCursor()
+            doc_len = editor.document().characterCount() - 1
+            new_cursor.setPosition(min(anchor_pos, doc_len))
+            if anchor_pos != cursor_pos:
+                new_cursor.setPosition(
+                    min(cursor_pos, doc_len),
+                    QtGui.QTextCursor.MoveMode.KeepAnchor,
+                )
+            editor.setTextCursor(new_cursor)
+            editor.verticalScrollBar().setValue(scroll_val)
 
     # -- Node selection -> code editor scroll -----------------------------------
 

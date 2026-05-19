@@ -275,7 +275,7 @@ class NodeEditorSettings:
     # Navigation
     zoom_speed: float = 1.0
     invert_zoom: bool = False
-    pan_with_mmb: bool = True
+    pan_with_mmb: bool = False
     show_minimap: bool = True
 
     # Grid

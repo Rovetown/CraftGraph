@@ -364,7 +364,7 @@ class TestNodeEditorSettings:
         s = NodeEditorSettings()
         assert s.zoom_speed == 1.0
         assert s.invert_zoom is False
-        assert s.pan_with_mmb is True
+        assert s.pan_with_mmb is False
         assert s.show_minimap is True
         assert s.show_grid is True
         assert s.grid_size == 50

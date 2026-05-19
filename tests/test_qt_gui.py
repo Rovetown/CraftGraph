@@ -4707,11 +4707,11 @@ class TestNavigationSettings:
         dialog._invert_zoom_cb.setChecked(True)
         assert dialog.node_editor_settings.invert_zoom is True
 
-    def test_pan_mmb_default_true(self, qapp):
+    def test_pan_mmb_default_false(self, qapp):
         from craftgraph.qt_gui import _SettingsDialog
 
         dialog = _SettingsDialog()
-        assert dialog.node_editor_settings.pan_with_mmb is True
+        assert dialog.node_editor_settings.pan_with_mmb is False
 
     def test_show_minimap_default_true(self, qapp):
         from craftgraph.qt_gui import _SettingsDialog
@@ -4886,7 +4886,7 @@ class TestViewerPatches:
 
     def test_pan_with_mmb_attribute_set(self, window):
         viewer = window.graph.viewer()
-        assert viewer._cg_pan_with_mmb is True
+        assert viewer._cg_pan_with_mmb is False
 
     def test_scene_grid_size_attribute_set(self, window):
         scene = window.graph.scene()
