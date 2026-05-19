@@ -1941,7 +1941,18 @@ class TestPaintedFieldsNodeItem:
 
     @pytest.mark.parametrize(
         "class_name",
-        ["ModifiedRecipeNode", "AddedRecipeNode", "AliasRecipeNode", "CustomFoodNode"],
+        [
+            "ModifiedRecipeNode",
+            "AddedRecipeNode",
+            "AliasRecipeNode",
+            "CustomFoodNode",
+            "FabricatorNode",
+            "CraftingTabNode",
+            "CustomSizeNode",
+            "MovedRecipeNode",
+            "CustomBioFuelNode",
+            "CustomFragmentCountNode",
+        ],
     )
     def test_view_is_painted_item(self, qapp, graph, class_name):
         from craftgraph.qt_nodes import IDENTIFIER, PaintedFieldsNodeItem
@@ -1951,7 +1962,18 @@ class TestPaintedFieldsNodeItem:
 
     @pytest.mark.parametrize(
         "class_name",
-        ["ModifiedRecipeNode", "AddedRecipeNode", "AliasRecipeNode", "CustomFoodNode"],
+        [
+            "ModifiedRecipeNode",
+            "AddedRecipeNode",
+            "AliasRecipeNode",
+            "CustomFoodNode",
+            "FabricatorNode",
+            "CraftingTabNode",
+            "CustomSizeNode",
+            "MovedRecipeNode",
+            "CustomBioFuelNode",
+            "CustomFragmentCountNode",
+        ],
     )
     def test_bounding_rect_grows_with_fields(self, qapp, graph, class_name):
         from craftgraph.qt_nodes import IDENTIFIER
@@ -2010,6 +2032,16 @@ class TestModifiedRecipeNoWidgets:
                             "food_value", "water_value", "oxygen_value",
                             "health_value", "decay_rate_mod", "food_type",
                             "use_drink_sound")),
+        # Structural nodes (no QWidget expected for any painted field)
+        ("FabricatorNode", ("item_id", "display_name", "tooltip", "model",
+                            "color_tint", "allowed_in_base", "allowed_in_cyclops",
+                            "pda_group", "pda_category", "force_unlock_at_start",
+                            "unlocked_by")),
+        ("CraftingTabNode", ("tab_id", "display_name", "sprite_item_id", "parent_tab_path")),
+        ("CustomSizeNode", ("item_id", "size_width", "size_height")),
+        ("MovedRecipeNode", ("item_id", "old_path", "new_path", "copied", "hidden")),
+        ("CustomBioFuelNode", ("item_id", "energy")),
+        ("CustomFragmentCountNode", ("item_id", "fragments_to_scan")),
     )
 
     @pytest.mark.parametrize("class_name,field_names", NODE_CLASSES)
