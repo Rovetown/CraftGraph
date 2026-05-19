@@ -248,6 +248,14 @@ Extended painted-fields to the six remaining structural nodes (Fabricator, Craft
 
 ## Post-Release Features
 
+### Settings dialog visual pass
+
+> Settings dialog (`_SettingsDialog` in `craftgraph/qt_gui.py:629`) is a `QDialog` with standard Qt form widgets styled by a stylesheet. The painted-fields system in the node graph is `QGraphicsItem`-based and lives in a `QGraphicsScene`. A literal port is a rewrite, not a touch-up.
+
+- [ ] **Decide scope:** full painted-fields rewrite (embed `QGraphicsView` in dialog, every setting becomes a graphics item with floating-editor pool) vs. a focused visual-consistency pass (borrow the painted-field value-rect look for a few specific entries that visually clash).
+- [ ] **If focused pass:** identify entries that should match the node-graph look (likely the simple text/int/enum settings, NOT sliders/lists). Apply matching border + opaque background + click-to-edit-via-floating-editor on top of the existing dialog.
+- [ ] **If full rewrite:** ingredient-list-style scrollable settings will need a non-graphics fallback regardless (QListWidget doesn't translate). Consider whether the consistency is worth the loss of native form behaviors (keyboard navigation, focus rings, accessibility).
+
 ### Tab ID Autocomplete
 
 - [ ] **Extend autocomplete to CraftingTab IDs:** Suggest tab path segments when editing `Path` fields. Source from parsed CustomFabricator/CustomCraftingTab entries + static vanilla fabricator tabs.
