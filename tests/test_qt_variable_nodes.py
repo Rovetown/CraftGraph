@@ -109,10 +109,11 @@ class TestStringVarNode:
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.StringVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
     def test_default_value_empty_string(self, graph):
         node = graph.create_node("com.craftgraph.StringVarNode", name="Test")
@@ -124,10 +125,11 @@ class TestIntVarNode:
         node = graph.create_node("com.craftgraph.IntVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.IntVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.IntVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
 
 class TestFloatVarNode:
@@ -135,10 +137,11 @@ class TestFloatVarNode:
         node = graph.create_node("com.craftgraph.FloatVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.FloatVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.FloatVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
 
 class TestBoolVarNode:
@@ -146,14 +149,16 @@ class TestBoolVarNode:
         node = graph.create_node("com.craftgraph.BoolVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.BoolVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.BoolVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
     def test_default_value_false(self, graph):
+        """Painted model stores bool defaults as strings."""
         node = graph.create_node("com.craftgraph.BoolVarNode", name="Test")
-        assert node.get_property("value") is False
+        assert node.get_property("value") == "False"
 
 
 class TestCSVListVarNode:
@@ -161,10 +166,11 @@ class TestCSVListVarNode:
         node = graph.create_node("com.craftgraph.CSVListVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.CSVListVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.CSVListVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
 
 class TestEnumVarNode:
@@ -172,10 +178,11 @@ class TestEnumVarNode:
         node = graph.create_node("com.craftgraph.EnumVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.EnumVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.EnumVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
 
 class TestPathVarNode:
@@ -183,10 +190,11 @@ class TestPathVarNode:
         node = graph.create_node("com.craftgraph.PathVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.PathVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.PathVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
 
 class TestColorVarNode:
@@ -194,10 +202,11 @@ class TestColorVarNode:
         node = graph.create_node("com.craftgraph.ColorVarNode", name="Test")
         assert node is not None
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.ColorVarNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.ColorVarNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
     def test_default_value(self, graph):
         node = graph.create_node("com.craftgraph.ColorVarNode", name="Test")
@@ -213,10 +222,11 @@ class TestGetFabricatorNode:
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
         assert node.IS_VARIABLE is True
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
     def test_has_value_out_port(self, graph):
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
@@ -234,30 +244,23 @@ class TestGetFabricatorNode:
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
         assert node.FIELD_REGISTRY[0].pin_type == PinType.STRING
 
-    def test_widget_is_combo_box(self, graph):
-        """Despite STRING PinType, widget should be a combo box via override."""
-        from PySide6.QtWidgets import QComboBox
+    def test_value_pin_is_string_with_combo_options(self, graph):
+        """refresh_fab_tab_choices stores choices in _cg_field_options."""
+        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="v")
+        node.refresh_fab_tab_choices(["FabA", "FabB"])
+        assert node._cg_field_options["value"] == ["FabA", "FabB"]
 
+    def test_default_value_empty_when_no_choices(self, graph):
+        """Painted default for GetFabricatorNode is an empty string."""
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
-        widget = node.get_widget("value")
-        inner = widget.get_custom_widget()
-        assert isinstance(inner, QComboBox)
-
-    def test_default_value_placeholder_when_empty(self, graph):
-        """Combo with no real items shows '(none)' placeholder."""
-        node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
-        assert node.get_property("value") == "(none)"
+        assert node.get_property("value") == ""
 
     def test_refresh_fab_tab_choices(self, graph):
         node = graph.create_node("com.craftgraph.GetFabricatorNode", name="Test")
         node.refresh_fab_tab_choices(["FabA", "FabB"])
-        from PySide6.QtWidgets import QComboBox
-
-        combo = node.get_widget("value").get_custom_widget()
-        assert isinstance(combo, QComboBox)
-        assert combo.count() == 2
-        assert combo.itemText(0) == "FabA"
-        assert combo.itemText(1) == "FabB"
+        assert node._cg_field_options["value"] == ["FabA", "FabB"]
+        node.refresh_fab_tab_choices(["FabC"])
+        assert node._cg_field_options["value"] == ["FabC"]
 
 
 class TestGetTabNode:
@@ -269,10 +272,11 @@ class TestGetTabNode:
         node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
         assert node.IS_VARIABLE is True
 
-    def test_has_value_widget(self, graph):
-        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
-        widget = node.get_widget("value")
-        assert widget is not None
+    def test_view_is_painted_item(self, graph):
+        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
+        node = graph.create_node("com.craftgraph.GetTabNode", name="v")
+        assert isinstance(node.view, PaintedFieldsNodeItem)
 
     def test_has_value_out_port(self, graph):
         node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
@@ -285,23 +289,18 @@ class TestGetTabNode:
         node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
         assert node.FIELD_REGISTRY[0].pin_type == PinType.STRING
 
-    def test_widget_is_combo_box(self, graph):
-        from PySide6.QtWidgets import QComboBox
-
-        node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
-        widget = node.get_widget("value")
-        inner = widget.get_custom_widget()
-        assert isinstance(inner, QComboBox)
+    def test_value_pin_is_string_with_combo_options(self, graph):
+        """refresh_fab_tab_choices stores choices in _cg_field_options."""
+        node = graph.create_node("com.craftgraph.GetTabNode", name="v")
+        node.refresh_fab_tab_choices(["MyFab/SciTab", "MyFab/AdvTab"])
+        assert node._cg_field_options["value"] == ["MyFab/SciTab", "MyFab/AdvTab"]
 
     def test_refresh_fab_tab_choices(self, graph):
         node = graph.create_node("com.craftgraph.GetTabNode", name="Test")
         node.refresh_fab_tab_choices(["MyFab/SciTab", "MyFab/AdvTab"])
-        from PySide6.QtWidgets import QComboBox
-
-        combo = node.get_widget("value").get_custom_widget()
-        assert isinstance(combo, QComboBox)
-        assert combo.count() == 2
-        assert combo.itemText(0) == "MyFab/SciTab"
+        assert node._cg_field_options["value"] == ["MyFab/SciTab", "MyFab/AdvTab"]
+        node.refresh_fab_tab_choices(["MyFab/SciTab"])
+        assert node._cg_field_options["value"] == ["MyFab/SciTab"]
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +509,10 @@ class TestVariableConnection:
         )
         recipe_node2.model_ref = recipe2
         recipe_node2.set_edit_history(s["history"])
+        # Force eager widget build so field_* ports exist before we connect.
+        # populate_from_model is lazy (defers to first paint); _maybe_build_widgets
+        # fires the build immediately, making field_item_id available.
+        recipe_node2._maybe_build_widgets()
         recipe_node2.populate_from_model()
 
         s["string_var"].set_property("value", "Gold")
@@ -520,7 +523,7 @@ class TestVariableConnection:
         var_out.connect_to(field_in1)
         var_out.connect_to(field_in2)
 
-        # Change variable value
+        # Change variable value -- both consumers must update
         s["string_var"].set_property("value", "Diamond")
         assert s["recipe"].item_id == "Diamond"
         assert recipe2.item_id == "Diamond"

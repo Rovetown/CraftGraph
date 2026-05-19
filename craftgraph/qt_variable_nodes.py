@@ -27,7 +27,6 @@ from craftgraph.qt_nodes import CraftGraphBaseNode
 
 NODE_COLOR_VARIABLE = get_config().ui.colors.ports.variable
 PORT_COLOR_VAR_OUT = get_config().ui.colors.ports.variable
-_REF_COMBO_MAX_W = get_config().ui.variable_nodes.ref_combo_max_w
 
 
 # ---------------------------------------------------------------------------
@@ -151,13 +150,10 @@ class EnumVarNode(VariableNode):
     ]
 
     def set_enum_items(self, items: list[str]) -> None:
-        """Populate the combo box with enum values after creation."""
-        widget = self.get_widget("value")
-        if widget is not None:
-            combo = widget.get_custom_widget()
-            if combo is not None:
-                combo.clear()
-                combo.addItems(items)
+        """Set the enum choices for the painted combo editor."""
+        if not hasattr(self, "_cg_field_options"):
+            self._cg_field_options: dict[str, list[str]] = {}
+        self._cg_field_options["value"] = list(items)
 
 
 class PathVarNode(VariableNode):
@@ -204,16 +200,10 @@ class GetFabricatorNode(VariableNode):
     ]
 
     def refresh_fab_tab_choices(self, choices: list[str]) -> None:
-        """Replace combo box items with current fabricator list."""
-        widget = self.get_widget("value")
-        if widget is not None:
-            combo = widget.get_custom_widget()
-            if combo is not None:
-                combo.clear()
-                combo.addItems(choices)
-                combo.setMaximumWidth(_REF_COMBO_MAX_W)
-        # Recalculate node size after items change
-        self.view.draw_node()
+        """Update the painted combo's choice list. Floating editor reads on summon."""
+        if not hasattr(self, "_cg_field_options"):
+            self._cg_field_options: dict[str, list[str]] = {}
+        self._cg_field_options["value"] = list(choices)
 
 
 class GetTabNode(VariableNode):
@@ -234,16 +224,10 @@ class GetTabNode(VariableNode):
     ]
 
     def refresh_fab_tab_choices(self, choices: list[str]) -> None:
-        """Replace combo box items with current tab path list."""
-        widget = self.get_widget("value")
-        if widget is not None:
-            combo = widget.get_custom_widget()
-            if combo is not None:
-                combo.clear()
-                combo.addItems(choices)
-                combo.setMaximumWidth(_REF_COMBO_MAX_W)
-        # Recalculate node size after items change
-        self.view.draw_node()
+        """Update the painted combo's choice list. Floating editor reads on summon."""
+        if not hasattr(self, "_cg_field_options"):
+            self._cg_field_options: dict[str, list[str]] = {}
+        self._cg_field_options["value"] = list(choices)
 
 
 # ---------------------------------------------------------------------------
