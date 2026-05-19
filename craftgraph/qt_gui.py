@@ -3890,12 +3890,21 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             completer_words = self._get_id_words()
         elif field_name in self._PATH_WIDGET_NAMES:
             completer_words = self._path_words
+        enum_items: list[str] | None = None
+        fp = node._get_field_pin(field_name)
+        if fp is not None and fp.enum_items:
+            enum_items = list(fp.enum_items)
+        elif fp is not None and getattr(node, "_cg_field_options", None):
+            cached_options = node._cg_field_options.get(field_name)
+            if cached_options:
+                enum_items = list(cached_options)
         self._floating_editor_host.summon(
             field_name=field_name,
             field_type=node._field_pin_type(field_name),
             view_rect=view_rect,
             current_value=current_value,
             completer_words=completer_words,
+            enum_items=enum_items,
         )
 
     # -- Minimap --------------------------------------------------------------
