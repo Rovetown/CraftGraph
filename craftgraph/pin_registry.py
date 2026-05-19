@@ -60,6 +60,7 @@ class FieldPin:
     widget_override: str | None = None
     help_text: str = ""
     render_as: str = "text"
+    no_input_port: bool = False
 
     @property
     def resolved_model_field(self) -> str:

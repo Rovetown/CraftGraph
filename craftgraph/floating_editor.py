@@ -80,6 +80,22 @@ class FloatingEditorHost(QObject):
         self._float_editor.escape_pressed.connect(self._cancel)
         self._float_editor.installEventFilter(self)
 
+        # Force opaque painting so typed text always reads against an
+        # explicit background, regardless of the node painted underneath
+        # or the system style sheet inheritance.
+        opaque_style = (
+            "QLineEdit { background: palette(base); color: palette(text); }"
+            "QComboBox { background: palette(base); color: palette(text); }"
+        )
+        for editor in (
+            self._string_editor,
+            self._int_editor,
+            self._combo_editor,
+            self._float_editor,
+        ):
+            editor.setAutoFillBackground(True)
+            editor.setStyleSheet(opaque_style)
+
         self._view: QGraphicsView | None = None
         self._active_field_name: str | None = None
         self._active_editor: _CancellingLineEdit | _CancellingComboBox | None = None

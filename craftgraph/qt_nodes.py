@@ -1001,7 +1001,7 @@ class CraftGraphBaseNode(BaseNode):
             )
             self._cg_field_values[fp.name] = default
             self._cg_field_states[fp.name] = FieldState.NORMAL
-            if not self.IS_VARIABLE:
+            if not self.IS_VARIABLE and not fp.no_input_port:
                 port = self.add_input(
                     f"field_{fp.name}",
                     multi_input=False,
@@ -1403,6 +1403,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
             min_val=1,
             max_val=25,
             help_text="Quantity required when this recipe is wired as an ingredient",
+            no_input_port=True,
         ),
     ]
 
@@ -1890,6 +1891,7 @@ class OrphanIngredientNode(CraftGraphBaseNode):
             min_val=1,
             max_val=25,
             help_text="Quantity required by each recipe this node feeds",
+            no_input_port=True,
         ),
     ]
 

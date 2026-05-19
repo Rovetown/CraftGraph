@@ -5643,8 +5643,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if tab is None:
                 raise RuntimeError(f"no tab for changed file {old_pf.source_path}")
             apply_file_diff(file_tab=tab, diff=file_diff, new_parsed_file=new_pf)
-            connect_hierarchy(tab.graph, [new_pf], tab.model_to_node)
-            connect_ingredients(tab.graph, [new_pf], tab.model_to_node)
+            with tab.sync_guard():
+                connect_hierarchy(tab.graph, [new_pf], tab.model_to_node)
+                connect_ingredients(tab.graph, [new_pf], tab.model_to_node)
 
         for new_pf in diff.added_files:
             tab = self._create_file_tab(new_pf)
@@ -7821,6 +7822,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             connect_hierarchy(graph, [parsed_file], model_to_node)
             conn_result = connect_ingredients(graph, [parsed_file], model_to_node)
             orphan_nodes = conn_result.orphan_nodes
+            for _orphan in orphan_nodes.values():
+                _orphan.set_edit_history(history)
             positions = compute_hierarchy_layout([parsed_file], model_to_node)
             overlay_user_positions(positions, initial_user_positions, model_to_node)
             apply_layout(positions, model_to_node)
