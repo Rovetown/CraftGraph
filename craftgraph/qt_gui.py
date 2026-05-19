@@ -6579,7 +6579,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         with tab.sync_guard():
             editor.setTextCursor(cursor)
-        editor.centerCursor()
+            editor.centerCursor()
 
     # -- Code editor -> model sync (per-tab) ----------------------------------
 
