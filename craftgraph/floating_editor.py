@@ -149,7 +149,7 @@ class FloatingEditorHost(QObject):
             return self._string_editor
         if field_type is PinType.INT:
             return self._int_editor
-        if field_type is PinType.ENUM:
+        if field_type in (PinType.ENUM, PinType.BOOL):
             return self._combo_editor
         if field_type is PinType.FLOAT:
             return self._float_editor
