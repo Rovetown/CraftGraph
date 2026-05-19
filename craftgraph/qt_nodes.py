@@ -1226,12 +1226,7 @@ class CraftGraphBaseNode(BaseNode):
         """
         if self._populating:
             return
-        if self._edit_history is None:
-            return
-        if field_name == "ingredient_amount":
-            self._propagate_ingredient_amount_change(new_value)
-            return
-        if self._model_ref is None:
+        if self._edit_history is None or self._model_ref is None:
             return
         fp = self._get_field_pin(field_name)
         if fp is None:
@@ -1254,39 +1249,6 @@ class CraftGraphBaseNode(BaseNode):
         self.validate_paired_fields()
         if model_attr in ("item_id", "amount_crafted"):
             self.update_title_from_model()
-
-    def _propagate_ingredient_amount_change(self, new_value: Any) -> None:
-        """Push this node's ingredient_amount value into every recipe slot it feeds.
-
-        Walks the node's output port connections; for each connection that
-        terminates on an ``ingredient_*`` input of a model-backed recipe,
-        finds the matching ``Ingredient`` entry by item_id and updates its
-        ``required`` field. Triggers the edit-history change callback so
-        the code editor and any other listeners re-serialize the model.
-        """
-        try:
-            amount = max(1, int(new_value))
-        except (ValueError, TypeError):
-            return
-        own_id = self.get_property("item_id") if "item_id" in getattr(
-            self, "_cg_field_values", {}
-        ) else None
-        if not own_id:
-            return
-        for out_port in self.output_ports():
-            for in_port in out_port.connected_ports():
-                if not in_port.name().startswith("ingredient_"):
-                    continue
-                consumer = in_port.node()
-                consumer_model = getattr(consumer, "model_ref", None)
-                if consumer_model is None:
-                    continue
-                for ing in getattr(consumer_model, "ingredients", []):
-                    if getattr(ing, "item_id", None) == own_id:
-                        ing.required = amount
-        on_change = self._edit_history.on_change
-        if on_change is not None:
-            on_change()
 
     def _enforce_mutual_exclusion(self, field_name: str, value: Any) -> None:
         """If a boolean field in a mutual-exclusion pair becomes True, uncheck its partner."""
@@ -1394,15 +1356,6 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
             nullable=True,
             enum_items=["auto", "YES", "NO"],
             help_text="Make available without scanning",
-        ),
-        FieldPin(
-            "ingredient_amount",
-            PinType.INT,
-            label="Required",
-            default=1,
-            min_val=1,
-            max_val=25,
-            help_text="Quantity required when this recipe is wired as an ingredient",
         ),
     ]
 
@@ -1879,18 +1832,10 @@ class OrphanIngredientNode(CraftGraphBaseNode):
     NODE_NAME = "Orphan Ingredient"
     NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
     IS_ORPHAN: bool = True
+    USE_PAINTED_FIELDS = False
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID"),
-        FieldPin(
-            "ingredient_amount",
-            PinType.INT,
-            label="Amount",
-            default=1,
-            min_val=1,
-            max_val=25,
-            help_text="Quantity required by each recipe this node feeds",
-        ),
     ]
 
     OUTPUT_PINS = [

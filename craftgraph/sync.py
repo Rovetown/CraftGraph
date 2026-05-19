@@ -1587,16 +1587,7 @@ class UIToModelHandler:
         from craftgraph.commands import AddIngredientCommand
         from craftgraph.models import Ingredient
 
-        amount = 1
-        source_node = out_port.node()  # type: ignore[attr-defined]
-        if hasattr(source_node, "get_property"):
-            try:
-                raw = source_node.get_property("ingredient_amount")
-                if raw:
-                    amount = max(1, int(raw))
-            except (ValueError, TypeError, AttributeError):
-                pass
-        ingredient = Ingredient(item_id=source_id, required=amount)
+        ingredient = Ingredient(item_id=source_id, required=1)
         cmd = AddIngredientCommand(recipe=consumer_model, ingredient=ingredient)
 
         with self._guard():

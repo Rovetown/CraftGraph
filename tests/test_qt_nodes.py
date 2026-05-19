@@ -244,7 +244,7 @@ class TestModifiedRecipeRegistry:
             assert node.get_output(op.name) is not None, f"Missing output: {op.name}"
 
     def test_registry_has_all_model_fields(self, graph):
-        """FIELD_REGISTRY covers all ModifiedRecipe model fields + ingredient_amount."""
+        """FIELD_REGISTRY covers all ModifiedRecipe model fields."""
         expected = {
             "item_id",
             "amount_crafted",
@@ -253,7 +253,6 @@ class TestModifiedRecipeRegistry:
             "unlocks",
             "unlocked_by",
             "force_unlock_at_start",
-            "ingredient_amount",
         }
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="R1")
         registry_names = {fp.name for fp in node.FIELD_REGISTRY}
@@ -422,8 +421,8 @@ class TestCustomFoodRegistry:
     def test_field_count_includes_all_ancestors(self, graph):
         """CustomFoodNode should have all fields from the full inheritance chain."""
         node = graph.create_node("com.craftgraph.CustomFoodNode", name="F1")
-        # Modified(8 incl. ingredient_amount) + Added(3) + Alias(4) + Food(7) = 22
-        assert len(node.FIELD_REGISTRY) == 22
+        # Modified(7) + Added(3) + Alias(4) + Food(7) = 21
+        assert len(node.FIELD_REGISTRY) == 21
 
 
 # ---------------------------------------------------------------------------
@@ -914,17 +913,17 @@ class TestPaintedFieldsByDefault:
         node = graph.create_node(node_cls, name="x")
         assert isinstance(node.view, PaintedFieldsNodeItem)
 
-    def test_sprite_opts_out(self, graph):
-        from craftgraph.qt_nodes import PaintedFieldsNodeItem
-
-        sprite = graph.create_node("com.craftgraph.SpriteNode", name="s")
-        assert not isinstance(sprite.view, PaintedFieldsNodeItem)
-
-    def test_orphan_uses_painted_fields(self, graph):
-        from craftgraph.qt_nodes import PaintedFieldsNodeItem
+    def test_orphan_and_sprite_opt_out(self, graph):
+        from craftgraph.qt_nodes import (
+            PaintedFieldsNodeItem,
+            OrphanIngredientNode,
+            SpriteNode,
+        )
 
         orphan = graph.create_node("com.craftgraph.OrphanIngredientNode", name="o")
-        assert isinstance(orphan.view, PaintedFieldsNodeItem)
+        sprite = graph.create_node("com.craftgraph.SpriteNode", name="s")
+        assert not isinstance(orphan.view, PaintedFieldsNodeItem)
+        assert not isinstance(sprite.view, PaintedFieldsNodeItem)
 
 
 # ---------------------------------------------------------------------------
@@ -1228,13 +1227,8 @@ class TestUtilityNodeRegistries:
 
 class TestWidgetZOrder:
     def test_widget_z_values_descend(self, graph):
-        """Proxy widgets should have descending z-values (topmost highest).
-
-        Uses SpriteNode -- the only node that still carries embedded Qt
-        widgets (text input + Browse button) now that all data-model nodes
-        are on the painted-fields path.
-        """
-        node = graph.create_node("com.craftgraph.SpriteNode", name="Sprite")
+        """Proxy widgets should have descending z-values (topmost highest)."""
+        node = graph.create_node("com.craftgraph.OrphanIngredientNode", name="Orphan")
         node._maybe_build_widgets()
         widgets = list(node.view.widgets.values())
         assert len(widgets) >= 1
@@ -1245,9 +1239,14 @@ class TestWidgetZOrder:
             )
 
     def test_first_widget_above_z_val_node_widget(self, graph):
+        """First widget z-value should be above the base Z_VAL_NODE_WIDGET.
+
+        Uses OrphanIngredientNode because painted-nodes (FabricatorNode,
+        ModifiedRecipeNode, etc.) no longer carry embedded Qt widgets.
+        """
         from NodeGraphQt.constants import Z_VAL_NODE_WIDGET
 
-        node = graph.create_node("com.craftgraph.SpriteNode", name="Test")
+        node = graph.create_node("com.craftgraph.OrphanIngredientNode", name="Test")
         node._maybe_build_widgets()
         widgets = list(node.view.widgets.values())
         assert len(widgets) > 0
@@ -1265,14 +1264,14 @@ class TestOverflowTooltips:
     def test_text_field_tooltip_updates_on_change(self, graph):
         """Text input tooltip tracks the current text value.
 
-        Uses SpriteNode (legacy widget path) since painted nodes do not
-        carry embedded Qt widgets.
+        Uses OrphanIngredientNode (non-painted, legacy widget path) since
+        painted nodes do not carry embedded Qt widgets.
         """
         from PySide6.QtWidgets import QLineEdit
 
-        node = graph.create_node("com.craftgraph.SpriteNode", name="Test")
+        node = graph.create_node("com.craftgraph.OrphanIngredientNode", name="Test")
         node._maybe_build_widgets()
-        widget_item = node.get_widget("file_path")
+        widget_item = node.get_widget("item_id")
         assert widget_item is not None
         qt_widget = widget_item.get_custom_widget()
         assert isinstance(qt_widget, QLineEdit)
