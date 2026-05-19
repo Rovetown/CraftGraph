@@ -383,6 +383,20 @@ def _safe_auto_switch_mode(self: _NodeItem) -> None:  # type: ignore[override]
 _NodeItem.auto_switch_mode = _safe_auto_switch_mode  # type: ignore[assignment]
 
 
+def _parse_bool_value(value: Any) -> bool:
+    """Interpret a stored field value as boolean.
+
+    Accepts Python bools and string forms ("True"/"False", "YES"/"NO",
+    "1"/"0"). Empty strings and None read as False.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    return text not in ("", "0", "false", "no", "none")
+
+
 class PaintedFieldsNodeItem(_NodeItem):
     """NodeItem subclass that paints a value-rect column aligned to port rows.
 
@@ -453,7 +467,38 @@ class PaintedFieldsNodeItem(_NodeItem):
         if rect.render_as == "swatch":
             self._paint_swatch_field(painter, rect)
             return
+        if rect.pin_type is PinType.BOOL:
+            self._paint_checkbox_field(painter, rect)
+            return
         self._paint_text_field(painter, rect)
+
+    def _paint_checkbox_field(self, painter: QPainter, rect: FieldRect) -> None:
+        if rect.value_rect is None:
+            return
+        box_size = min(14.0, rect.value_rect.height() - 4.0)
+        box = QRectF(
+            rect.value_rect.x() + 4.0,
+            rect.value_rect.y() + (rect.value_rect.height() - box_size) / 2.0,
+            box_size,
+            box_size,
+        )
+        painter.setPen(QPen(QColor(80, 80, 80), 1.0))
+        painter.setBrush(QBrush(QColor(40, 40, 40)))
+        painter.drawRect(box)
+        value_text = getattr(self, "_cg_field_values", {}).get(rect.name, "")
+        if _parse_bool_value(value_text):
+            painter.setPen(QPen(QColor(220, 220, 220), 2.0))
+            x0, y0 = box.x(), box.y()
+            w, h = box.width(), box.height()
+            painter.drawLine(
+                QPointF(x0 + w * 0.2, y0 + h * 0.5),
+                QPointF(x0 + w * 0.45, y0 + h * 0.75),
+            )
+            painter.drawLine(
+                QPointF(x0 + w * 0.45, y0 + h * 0.75),
+                QPointF(x0 + w * 0.8, y0 + h * 0.25),
+            )
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def _paint_text_field(self, painter: QPainter, rect: FieldRect) -> None:
         if rect.value_rect is None:
@@ -517,6 +562,12 @@ class PaintedFieldsNodeItem(_NodeItem):
         node = getattr(self, "_cg_node", None)
         if node is None or rect.value_rect is None:
             super().mousePressEvent(event)
+            return
+        if rect.pin_type is PinType.BOOL:
+            current = node.get_property(rect.name)
+            new_value = not _parse_bool_value(current)
+            node.set_property(rect.name, new_value)
+            event.accept()
             return
         scene = self.scene()
         view = scene.views()[0] if scene and scene.views() else None
