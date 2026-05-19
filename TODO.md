@@ -220,6 +220,22 @@ Built `craftgraph/node_layout.py` as a library-style layout helper: `NodeLayout`
 
 **Next:** merge `feat/floating-input-pilot` into master.
 
+#### 9.6.2 Broaden painted-fields to all nodes (2026-05-19) -- PASS
+
+Extended painted-fields to the six remaining structural nodes (Fabricator, CraftingTab, CustomSize, MovedRecipe, CustomBioFuel, CustomFragmentCount) and the ten variable nodes (StringVar, IntVar, FloatVar, BoolVar, CSVListVar, EnumVar, PathVar, ColorVar, GetFabricator, GetTab). Lifted painted-fields opt-in from `ModifiedRecipeNode` to `CraftGraphBaseNode` behind `USE_PAINTED_FIELDS=True` (default on). `OrphanIngredientNode` and `SpriteNode` opt out. Added `FieldPin.render_as` and a swatch paint path for `ColorVarNode`. Routed `PinType.BOOL` through the existing combo editor. Deleted `NodeIntEdit`, `NodeFloatEdit`, their inner helpers, `add_int_edit`, `add_float_edit`, and the INT/FLOAT branches of the legacy widget-build path.
+
+**Spec:** `docs/superpowers/specs/2026-05-19-painted-fields-broaden-all-nodes-design.md`
+
+**Plan:** `docs/superpowers/plans/2026-05-19-painted-fields-broaden-all-nodes.md`
+
+**Baseline:** `docs/perf-baselines/2026-05-19-tier-A-post-broaden-all-nodes.md`
+
+**Perf result:** PASS all four targets with substantial headroom. Folder load 1047.7 ms avg (target <3000, -55% vs post-layout-fix). HWND USER 305 (-74%). Widget count 531 (-52%). `_build_painted_registry` cumtime 260 ms.
+
+**Tests:** rewrote `test_qt_variable_nodes.py` to assert painted-field state instead of widget presence. Extended parametrize matrices in `test_qt_nodes.py` to cover all ten painted node classes. Added `test_combo_editor.py`, `test_color_swatch.py`, `test_pin_registry.py::TestFieldPinRenderAs`, and `test_painted_fields.py::TestRenderAsDispatch`. Full suite: 1909 pass, only the 5 pre-existing `TestIntegrationAlchCustomFab` parser failures remain (unrelated).
+
+**Next:** merge `feat/painted-fields-broaden-all-nodes` into master.
+
 ---
 
 ### Recipe Import / Snippet Paste
