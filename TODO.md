@@ -22,6 +22,14 @@ Three phases, each shippable independently. Each phase becomes its own implement
 
 Phase 2 starts only after Phase 1 lands so threshold values come from real measurements, not guesswork.
 
+### Field observation (2026-05-20)
+
+A real 155-recipe project (a genuinely large recipe set, so some growth is expected) measures
+around 6000 HWND. That is well into the amber band Surface A defines (5000-8000) and worth a
+look. The count scales with recipe count, which points at the node graph as the driver rather
+than transient dialogs like Settings (which is freed on close via `deleteLater`). Phase 1
+diagnostics would settle whether 6000 is steady-state cost or accumulated leak.
+
 ### Phase 1 -- Diagnostics
 
 New module `craftgraph/hwnd_diag.py` (Windows-only with no-op fallback on Linux/macOS):
