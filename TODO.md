@@ -241,6 +241,40 @@ Extended painted-fields to the six remaining structural nodes (Fabricator, Craft
 
 **Next:** merge `feat/painted-fields-broaden-all-nodes` into master.
 
+#### Load-path frame jank (2026-05-20) -- OPEN
+
+User-observed on a real mod project: loading janks. `perf_diag` logs a burst of
+`frame_budget_violation` warnings during the load window, individual frames
+178-294 ms against the 33 ms budget, capped by
+`action=load_recipes delta_ms=1148.511`.
+
+**Not a total-load regression.** 1148 ms matches the 9.6.2 baseline (folder load
+1047.7 ms avg). Steady-state pan/zoom is 33-40 ms, which the user accepts. The
+issue is specifically the frame *spikes during* load, not load wall-clock.
+
+**Leading hypothesis (already documented in 9.11):** the `app.processEvents()`
+paint pump that 3.6 time-slicing relies on triggers `_maybe_build_widgets` on
+every visible node during load -- measured at 1511 ms / 160 calls (~9.4 ms each)
+in the 9.11 profiler run. A burst of those inside one `processEvents` is a
+plausible 178-294 ms frame. 3.6 yields every 50 nodes on a 10 ms budget, so the
+slicing granularity may be too coarse, or a single un-sliceable step (initial
+scene populate, `compute_hierarchy_layout`, first paint-everything pass) owns
+the worst frames.
+
+- [ ] **Profile the load path.** Use the existing harness (1.1 cProfile, 1.2
+  `perf_diag.measure`, 1.9-style scoped capture) to attribute the 178-294 ms
+  frames. Identify whether the spikes are `_maybe_build_widgets` bursts, layout
+  solve, or scene populate.
+- [ ] **Decide: real jank or expected load cost.** If the spikes are inherent
+  to building N nodes, the fix may be finer time-slicing (yield by an
+  elapsed-time budget, not a node count) and/or suppressing
+  `frame_budget_violation` logging inside a known load window so the log
+  reflects steady-state only.
+- [ ] **If `_maybe_build_widgets` bursts dominate:** the 9.11 note says the lazy
+  benefit only materializes when nodes stay off-viewport. Investigate not
+  force-building every node during the initial load paint -- build only nodes
+  actually in the viewport and let pan reveal the rest lazily.
+
 ---
 
 ### Recipe Import / Snippet Paste
@@ -263,6 +297,36 @@ Extended painted-fields to the six remaining structural nodes (Fabricator, Craft
 - [DONE] **Lazy tab construction.** _`_SettingsDialog` builds each tab on first view via a builder registry; `_on_settings` opens with `lazy_tabs=True` so only the General tab builds up front. Default stays eager so existing tests are untouched._
 - [DONE] **Drop the Widget Gallery tab.** _Dev-only demo tab and its six group helpers removed; 8 tabs to 7._
 - [ ] **Measure the win.** _Once Phase 1 HWND diagnostics land, confirm the `open_close_settings_x20` stress delta dropped and ratchet its threshold down._
+
+### Editable per-ingredient Required amount
+
+> Recipe nodes can set `AmountCrafted` (how many units the recipe yields) but
+> not the per-ingredient `Required` quantity. Changing how many of each
+> ingredient a recipe consumes is currently only possible in the code editor.
+
+**Prior attempt reverted.** Commit `3abc069` ("feat(nodes): editable
+ingredient_amount on source nodes") added an `ingredient_amount` painted INT
+field to `OrphanIngredientNode` and `ModifiedRecipeNode`, plus
+`_propagate_ingredient_amount_change`, which walked the source node's output
+connections and wrote `Ingredient.required` into every consumer recipe. It was
+reverted (`0194689`, `9603662`) for a variable-connect crash, duplicate-node
+corruption, and registry entanglement.
+
+**Why that design was wrong:** `Required` is a property of the (recipe,
+ingredient) pair -- conceptually the edge. `3abc069` put it on the
+source/ingredient node. When one ingredient node feeds multiple recipes (sync
+shares an `OrphanIngredientNode` across recipes using the same raw material), a
+single `ingredient_amount` on the shared node cannot represent different
+`Required` values per consumer. Propagating one value to all consumers is the
+entanglement that sank it.
+
+- [ ] **Design pass first (brainstorming skill).** Resolve where `Required`
+  lives in the model and UI. Likely answer: on the recipe's ingredient slot
+  (per-edge), edited from the recipe-node side, not the ingredient node. First
+  confirm the shared-vs-instance-per-usage behavior of ingredient nodes in
+  `sync.py` -- the whole fix depends on it.
+- [ ] **Then:** write spec + plan under `docs/superpowers/`, implement via TDD.
+  Do not reuse the `3abc069` source-node + propagate approach.
 
 ### Tab ID Autocomplete
 
