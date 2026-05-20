@@ -201,3 +201,27 @@ class TestFloatingEditorSeamlessStyle:
         from craftgraph.painted_fields import FIELD_FILL_RGB
 
         assert f"rgb{FIELD_FILL_RGB}" in host._combo_editor.styleSheet()
+
+
+class TestFloatingEditorTracksView:
+    """The summoned editor follows its field when the view zooms or pans,
+    so the painted field never peeks out from under a stale editor rect."""
+
+    def test_editor_geometry_follows_view_zoom(self, host, view):
+        from PySide6.QtWidgets import QGraphicsScene
+
+        view.setScene(QGraphicsScene())
+        host.summon(
+            field_name="item_id",
+            field_type=PinType.STRING,
+            view_rect=QRect(20, 20, 100, 22),
+            current_value="x",
+        )
+        before = host._string_editor.geometry()
+        view.scale(2.0, 2.0)
+        host._reposition_active_editor()
+        assert host._string_editor.geometry() != before
+
+    def test_reposition_is_noop_when_nothing_summoned(self, host):
+        # Must not raise when called with no active editor.
+        host._reposition_active_editor()

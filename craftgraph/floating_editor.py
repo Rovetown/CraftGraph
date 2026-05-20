@@ -11,7 +11,7 @@ of node count. The HWND/widget cost is amortized.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QRect, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QDoubleValidator, QFocusEvent, QIntValidator, QKeyEvent
 from PySide6.QtWidgets import QComboBox, QCompleter, QGraphicsView, QLineEdit, QWidget
 
@@ -108,6 +108,15 @@ class FloatingEditorHost(QObject):
         self._view: QGraphicsView | None = None
         self._active_field_name: str | None = None
         self._active_editor: _CancellingLineEdit | _CancellingComboBox | None = None
+        # Scene-space rect of the field being edited. The editor is a viewport
+        # widget at fixed geometry, so it is re-derived from this on a timer to
+        # keep tracking the painted field as the user zooms or pans the graph.
+        self._active_scene_rect: QRectF | None = None
+        base_size = self._string_editor.font().pointSizeF()
+        self._base_point_size: float = base_size if base_size > 0 else 0.0
+        self._reposition_timer = QTimer(self)
+        self._reposition_timer.setInterval(16)
+        self._reposition_timer.timeout.connect(self._reposition_active_editor)
 
     def attach(self, view: QGraphicsView) -> None:
         """Re-parent each editor to ``view.viewport()`` so they float over it."""
@@ -166,6 +175,31 @@ class FloatingEditorHost(QObject):
 
         self._active_field_name = field_name
         self._active_editor = editor
+        self._active_scene_rect = (
+            self._view.mapToScene(view_rect).boundingRect() if self._view is not None else None
+        )
+        self._reposition_active_editor()
+        self._reposition_timer.start()
+
+    def _reposition_active_editor(self) -> None:
+        """Re-align the active editor with its field after a view change.
+
+        The painted field lives in scene space and scales with the view, so
+        on each tick the editor geometry is re-derived from the field's scene
+        rect and its font scaled to the zoom, keeping the overlay seamless.
+        """
+        editor = self._active_editor
+        if editor is None or self._view is None or self._active_scene_rect is None:
+            return
+        view_rect = self._view.mapFromScene(self._active_scene_rect).boundingRect()
+        if view_rect != editor.geometry():
+            editor.setGeometry(view_rect)
+        if self._base_point_size > 0:
+            scaled = self._base_point_size * self._view.transform().m11()
+            font = editor.font()
+            if abs(font.pointSizeF() - scaled) > 0.01:
+                font.setPointSizeF(max(1.0, scaled))
+                editor.setFont(font)
 
     def _editor_for_type(
         self, field_type: PinType
@@ -202,6 +236,8 @@ class FloatingEditorHost(QObject):
     def _hide_active(self) -> None:
         # Clear the active references BEFORE hiding so the synchronous
         # focus-out event doesn't re-enter _commit/_cancel.
+        self._reposition_timer.stop()
+        self._active_scene_rect = None
         editor = self._active_editor
         self._active_editor = None
         self._active_field_name = None
@@ -225,6 +261,7 @@ class FloatingEditorHost(QObject):
 
     def close(self) -> None:
         """Tear down the editor pool. Call once per window lifetime."""
+        self._reposition_timer.stop()
         for editor in (
             self._string_editor,
             self._int_editor,
