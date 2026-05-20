@@ -42,7 +42,14 @@ from craftgraph.models import (
     TECH_CATEGORIES,
     TECH_GROUPS,
 )
-from craftgraph.painted_fields import FieldRect, FieldState
+from craftgraph.painted_fields import (
+    FIELD_BORDER_RGB,
+    FIELD_FILL_RGB,
+    FIELD_TEXT_PADDING_PX,
+    FIELD_TEXT_RGB,
+    FieldRect,
+    FieldState,
+)
 from craftgraph.pin_registry import (
     FieldPin,
     OutputPin,
@@ -506,21 +513,24 @@ class PaintedFieldsNodeItem(_NodeItem):
     def _paint_text_field(self, painter: QPainter, rect: FieldRect) -> None:
         if rect.value_rect is None:
             return
+        # Opaque fill so the floating editor, styled with the same fill,
+        # overlays the field seamlessly when the user clicks to edit.
+        painter.fillRect(rect.value_rect, QColor(*FIELD_FILL_RGB))
         if rect.state is FieldState.REQUIRED_EMPTY:
             painter.setPen(QPen(QColor(220, 60, 60), 1.5))
         elif rect.state is FieldState.PAIRED_INCOMPLETE:
             painter.setPen(QPen(QColor(200, 160, 40), 1.0))
         else:
-            painter.setPen(QPen(QColor(80, 80, 80)))
+            painter.setPen(QPen(QColor(*FIELD_BORDER_RGB)))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(rect.value_rect)
         text_color = (
-            QColor(220, 220, 220) if rect.state is FieldState.NORMAL
-            else QColor(140, 140, 140)
+            QColor(*FIELD_TEXT_RGB) if rect.state is FieldState.NORMAL else QColor(140, 140, 140)
         )
         painter.setPen(QPen(text_color))
         value_text = getattr(self, "_cg_field_values", {}).get(rect.name, "")
         painter.drawText(
-            rect.value_rect.adjusted(4, 0, -4, 0),
+            rect.value_rect.adjusted(FIELD_TEXT_PADDING_PX, 0, -FIELD_TEXT_PADDING_PX, 0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             value_text,
         )
@@ -1832,7 +1842,6 @@ class OrphanIngredientNode(CraftGraphBaseNode):
     NODE_NAME = "Orphan Ingredient"
     NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
     IS_ORPHAN: bool = True
-    USE_PAINTED_FIELDS = False
 
     FIELD_REGISTRY = [
         FieldPin("item_id", PinType.STRING, label="ItemID"),

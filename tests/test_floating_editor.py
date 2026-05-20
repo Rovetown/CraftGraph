@@ -173,3 +173,31 @@ class TestFloatingEditorSubclassRegistries:
         host._float_editor.returnPressed.emit()
         qapp.processEvents()
         assert committed == [("decay_rate_mod", "2.5")]
+
+
+class TestFloatingEditorSeamlessStyle:
+    """Pooled editors render like the painted field they overlay, so editing
+    reads as in-place rather than a popup widget appearing."""
+
+    def test_string_editor_uses_field_style(self, host):
+        from craftgraph.painted_fields import (
+            FIELD_BORDER_RGB,
+            FIELD_FILL_RGB,
+            FIELD_TEXT_RGB,
+        )
+
+        ss = host._string_editor.styleSheet()
+        assert f"rgb{FIELD_FILL_RGB}" in ss
+        assert f"rgb{FIELD_BORDER_RGB}" in ss
+        assert f"rgb{FIELD_TEXT_RGB}" in ss
+
+    def test_line_editors_share_one_style(self, host):
+        ss = host._string_editor.styleSheet()
+        assert ss != ""
+        assert host._int_editor.styleSheet() == ss
+        assert host._float_editor.styleSheet() == ss
+
+    def test_combo_editor_uses_field_fill(self, host):
+        from craftgraph.painted_fields import FIELD_FILL_RGB
+
+        assert f"rgb{FIELD_FILL_RGB}" in host._combo_editor.styleSheet()

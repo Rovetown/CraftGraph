@@ -16,6 +16,15 @@ from PySide6.QtCore import QRectF
 
 from craftgraph.pin_registry import PinType
 
+# Shared visual style for a painted value field and the floating editor that
+# overlays it while the user types. Both render from these constants so that
+# entering edit mode reads as the field becoming editable in place, rather
+# than a separate popup widget appearing on top of it.
+FIELD_FILL_RGB = (40, 40, 40)
+FIELD_BORDER_RGB = (80, 80, 80)
+FIELD_TEXT_RGB = (220, 220, 220)
+FIELD_TEXT_PADDING_PX = 4
+
 
 class FieldState(Enum):
     NORMAL = "normal"

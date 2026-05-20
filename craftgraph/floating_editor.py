@@ -15,7 +15,28 @@ from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
 from PySide6.QtGui import QDoubleValidator, QFocusEvent, QIntValidator, QKeyEvent
 from PySide6.QtWidgets import QComboBox, QCompleter, QGraphicsView, QLineEdit, QWidget
 
+from craftgraph.painted_fields import (
+    FIELD_BORDER_RGB,
+    FIELD_FILL_RGB,
+    FIELD_TEXT_PADDING_PX,
+    FIELD_TEXT_RGB,
+)
 from craftgraph.pin_registry import PinType
+
+# Stylesheets that make a pooled editor render like the painted field it
+# overlays: same fill, border, and text color, so the summon reads as the
+# field becoming editable in place rather than a popup appearing.
+_LINE_EDIT_STYLE = (
+    f"QLineEdit {{ background: rgb{FIELD_FILL_RGB};"
+    f" color: rgb{FIELD_TEXT_RGB};"
+    f" border: 1px solid rgb{FIELD_BORDER_RGB};"
+    f" padding-left: {FIELD_TEXT_PADDING_PX}px; }}"
+)
+_COMBO_STYLE = (
+    f"QComboBox {{ background: rgb{FIELD_FILL_RGB};"
+    f" color: rgb{FIELD_TEXT_RGB};"
+    f" border: 1px solid rgb{FIELD_BORDER_RGB}; }}"
+)
 
 
 class _CancellingLineEdit(QLineEdit):
@@ -79,6 +100,10 @@ class FloatingEditorHost(QObject):
         self._float_editor.returnPressed.connect(self._commit)
         self._float_editor.escape_pressed.connect(self._cancel)
         self._float_editor.installEventFilter(self)
+
+        for line_editor in (self._string_editor, self._int_editor, self._float_editor):
+            line_editor.setStyleSheet(_LINE_EDIT_STYLE)
+        self._combo_editor.setStyleSheet(_COMBO_STYLE)
 
         self._view: QGraphicsView | None = None
         self._active_field_name: str | None = None
