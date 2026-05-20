@@ -19,6 +19,14 @@ Three phases, each shippable independently. Each phase becomes its own implement
 
 Phase 2 starts only after Phase 1 lands so threshold values come from real measurements, not guesswork.
 
+### Field observation (2026-05-20)
+
+A real 155-recipe project (a genuinely large recipe set, so some growth is expected) measures
+around 6000 HWND. That is well into the amber band Surface A defines (5000-8000) and worth a
+look. The count scales with recipe count, which points at the node graph as the driver rather
+than transient dialogs like Settings (which is freed on close via `deleteLater`). Phase 1
+diagnostics would settle whether 6000 is steady-state cost or accumulated leak.
+
 ### Phase 1 -- Diagnostics
 
 New module `craftgraph/hwnd_diag.py` (Windows-only with no-op fallback on Linux/macOS):
@@ -245,13 +253,16 @@ Extended painted-fields to the six remaining structural nodes (Fabricator, Craft
 
 ## Post-Release Features
 
-### Settings dialog visual pass
+### Settings dialog widget footprint
 
-> Settings dialog (`_SettingsDialog` in `craftgraph/qt_gui.py:629`) is a `QDialog` with standard Qt form widgets styled by a stylesheet. The painted-fields system in the node graph is `QGraphicsItem`-based and lives in a `QGraphicsScene`. A literal port is a rewrite, not a touch-up.
+> Reframed from a "visual pass" once the real concern surfaced: HWND/widget
+> cost, not appearance. A painted-fields rewrite was rejected (high cost,
+> near-zero persistent benefit, loss of native form behaviors). See
+> `docs/superpowers/specs/2026-05-20-settings-dialog-lazy-tabs-design.md`.
 
-- [ ] **Decide scope:** full painted-fields rewrite (embed `QGraphicsView` in dialog, every setting becomes a graphics item with floating-editor pool) vs. a focused visual-consistency pass (borrow the painted-field value-rect look for a few specific entries that visually clash).
-- [ ] **If focused pass:** identify entries that should match the node-graph look (likely the simple text/int/enum settings, NOT sliders/lists). Apply matching border + opaque background + click-to-edit-via-floating-editor on top of the existing dialog.
-- [ ] **If full rewrite:** ingredient-list-style scrollable settings will need a non-graphics fallback regardless (QListWidget doesn't translate). Consider whether the consistency is worth the loss of native form behaviors (keyboard navigation, focus rings, accessibility).
+- [DONE] **Lazy tab construction.** _`_SettingsDialog` builds each tab on first view via a builder registry; `_on_settings` opens with `lazy_tabs=True` so only the General tab builds up front. Default stays eager so existing tests are untouched._
+- [DONE] **Drop the Widget Gallery tab.** _Dev-only demo tab and its six group helpers removed; 8 tabs to 7._
+- [ ] **Measure the win.** _Once Phase 1 HWND diagnostics land, confirm the `open_close_settings_x20` stress delta dropped and ratchet its threshold down._
 
 ### Tab ID Autocomplete
 

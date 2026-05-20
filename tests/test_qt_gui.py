@@ -4126,6 +4126,102 @@ class TestSettingsDialogRestoreAllDefaults:
         assert dialog._update_check_cb.isChecked() is True
 
 
+class TestSettingsDialogLazyTabs:
+    """Settings tabs build lazily under lazy_tabs=True; eagerly by default."""
+
+    @staticmethod
+    def _outer_tabs(dialog):
+        return dialog.findChildren(QtWidgets.QTabWidget)[0]
+
+    @staticmethod
+    def _tab_index(dialog, title):
+        tabs = TestSettingsDialogLazyTabs._outer_tabs(dialog)
+        for i in range(tabs.count()):
+            if tabs.tabText(i) == title:
+                return i
+        raise AssertionError(f"{title!r} tab not found")
+
+    def test_lazy_builds_only_general_tab(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, lazy_tabs=True)
+        assert dialog._tab_built == {0}
+
+    def test_eager_builds_all_tabs(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        tab_count = self._outer_tabs(dialog).count()
+        assert dialog._tab_built == set(range(tab_count))
+
+    def test_switching_tab_builds_it(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, lazy_tabs=True)
+        idx = self._tab_index(dialog, "Node Editor")
+        assert dialog._zoom_speed_spin is None
+        self._outer_tabs(dialog).setCurrentIndex(idx)
+        assert idx in dialog._tab_built
+        assert dialog._zoom_speed_spin is not None
+
+    def test_tab_built_only_once(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, lazy_tabs=True)
+        tabs = self._outer_tabs(dialog)
+        idx = self._tab_index(dialog, "Node Editor")
+        tabs.setCurrentIndex(idx)
+        first = dialog._zoom_speed_spin
+        tabs.setCurrentIndex(0)
+        tabs.setCurrentIndex(idx)
+        assert dialog._zoom_speed_spin is first
+
+    def test_unbuilt_tab_accessor_returns_init_value(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+        from craftgraph.theme import NodeEditorSettings
+
+        ne = NodeEditorSettings(zoom_speed=3.0)
+        dialog = _SettingsDialog(None, lazy_tabs=True, node_editor=ne)
+        assert "Node Editor" not in {
+            self._outer_tabs(dialog).tabText(i) for i in dialog._tab_built
+        }
+        assert dialog.node_editor_settings.zoom_speed == 3.0
+
+    def test_reset_all_builds_all_tabs_when_lazy(self, qapp, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None, lazy_tabs=True)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *a, **kw: QtWidgets.QMessageBox.StandardButton.Yes,
+        )
+        dialog._reset_all()
+        tab_count = self._outer_tabs(dialog).count()
+        assert dialog._tab_built == set(range(tab_count))
+
+    def test_no_widget_gallery_tab(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(None)
+        tabs = self._outer_tabs(dialog)
+        titles = {tabs.tabText(i) for i in range(tabs.count())}
+        assert "Widget Gallery" not in titles
+        assert tabs.count() == 7
+
+    def test_on_settings_opens_lazily(self, window, monkeypatch):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        seen: list[set[int]] = []
+        monkeypatch.setattr(
+            _SettingsDialog,
+            "exec",
+            lambda self: seen.append(set(self._tab_built)) or 0,
+        )
+        window._on_settings()
+        assert seen == [{0}]
+
+
 class TestUpdateChecker:
     def test_run_update_check_no_update(self, window):
         """Stub always returns None -- status bar should not show update text."""

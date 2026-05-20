@@ -25,6 +25,7 @@ import time
 import types
 import warnings
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
@@ -155,8 +156,6 @@ _SETTINGS_DIALOG_DEFAULT_SIZE = (720, 760)
 _SETTINGS_FORM_VSPACING = 10
 _VALIDATION_DIALOG_MIN_SIZE = (480, 300)
 _ID_PICKER_DIALOG_MIN_SIZE = (340, 420)
-# Square swatch used in the Appearance tab for picking node colors.
-_COLOR_SWATCH_PX = 36
 
 # Timer intervals / durations in milliseconds.
 _PIPE_ANIM_TICK_MS = 50              # pipe dash-offset animation tick
@@ -691,6 +690,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         file_watching: FileWatchingSettings | None = None,
         keybindings: KeybindingSettings | None = None,
         project_custom_ids: list[str] | None = None,
+        lazy_tabs: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -784,40 +784,56 @@ class _SettingsDialog(QtWidgets.QDialog):
         # -- Keybinding tab widgets --
         self._kb_edits: dict[str, QtWidgets.QKeySequenceEdit] = {}
 
-        # Most tabs are vertical forms that grow with the number of rows;
-        # wrap them in a scroll area so a small dialog still shows every
-        # widget at its natural size.  Appearance has its own inner subtabs
-        # (each wrapped where needed) and Widget Gallery already returns a
-        # scrollable wrapper, so they're added unwrapped.
-        tabs.addTab(
-            self._scrollable(
-                self._build_general_tab(
-                    backup_on_save,
-                    auto_save_enabled=auto_save_enabled,
-                    auto_save_interval=auto_save_interval,
-                    default_project_folder=default_project_folder,
-                    subnautica_cc3_path=subnautica_cc3_path,
-                    recent_max_entries=recent_max_entries,
-                    on_launch=on_launch,
-                    check_for_updates=check_for_updates,
+        # Each tab is registered as a builder closure and added as an empty
+        # placeholder page.  Its content is built lazily on first view (or
+        # eagerly here when lazy_tabs is False).  Building a tab only when the
+        # user opens it keeps the dialog's transient widget/handle spike small.
+        # General is built before the dialog shows so it is never blank.
+        # Most tabs are vertical forms wrapped in a scroll area so a small
+        # dialog still shows every row; Appearance returns its own widget.
+        self._tabs = tabs
+        self._tab_builders: dict[int, Callable[[], QtWidgets.QWidget]] = {}
+        self._tab_built: set[int] = set()
+
+        tab_specs: list[tuple[str, Callable[[], QtWidgets.QWidget]]] = [
+            (
+                "General",
+                lambda: self._scrollable(
+                    self._build_general_tab(
+                        backup_on_save,
+                        auto_save_enabled=auto_save_enabled,
+                        auto_save_interval=auto_save_interval,
+                        default_project_folder=default_project_folder,
+                        subnautica_cc3_path=subnautica_cc3_path,
+                        recent_max_entries=recent_max_entries,
+                        on_launch=on_launch,
+                        check_for_updates=check_for_updates,
+                    ),
                 ),
             ),
-            "General",
-        )
-        tabs.addTab(self._build_appearance_tab(), "Appearance")
-        tabs.addTab(self._scrollable(self._build_node_editor_tab()), "Node Editor")
-        tabs.addTab(self._scrollable(self._build_code_editor_tab()), "Code Editor")
-        tabs.addTab(self._scrollable(self._build_autocomplete_tab()), "Autocomplete")
-        tabs.addTab(self._scrollable(self._build_file_watching_tab()), "File Watching")
-        tabs.addTab(self._scrollable(self._build_keybindings_tab()), "Keybindings")
-        tabs.addTab(self._build_gallery_tab(), "Widget Gallery")
+            ("Appearance", self._build_appearance_tab),
+            ("Node Editor", lambda: self._scrollable(self._build_node_editor_tab())),
+            ("Code Editor", lambda: self._scrollable(self._build_code_editor_tab())),
+            ("Autocomplete", lambda: self._scrollable(self._build_autocomplete_tab())),
+            (
+                "File Watching",
+                lambda: self._scrollable(self._build_file_watching_tab()),
+            ),
+            ("Keybindings", lambda: self._scrollable(self._build_keybindings_tab())),
+        ]
+        for label, builder in tab_specs:
+            page = QtWidgets.QWidget()
+            page_layout = QtWidgets.QVBoxLayout(page)
+            page_layout.setContentsMargins(0, 0, 0, 0)
+            self._tab_builders[tabs.addTab(page, label)] = builder
 
-        # Apply consistent vertical spacing to every QFormLayout so that
-        # taller field widgets (spinboxes, combos) keep clear of the
-        # labels in adjacent rows.  Walking the dialog after construction
-        # avoids editing every per-tab build method.
-        for form in self.findChildren(QtWidgets.QFormLayout):
-            form.setVerticalSpacing(_SETTINGS_FORM_VSPACING)
+        # Connect only after every placeholder exists so currentChanged
+        # cannot fire into a half-populated registry.
+        tabs.currentChanged.connect(self._ensure_tab_built)
+        if lazy_tabs:
+            self._ensure_tab_built(tabs.currentIndex())
+        else:
+            self._ensure_all_tabs_built()
 
         button_row = QtWidgets.QHBoxLayout()
         restore_all_btn = QtWidgets.QPushButton("Restore All Defaults")
@@ -833,6 +849,26 @@ class _SettingsDialog(QtWidgets.QDialog):
         close_btn.clicked.connect(self.accept)
         button_row.addWidget(close_btn)
         root.addLayout(button_row)
+
+    # -- Lazy tab construction ------------------------------------------------
+
+    def _ensure_tab_built(self, index: int) -> None:
+        """Build a settings tab's content the first time it is shown."""
+        if index in self._tab_built or index not in self._tab_builders:
+            return
+        # Mark before building so a re-entrant currentChanged is a no-op.
+        self._tab_built.add(index)
+        content = self._tab_builders[index]()
+        self._tabs.widget(index).layout().addWidget(content)
+        # Apply consistent vertical spacing to this tab's QFormLayouts so
+        # taller fields (spinboxes, combos) keep clear of neighbouring labels.
+        for form in content.findChildren(QtWidgets.QFormLayout):
+            form.setVerticalSpacing(_SETTINGS_FORM_VSPACING)
+
+    def _ensure_all_tabs_built(self) -> None:
+        """Build every settings tab. Used for eager construction and reset."""
+        for index in self._tab_builders:
+            self._ensure_tab_built(index)
 
     # -- Public accessors for wired settings ----------------------------------
 
@@ -2351,6 +2387,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         )
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
+        # Per-section resets poke widgets that are None for unbuilt tabs.
+        self._ensure_all_tabs_built()
         self._reset_general()
         self._reset_appearance_theme()
         self._reset_appearance_nodes()
@@ -2360,170 +2398,6 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._reset_autocomplete()
         self._reset_file_watching()
         self._reset_keybindings()
-
-    # =========================================================================
-    # Tab 8: Widget Gallery (for testing)
-    # =========================================================================
-
-    def _build_gallery_tab(self) -> QtWidgets.QWidget:
-        content = QtWidgets.QWidget()
-        col = QtWidgets.QVBoxLayout(content)
-        col.setSpacing(12)
-
-        col.addWidget(self._build_toggles_group())
-        col.addWidget(self._build_selection_group())
-        col.addWidget(self._build_numeric_group())
-        col.addWidget(self._build_text_group())
-        col.addWidget(self._build_color_group())
-        col.addWidget(self._build_list_group())
-        col.addStretch()
-
-        return self._scrollable(content)
-
-    # -- Widget Gallery groups ------------------------------------------------
-
-    @staticmethod
-    def _build_toggles_group() -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Toggles")
-        layout = QtWidgets.QVBoxLayout(group)
-
-        cb = QtWidgets.QCheckBox("QCheckBox -- simple on/off toggle")
-        cb.setChecked(True)
-        layout.addWidget(cb)
-
-        cb_tri = QtWidgets.QCheckBox("QCheckBox -- tristate (on/partial/off)")
-        cb_tri.setTristate(True)
-        cb_tri.setCheckState(QtCore.Qt.CheckState.PartiallyChecked)
-        layout.addWidget(cb_tri)
-
-        radio_row = QtWidgets.QHBoxLayout()
-        radio_row.addWidget(QtWidgets.QLabel("QRadioButton group:"))
-        for i, text in enumerate(("Option A", "Option B", "Option C")):
-            rb = QtWidgets.QRadioButton(text)
-            if i == 0:
-                rb.setChecked(True)
-            radio_row.addWidget(rb)
-        radio_row.addStretch()
-        layout.addLayout(radio_row)
-        return group
-
-    @staticmethod
-    def _build_selection_group() -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Selection")
-        layout = QtWidgets.QFormLayout(group)
-
-        combo = QtWidgets.QComboBox()
-        combo.addItems(["Default", "Deuteranopia", "Protanopia", "Tritanopia"])
-        layout.addRow("QComboBox:", combo)
-
-        editable = QtWidgets.QComboBox()
-        editable.setEditable(True)
-        editable.addItems(["Preset 1", "Preset 2", "Preset 3"])
-        editable.setCurrentText("")
-        editable.lineEdit().setPlaceholderText("Editable -- type or pick")
-        layout.addRow("QComboBox (editable):", editable)
-
-        layout.addRow("QFontComboBox:", QtWidgets.QFontComboBox())
-        return group
-
-    @staticmethod
-    def _build_numeric_group() -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Numeric")
-        layout = QtWidgets.QFormLayout(group)
-
-        spin = QtWidgets.QSpinBox()
-        spin.setRange(0, 999)
-        spin.setValue(48)
-        layout.addRow("QSpinBox (int):", spin)
-
-        dspin = QtWidgets.QDoubleSpinBox()
-        dspin.setRange(0.0, 10.0)
-        dspin.setSingleStep(0.1)
-        dspin.setValue(1.5)
-        layout.addRow("QDoubleSpinBox (float):", dspin)
-
-        slider_row = QtWidgets.QHBoxLayout()
-        slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        slider.setRange(0, 100)
-        slider.setValue(50)
-        value_label = QtWidgets.QLabel("50")
-        value_label.setFixedWidth(30)
-        slider.valueChanged.connect(lambda v: value_label.setText(str(v)))
-        slider_row.addWidget(slider)
-        slider_row.addWidget(value_label)
-        layout.addRow("QSlider:", slider_row)
-        return group
-
-    @staticmethod
-    def _build_text_group() -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Text Input")
-        layout = QtWidgets.QFormLayout(group)
-
-        line = QtWidgets.QLineEdit()
-        line.setPlaceholderText("QLineEdit -- single line text")
-        layout.addRow("QLineEdit:", line)
-
-        key = QtWidgets.QKeySequenceEdit(QtGui.QKeySequence("Ctrl+Shift+S"))
-        layout.addRow("QKeySequenceEdit:", key)
-        return group
-
-    def _build_color_group(self) -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("Color Picker")
-        layout = QtWidgets.QHBoxLayout(group)
-
-        swatch = QtWidgets.QPushButton("")
-        swatch.setFixedSize(_COLOR_SWATCH_PX, _COLOR_SWATCH_PX)
-        current = QtGui.QColor(100, 180, 255)
-        swatch.setStyleSheet(
-            f"background: {current.name()};"
-            " border: 1px solid rgb(120,120,120); border-radius: 4px;"
-        )
-        info = QtWidgets.QLabel(f"Current: {current.name()}")
-
-        def _pick() -> None:
-            chosen = QtWidgets.QColorDialog.getColor(current, self, "Pick a color")
-            if chosen.isValid():
-                swatch.setStyleSheet(
-                    f"background: {chosen.name()};"
-                    " border: 1px solid rgb(120,120,120); border-radius: 4px;"
-                )
-                info.setText(f"Current: {chosen.name()}")
-
-        swatch.clicked.connect(_pick)
-        layout.addWidget(QtWidgets.QLabel("Click swatch:"))
-        layout.addWidget(swatch)
-        layout.addWidget(info)
-        layout.addStretch()
-        return group
-
-    def _build_list_group(self) -> QtWidgets.QGroupBox:
-        group = QtWidgets.QGroupBox("List (add / remove items)")
-        layout = QtWidgets.QVBoxLayout(group)
-
-        lw = QtWidgets.QListWidget()
-        lw.addItems(["ExampleItem1", "ExampleItem2", "ExampleItem3"])
-        layout.addWidget(lw)
-
-        btn_row = QtWidgets.QHBoxLayout()
-        add_btn = QtWidgets.QPushButton("Add")
-        remove_btn = QtWidgets.QPushButton("Remove")
-
-        def _add() -> None:
-            text, ok = QtWidgets.QInputDialog.getText(self, "Add Item", "Item name:")
-            if ok and text.strip():
-                lw.addItem(text.strip())
-
-        def _remove() -> None:
-            if lw.currentRow() >= 0:
-                lw.takeItem(lw.currentRow())
-
-        add_btn.clicked.connect(_add)
-        remove_btn.clicked.connect(_remove)
-        btn_row.addWidget(add_btn)
-        btn_row.addWidget(remove_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
-        return group
 
 
 class ItemIdPickerDialog(QtWidgets.QDialog):
@@ -4919,6 +4793,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 project_custom_ids=(
                     self._effective_custom_ids() if self._project is not None else None
                 ),
+                lazy_tabs=True,
             )
             dialog.applied.connect(lambda: self._apply_settings_from_dialog(dialog))
             try:
