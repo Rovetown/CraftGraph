@@ -1,6 +1,3 @@
-#### BIG INBETWEEN NEEDED TO BE SOLVED!!!
-The file "GEMINI_SOLUTION.md" has important info and potential bug fixes for us!
-
 #### TEST RUNNER -- regression sweep hangs / times out
 
 > **Resolved knowledge worth keeping:** Headless test hangs in the agent shell traced to two causes. (1) **Pipe buffering**: `2>&1 | tail` / `Select-Object -Last` only flushes the tail of stdout, hiding mid-run progress. Fix pattern: redirect to a file with `>file 2>&1` and tail the file. (2) **Modal dialog stubs**: production migrated from the deprecated `QDialog.exec_` form to the new `QDialog.exec` form (commit a46e127); test monkey-patches still targeting the underscore alias no longer intercepted the real modal, so it blocked the headless loop indefinitely. Same fix applies to any future modal stub.
