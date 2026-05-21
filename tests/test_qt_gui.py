@@ -6557,17 +6557,20 @@ class TestIngredientRequiredEditing:
         for n in window.graph.all_nodes():
             ref = getattr(n, "model_ref", None)
             if ref is not None and getattr(ref, "item_id", None) == "TitaniumIngot":
+                assert ref.ingredients, "recipe loaded without its ingredient"
                 return n
         raise AssertionError("recipe node not found")
 
     def test_committed_ingredient_updates_model(self, window, tmp_path):
         node = self._load_recipe_with_ingredient(window, tmp_path)
+        # Prime the active-node slot directly, bypassing _on_field_edit_requested.
         window._active_node_for_edit = node
         window._on_floating_editor_committed("ingredient_0", "9")
         assert node.model_ref.ingredients[0].required == 9
 
     def test_committed_ingredient_updates_code_editor(self, window, tmp_path):
         node = self._load_recipe_with_ingredient(window, tmp_path)
+        # Prime the active-node slot directly, bypassing _on_field_edit_requested.
         window._active_node_for_edit = node
         window._on_floating_editor_committed("ingredient_0", "9")
         assert "Required: 9" in window.code_editor.toPlainText()
@@ -6579,3 +6582,4 @@ class TestIngredientRequiredEditing:
         window._on_field_edit_requested(node, "ingredient_0", QRect(0, 0, 100, 22), "3")
         host = window._floating_editor_host
         assert host._active_editor is host._int_editor
+        assert window._active_node_for_edit is node
