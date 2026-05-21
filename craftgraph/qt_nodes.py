@@ -1520,19 +1520,19 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         if not in_port.name().startswith("ingredient_"):
             return
         self._set_ingredient_port_label(in_port, "")
+        # Any ingredient disconnect changes the connected-ingredient set, so
+        # the painted layout cache (which includes ingredient rows) must
+        # rebuild -- even a middle disconnect that pops no trailing slot.
+        self.view._cg_layout_dirty = True
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
         # Pop only when there are 2+ trailing empties, preserving one as the
         # next-slot placeholder.
-        popped = False
         while (
             len(ing_ports) > 1
             and not ing_ports[-1].connected_ports()
             and not ing_ports[-2].connected_ports()
         ):
             self.delete_input(ing_ports.pop())
-            popped = True
-        if popped:
-            self.view._cg_layout_dirty = True
 
     def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
         """Set the ingredient port label from the source node's item ID."""
@@ -1784,17 +1784,17 @@ class FabricatorNode(CraftGraphBaseNode):
         if not in_port.name().startswith("ingredient_"):
             return
         self._set_ingredient_port_label(in_port, "")
+        # Any ingredient disconnect changes the connected-ingredient set, so
+        # the painted layout cache (which includes ingredient rows) must
+        # rebuild -- even a middle disconnect that pops no trailing slot.
+        self.view._cg_layout_dirty = True
         ing_ports = [p for p in self.input_ports() if p.name().startswith("ingredient_")]
-        popped = False
         while (
             len(ing_ports) > 1
             and not ing_ports[-1].connected_ports()
             and not ing_ports[-2].connected_ports()
         ):
             self.delete_input(ing_ports.pop())
-            popped = True
-        if popped:
-            self.view._cg_layout_dirty = True
 
     def _label_ingredient_port(self, in_port: object, out_port: object) -> None:
         """Set the ingredient port label from the source node's item ID."""

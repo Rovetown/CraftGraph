@@ -353,6 +353,34 @@ class TestPaintedIngredientRows:
         self._force_paint(consumer)
         assert consumer.view._cg_ingredient_values["ingredient_0"] == "9"
 
+    def test_middle_disconnect_repaints_without_stale_rect(self, qapp, graph):
+        """A middle-ingredient disconnect invalidates the painted layout,
+        so the removed slot's value rect does not linger in the cache."""
+        from craftgraph.models import Ingredient, ModifiedRecipe
+
+        consumer = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Consumer")
+        consumer.model_ref = ModifiedRecipe(
+            item_id="Consumer",
+            ingredients=[Ingredient(f"Mat{i}", i + 1) for i in range(3)],
+        )
+        consumer._maybe_build_widgets()
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        out = src.get_output("output")
+        for i in range(3):
+            out.connect_to(consumer.get_input(f"ingredient_{i}"))
+        self._force_paint(consumer)
+        assert "ingredient_1" in {r.name for r in consumer.view._cg_field_rects}
+
+        # Disconnect the middle ingredient and drop its model entry together,
+        # the way RemoveIngredientCommand would. No trailing slot is popped.
+        consumer.get_input("ingredient_1").disconnect_from(out)
+        consumer.model_ref.ingredients.pop(1)
+        self._force_paint(consumer)
+        names = {r.name for r in consumer.view._cg_field_rects}
+        assert "ingredient_1" not in names
+        assert "ingredient_0" in names
+        assert "ingredient_2" in names
+
 
 class TestPaintedIngredientClick:
     def _wire(self, graph):
