@@ -222,10 +222,12 @@ class TestRenderAsDispatch:
         assert abs(center.greenF() - 0.25) < 0.02
         assert abs(center.blueF() - 0.75) < 0.02
 
-    def test_text_field_does_not_fill(self, qapp, graph):
+    def test_text_field_fills_with_field_color(self, qapp, graph):
+        """Text fields paint an opaque FIELD_FILL_RGB background so the
+        floating editor overlays them seamlessly."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QColor, QPainter, QPixmap
-        from craftgraph.painted_fields import FieldRect, FieldState
+        from craftgraph.painted_fields import FIELD_FILL_RGB, FieldRect, FieldState
         from craftgraph.pin_registry import PinType
 
         node = TestPaintedFieldsAlignToPortRows._make_added_recipe_node(
@@ -248,5 +250,9 @@ class TestRenderAsDispatch:
         finally:
             painter.end()
 
-        center = pixmap.toImage().pixelColor(20, 10)
-        assert center.redF() < 0.1  # still black inside rect (text only)
+        # Sample a corner clear of the (left-aligned) text glyphs and border.
+        corner = pixmap.toImage().pixelColor(2, 2)
+        expected = QColor(*FIELD_FILL_RGB)
+        assert abs(corner.redF() - expected.redF()) < 0.02
+        assert abs(corner.greenF() - expected.greenF()) < 0.02
+        assert abs(corner.blueF() - expected.blueF()) < 0.02
