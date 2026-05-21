@@ -26,6 +26,35 @@ class TestFieldRectDefaults:
         assert rect.state is FieldState.NORMAL
 
 
+class TestFieldRectIsIngredient:
+    def test_defaults_false(self) -> None:
+        from PySide6.QtCore import QRectF
+
+        from craftgraph.pin_registry import PinType
+
+        rect = FieldRect(
+            name="item_id",
+            pin_type=PinType.STRING,
+            label_rect=None,
+            value_rect=QRectF(0, 0, 10, 10),
+        )
+        assert rect.is_ingredient is False
+
+    def test_can_be_set_true(self) -> None:
+        from PySide6.QtCore import QRectF
+
+        from craftgraph.pin_registry import PinType
+
+        rect = FieldRect(
+            name="ingredient_0",
+            pin_type=PinType.INT,
+            label_rect=None,
+            value_rect=QRectF(0, 0, 10, 10),
+            is_ingredient=True,
+        )
+        assert rect.is_ingredient is True
+
+
 @pytest.fixture(scope="session")
 def qapp():
     from PySide6.QtWidgets import QApplication

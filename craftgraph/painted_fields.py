@@ -44,3 +44,4 @@ class FieldRect:
     value_rect: QRectF | None
     state: FieldState = FieldState.NORMAL
     render_as: str = "text"
+    is_ingredient: bool = False
