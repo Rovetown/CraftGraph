@@ -3,6 +3,7 @@
 > **Resolved knowledge worth keeping:** Headless test hangs in the agent shell traced to two causes. (1) **Pipe buffering**: `2>&1 | tail` / `Select-Object -Last` only flushes the tail of stdout, hiding mid-run progress. Fix pattern: redirect to a file with `>file 2>&1` and tail the file. (2) **Modal dialog stubs**: production migrated from the deprecated `QDialog.exec_` form to the new `QDialog.exec` form (commit a46e127); test monkey-patches still targeting the underscore alias no longer intercepted the real modal, so it blocked the headless loop indefinitely. Same fix applies to any future modal stub.
 
 - [ ] **Consider tagging slow / interactive tests with `@pytest.mark.slow`** and excluding them from the default `just test` recipe; opt-in via `just test-slow`. Same goal: the default sweep should finish fast enough that "did my change regress anything" never times out. Lower priority now that `just test-fast` exists.
+- [ ] **Cross-module heap corruption in a single-process full-Qt sweep.** Running `test_node_layout + test_painted_fields + test_commands + test_qt_nodes + test_qt_gui` as one pytest process crashes with `0xc0000374` (STATUS_HEAP_CORRUPTION) partway through `test_qt_gui`'s `window` fixture setup. Surfaced 2026-05-21 while gating `feat/editable-ingredient-required`: the crash needs the ~30 extra Qt-object-creating tests that branch added to tip over -- production code plus the pre-existing tests run that exact 5-file combination clean, and `master` never crashes it. No `just` recipe runs this combination; the real Qt gate `just test-qt` (`test_qt_gui` + `test_qt_nodes` only) stays clean across repeated runs. Latent cross-module Qt teardown fragility, perturbation-sensitive. If a recipe ever needs the whole Qt suite in one process, investigate test-harness lifetime first: the session-scoped `QApplication`, and per-module `NodeGraph`/scene/`Pipe` teardown between test files.
 
 
 ## HWND Exhaustion: Hardening + Diagnostics Plan
@@ -320,13 +321,19 @@ single `ingredient_amount` on the shared node cannot represent different
 `Required` values per consumer. Propagating one value to all consumers is the
 entanglement that sank it.
 
-- [ ] **Design pass first (brainstorming skill).** Resolve where `Required`
-  lives in the model and UI. Likely answer: on the recipe's ingredient slot
-  (per-edge), edited from the recipe-node side, not the ingredient node. First
-  confirm the shared-vs-instance-per-usage behavior of ingredient nodes in
-  `sync.py` -- the whole fix depends on it.
-- [ ] **Then:** write spec + plan under `docs/superpowers/`, implement via TDD.
-  Do not reuse the `3abc069` source-node + propagate approach.
+- [DONE] **Design pass first (brainstorming skill).** _Confirmed in `sync.py`:
+  ingredient source nodes (recipe outputs and shared `OrphanIngredientNode`s)
+  fan one output port out to many consumers, so `Required` lives per-(recipe,
+  ingredient) edge and is edited from the consumer recipe-node side. Spec:
+  `docs/superpowers/specs/2026-05-21-editable-ingredient-required-design.md`._
+- [DONE] **Then:** _Implemented via TDD on `feat/editable-ingredient-required`
+  (8-task plan). Per-ingredient `Required` is an editable painted value rect in
+  the consumer recipe / fabricator node's value column; the k-th connected
+  `ingredient_*` port maps to `model_ref.ingredients[k]` (robust to the
+  middle-disconnect index drift); a click summons the int floating editor and
+  commits a `ChangeIngredientCommand` (clamped 1-25). Did not reuse the
+  `3abc069` source-node + propagate approach. Plan:
+  `docs/superpowers/plans/2026-05-21-editable-ingredient-required.md`._
 
 ### Tab ID Autocomplete
 
