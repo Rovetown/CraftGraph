@@ -1218,6 +1218,48 @@ class CraftGraphBaseNode(BaseNode):
                 return fp
         return None
 
+    def _connected_ingredient_ports(self) -> list[Any]:
+        """Return this node's connected ingredient input ports, in port order.
+
+        Filters ``input_ports()`` to ports named ``ingredient_*`` that have a
+        connection. Port creation order is stable (``ingredient_0`` first), so
+        the k-th entry is the k-th connected ingredient slot.
+        """
+        return [
+            p
+            for p in self.input_ports()
+            if p.name().startswith("ingredient_") and p.connected_ports()
+        ]
+
+    def ingredient_required_values(self) -> dict[str, str]:
+        """Map each connected ingredient port name to its Required value.
+
+        The k-th connected ingredient port maps to ``model_ref.ingredients[k]``.
+        Returns ``{}`` when there is no model or no ingredients. Robust to the
+        middle-disconnect index drift: a removed ingredient drops its
+        connection and its model entry together, so positions stay aligned.
+        """
+        ingredients = getattr(self._model_ref, "ingredients", None)
+        if not ingredients:
+            return {}
+        result: dict[str, str] = {}
+        for k, port in enumerate(self._connected_ingredient_ports()):
+            if k >= len(ingredients):
+                break
+            result[port.name()] = str(ingredients[k].required)
+        return result
+
+    def ingredient_index_for_port(self, port_name: str) -> int | None:
+        """Return the ``model_ref.ingredients`` index for a connected port.
+
+        Returns ``None`` when ``port_name`` is not a currently-connected
+        ingredient port.
+        """
+        for k, port in enumerate(self._connected_ingredient_ports()):
+            if port.name() == port_name:
+                return k
+        return None
+
     def _ensure_signals(self) -> _NodeSignals:
         """Lazily build the per-node Qt signal carrier."""
         if not hasattr(self, "_cg_signals"):

@@ -2091,3 +2091,53 @@ class TestModifiedRecipeNoWidgets:
         node._maybe_build_widgets()
         assert isinstance(node.view, PaintedFieldsNodeItem)
         assert node.get_widget("item_id") is None
+
+
+class TestIngredientRequiredMapping:
+    def _wire(self, graph, n_ingredients):
+        from craftgraph.models import Ingredient, ModifiedRecipe
+
+        consumer = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Consumer")
+        consumer.model_ref = ModifiedRecipe(
+            item_id="Consumer",
+            ingredients=[Ingredient(f"Mat{i}", i + 1) for i in range(n_ingredients)],
+        )
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        out = src.get_output("output")
+        for i in range(n_ingredients):
+            out.connect_to(consumer.get_input(f"ingredient_{i}"))
+        return consumer, src
+
+    def test_required_values_keyed_by_connected_port(self, graph):
+        consumer, _src = self._wire(graph, 2)
+        assert consumer.ingredient_required_values() == {
+            "ingredient_0": "1",
+            "ingredient_1": "2",
+        }
+
+    def test_index_for_port(self, graph):
+        consumer, _src = self._wire(graph, 3)
+        assert consumer.ingredient_index_for_port("ingredient_0") == 0
+        assert consumer.ingredient_index_for_port("ingredient_2") == 2
+
+    def test_unconnected_port_has_no_value(self, graph):
+        consumer, _src = self._wire(graph, 1)
+        # ingredient_1 is the spawned empty placeholder, not connected.
+        assert "ingredient_1" not in consumer.ingredient_required_values()
+
+    def test_middle_disconnect_keeps_mapping_aligned(self, graph):
+        consumer, src = self._wire(graph, 3)
+        # Simulate RemoveIngredientCommand on the middle ingredient: drop the
+        # connection and the model entry together.
+        consumer.get_input("ingredient_1").disconnect_from(src.get_output("output"))
+        consumer.model_ref.ingredients.pop(1)
+        assert consumer.ingredient_required_values() == {
+            "ingredient_0": "1",
+            "ingredient_2": "3",
+        }
+        assert consumer.ingredient_index_for_port("ingredient_2") == 1
+
+    def test_no_model_returns_empty(self, graph):
+        node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="X")
+        assert node.ingredient_required_values() == {}
+        assert node.ingredient_index_for_port("ingredient_0") is None
