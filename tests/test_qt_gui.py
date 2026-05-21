@@ -6536,3 +6536,46 @@ class TestPanZoomProfiler:
         prof_files = list(diag_dir.glob("panzoom_*.prof"))
         assert len(prof_files) == 1
         assert prof_files[0].stat().st_size > 0
+
+
+class TestIngredientRequiredEditing:
+    def _load_recipe_with_ingredient(self, window, tmp_path):
+        recipe_file = tmp_path / "test.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: TitaniumIngot;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: Titanium;\n"
+            "        Required: 3;\n"
+            "    );\n"
+            ");\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        for n in window.graph.all_nodes():
+            ref = getattr(n, "model_ref", None)
+            if ref is not None and getattr(ref, "item_id", None) == "TitaniumIngot":
+                return n
+        raise AssertionError("recipe node not found")
+
+    def test_committed_ingredient_updates_model(self, window, tmp_path):
+        node = self._load_recipe_with_ingredient(window, tmp_path)
+        window._active_node_for_edit = node
+        window._on_floating_editor_committed("ingredient_0", "9")
+        assert node.model_ref.ingredients[0].required == 9
+
+    def test_committed_ingredient_updates_code_editor(self, window, tmp_path):
+        node = self._load_recipe_with_ingredient(window, tmp_path)
+        window._active_node_for_edit = node
+        window._on_floating_editor_committed("ingredient_0", "9")
+        assert "Required: 9" in window.code_editor.toPlainText()
+
+    def test_field_edit_request_for_ingredient_summons_int_editor(self, window, tmp_path):
+        from PySide6.QtCore import QRect
+
+        node = self._load_recipe_with_ingredient(window, tmp_path)
+        window._on_field_edit_requested(node, "ingredient_0", QRect(0, 0, 100, 22), "3")
+        host = window._floating_editor_host
+        assert host._active_editor is host._int_editor

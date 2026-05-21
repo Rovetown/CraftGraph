@@ -3738,7 +3738,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         node = self._active_node_for_edit
         if node is None:
             return
-        node.set_property(field_name, value)
+        if field_name.startswith("ingredient_"):
+            node.set_ingredient_required(field_name, value)
+        else:
+            node.set_property(field_name, value)
         self._active_node_for_edit = None
 
     def _wire_node_signals(self, node: object) -> None:
@@ -3758,6 +3761,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._active_node_for_edit = node
         if isinstance(node, ColorVarNode):
             node.open_color_dialog()
+            return
+        if field_name.startswith("ingredient_"):
+            from craftgraph.pin_registry import PinType
+
+            self._floating_editor_host.summon(
+                field_name=field_name,
+                field_type=PinType.INT,
+                view_rect=view_rect,
+                current_value=current_value,
+            )
             return
         completer_words: list[str] | None = None
         if field_name in self._ID_WIDGET_NAMES:
