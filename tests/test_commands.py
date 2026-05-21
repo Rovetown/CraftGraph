@@ -373,6 +373,17 @@ class TestChangeIngredientCommand:
         cmd.undo()
         assert recipe.ingredients[1].item_id == "B"
 
+    def test_swaps_ingredient_on_custom_fabricator(self) -> None:
+        fab = CustomFabricator(
+            item_id="MyFab",
+            ingredients=[Ingredient("Titanium", 2)],
+        )
+        cmd = ChangeIngredientCommand(fab, index=0, new_ingredient=Ingredient("Titanium", 9))
+        cmd.execute()
+        assert fab.ingredients[0] == Ingredient("Titanium", 9)
+        cmd.undo()
+        assert fab.ingredients[0] == Ingredient("Titanium", 2)
+
 
 # ---------------------------------------------------------------------------
 # ChangeRecipeFieldCommand

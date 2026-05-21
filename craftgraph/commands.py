@@ -203,7 +203,7 @@ class ChangeIngredientCommand(EditCommand):
     Since Ingredient is frozen, this swaps the entire object.
     """
 
-    recipe: ModifiedRecipe
+    recipe: ModifiedRecipe | CustomFabricator
     index: int
     new_ingredient: Ingredient
     _old_ingredient: Ingredient | None = None

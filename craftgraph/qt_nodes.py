@@ -1260,6 +1260,50 @@ class CraftGraphBaseNode(BaseNode):
                 return k
         return None
 
+    def set_ingredient_required(self, port_name: str, raw_value: str) -> bool:
+        """Commit a new Required quantity for a connected ingredient port.
+
+        Validates *raw_value*: a non-integer or empty string is treated as a
+        cancel (returns False, no command). A valid integer is clamped to
+        CC3's 1-25 range. An unchanged value is a no-op. On a real change,
+        executes a ``ChangeIngredientCommand`` through the node's edit history
+        and repaints the node. Returns True only when a command was executed.
+        """
+        if self._edit_history is None or self._model_ref is None:
+            return False
+        ingredients = getattr(self._model_ref, "ingredients", None)
+        if not ingredients:
+            return False
+        text = str(raw_value).strip()
+        if not text:
+            return False
+        try:
+            amount = int(text)
+        except ValueError:
+            return False
+        amount = max(1, min(25, amount))
+        k = self.ingredient_index_for_port(port_name)
+        if k is None or k >= len(ingredients):
+            return False
+        old = ingredients[k]
+        if old.required == amount:
+            return False
+
+        from craftgraph.commands import ChangeIngredientCommand
+        from craftgraph.models import Ingredient
+
+        new_ingredient = Ingredient(item_id=old.item_id, required=amount)
+        self._edit_history.execute(
+            ChangeIngredientCommand(
+                recipe=self._model_ref,
+                index=k,
+                new_ingredient=new_ingredient,
+            )
+        )
+        if hasattr(self, "view"):
+            self.view.update()
+        return True
+
     def _ensure_signals(self) -> _NodeSignals:
         """Lazily build the per-node Qt signal carrier."""
         if not hasattr(self, "_cg_signals"):

@@ -2141,3 +2141,55 @@ class TestIngredientRequiredMapping:
         node = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="X")
         assert node.ingredient_required_values() == {}
         assert node.ingredient_index_for_port("ingredient_0") is None
+
+
+class TestSetIngredientRequired:
+    def _wire(self, graph):
+        from craftgraph.commands import EditHistory
+        from craftgraph.models import Ingredient, ModifiedRecipe
+
+        consumer = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Consumer")
+        consumer.model_ref = ModifiedRecipe(
+            item_id="Consumer",
+            ingredients=[Ingredient("Titanium", 3)],
+        )
+        consumer.set_edit_history(EditHistory())
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        src.get_output("output").connect_to(consumer.get_input("ingredient_0"))
+        return consumer
+
+    def test_updates_model_required(self, graph):
+        consumer = self._wire(graph)
+        assert consumer.set_ingredient_required("ingredient_0", "7") is True
+        assert consumer.model_ref.ingredients[0].required == 7
+        assert consumer.model_ref.ingredients[0].item_id == "Titanium"
+
+    def test_clamps_above_max(self, graph):
+        consumer = self._wire(graph)
+        consumer.set_ingredient_required("ingredient_0", "999")
+        assert consumer.model_ref.ingredients[0].required == 25
+
+    def test_clamps_below_min(self, graph):
+        consumer = self._wire(graph)
+        consumer.set_ingredient_required("ingredient_0", "0")
+        assert consumer.model_ref.ingredients[0].required == 1
+
+    def test_empty_value_is_noop(self, graph):
+        consumer = self._wire(graph)
+        assert consumer.set_ingredient_required("ingredient_0", "  ") is False
+        assert consumer.model_ref.ingredients[0].required == 3
+
+    def test_non_integer_is_noop(self, graph):
+        consumer = self._wire(graph)
+        assert consumer.set_ingredient_required("ingredient_0", "abc") is False
+        assert consumer.model_ref.ingredients[0].required == 3
+
+    def test_unchanged_value_is_noop(self, graph):
+        consumer = self._wire(graph)
+        assert consumer.set_ingredient_required("ingredient_0", "3") is False
+
+    def test_undo_restores_previous(self, graph):
+        consumer = self._wire(graph)
+        consumer.set_ingredient_required("ingredient_0", "8")
+        consumer._edit_history.undo()
+        assert consumer.model_ref.ingredients[0].required == 3
