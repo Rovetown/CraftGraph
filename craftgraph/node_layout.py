@@ -60,13 +60,12 @@ class NodeLayout:
         self.hit_rects = {}
         self.field_rects = []
         all_rows = (*self.port_rows.values(), *self.ingredient_rows.values())
+        value_left = 0.0
         if all_rows:
             # All value rects share the same x so the column is left-aligned
             # regardless of how wide each port's label happens to be, and the
             # column accounts for both registry-field and ingredient labels.
             value_left = max(row.label_right for row in all_rows) + self.margin
-        else:
-            value_left = 0.0
         value_width = max(self.value_column_width, 0.0)
         for fp in self.registry:
             if fp.pin_type is PinType.INGREDIENT_LIST:
@@ -75,16 +74,25 @@ class NodeLayout:
             if row is None:
                 continue
             self._emit_rect(
-                fp.name, fp.pin_type, fp.render_as, False, row, value_left, value_width,
+                fp.name,
+                fp.pin_type,
+                fp.render_as,
+                False,
+                row,
+                value_left,
+                value_width,
             )
         for port_name, row in self.ingredient_rows.items():
             self._emit_rect(
-                port_name, PinType.INT, "text", True, row, value_left, value_width,
+                port_name,
+                PinType.INT,
+                "text",
+                True,
+                row,
+                value_left,
+                value_width,
             )
-        if all_rows:
-            self.min_node_width = value_left + value_width
-        else:
-            self.min_node_width = 0.0
+        self.min_node_width = value_left + value_width if all_rows else 0.0
         return self
 
     def _emit_rect(
@@ -138,7 +146,7 @@ def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
         port_name = port_item.name
         if not port_name.startswith("field_"):
             continue
-        field_name = port_name[len("field_"):]
+        field_name = port_name[len("field_") :]
         text_rect = text_item.boundingRect()
         port_rect = port_item.boundingRect()
         rows[field_name] = PortRowGeometry(
