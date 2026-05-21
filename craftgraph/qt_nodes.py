@@ -606,7 +606,10 @@ class PaintedFieldsNodeItem(_NodeItem):
             return
         scene_rect = self.mapToScene(rect.value_rect).boundingRect()
         view_rect = view.mapFromScene(scene_rect).boundingRect()
-        current = node.get_property(rect.name)
+        if rect.is_ingredient:
+            current = getattr(self, "_cg_ingredient_values", {}).get(rect.name, "")
+        else:
+            current = node.get_property(rect.name)
         signals = node._ensure_signals()
         signals.field_edit_requested.emit(
             node, rect.name, view_rect, "" if current is None else str(current),

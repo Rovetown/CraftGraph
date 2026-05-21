@@ -352,3 +352,58 @@ class TestPaintedIngredientRows:
         consumer.model_ref.ingredients[0] = Ingredient("Titanium", 9)
         self._force_paint(consumer)
         assert consumer.view._cg_ingredient_values["ingredient_0"] == "9"
+
+
+class TestPaintedIngredientClick:
+    def _wire(self, graph):
+        from craftgraph.models import Ingredient, ModifiedRecipe
+
+        consumer = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Consumer")
+        consumer.model_ref = ModifiedRecipe(
+            item_id="Consumer",
+            ingredients=[Ingredient("Titanium", 4)],
+        )
+        consumer._maybe_build_widgets()
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        src.get_output("output").connect_to(consumer.get_input("ingredient_0"))
+        return consumer
+
+    def _force_paint(self, node):
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
+        pixmap = QPixmap(400, 600)
+        pixmap.fill()
+        painter = QPainter(pixmap)
+        node.view.paint(painter, QStyleOptionGraphicsItem(), None)
+        painter.end()
+
+    def _make_event(self, pos, button):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
+        event = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMousePress)
+        event.setPos(QPointF(pos))
+        event.setScenePos(QPointF(pos))
+        event.setButton(button)
+        event.setButtons(button)
+        event.setModifiers(Qt.KeyboardModifier.NoModifier)
+        return event
+
+    def test_left_click_on_ingredient_rect_fires_edit_signal(self, qapp, graph):
+        from PySide6.QtCore import Qt
+
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        rects = {r.name: r for r in consumer.view._cg_field_rects}
+        ing_rect = rects["ingredient_0"]
+        assert ing_rect.value_rect is not None
+
+        fired: list[tuple] = []
+        consumer._ensure_signals().field_edit_requested.connect(
+            lambda n, name, r, val: fired.append((name, val))
+        )
+        event = self._make_event(ing_rect.value_rect.center(), Qt.MouseButton.LeftButton)
+        consumer.view.mousePressEvent(event)
+        assert fired
+        assert fired[0] == ("ingredient_0", "4")
