@@ -45,6 +45,7 @@ class NodeLayout:
 
     registry: list[FieldPin]
     port_rows: dict[str, PortRowGeometry]
+    ingredient_rows: dict[str, PortRowGeometry] = field(default_factory=dict)
     value_column_width: float = 100.0
     margin: float = 8.0
     value_v_padding: float = 3.0
@@ -58,12 +59,12 @@ class NodeLayout:
         self.value_rects = {}
         self.hit_rects = {}
         self.field_rects = []
-        if self.port_rows:
+        all_rows = (*self.port_rows.values(), *self.ingredient_rows.values())
+        if all_rows:
             # All value rects share the same x so the column is left-aligned
-            # regardless of how wide each port's label happens to be.
-            value_left = (
-                max(row.label_right for row in self.port_rows.values()) + self.margin
-            )
+            # regardless of how wide each port's label happens to be, and the
+            # column accounts for both registry-field and ingredient labels.
+            value_left = max(row.label_right for row in all_rows) + self.margin
         else:
             value_left = 0.0
         value_width = max(self.value_column_width, 0.0)
@@ -73,32 +74,51 @@ class NodeLayout:
             row = self.port_rows.get(fp.name)
             if row is None:
                 continue
-            v_pad = min(self.value_v_padding, row.height / 2.0)
-            value_top = row.y + v_pad
-            value_height = max(row.height - 2 * v_pad, 0.0)
-            value_rect = QRectF(value_left, value_top, value_width, value_height)
-            hit_rect = QRectF(
-                row.label_left,
-                row.y,
-                value_left + value_width - row.label_left,
-                row.height,
+            self._emit_rect(
+                fp.name, fp.pin_type, fp.render_as, False, row, value_left, value_width,
             )
-            self.value_rects[fp.name] = value_rect
-            self.hit_rects[fp.name] = hit_rect
-            self.field_rects.append(
-                FieldRect(
-                    name=fp.name,
-                    pin_type=fp.pin_type,
-                    label_rect=None,
-                    value_rect=value_rect,
-                    render_as=fp.render_as,
-                )
+        for port_name, row in self.ingredient_rows.items():
+            self._emit_rect(
+                port_name, PinType.INT, "text", True, row, value_left, value_width,
             )
-        if self.port_rows:
+        if all_rows:
             self.min_node_width = value_left + value_width
         else:
             self.min_node_width = 0.0
         return self
+
+    def _emit_rect(
+        self,
+        name: str,
+        pin_type: PinType,
+        render_as: str,
+        is_ingredient: bool,
+        row: PortRowGeometry,
+        value_left: float,
+        value_width: float,
+    ) -> None:
+        v_pad = min(self.value_v_padding, row.height / 2.0)
+        value_top = row.y + v_pad
+        value_height = max(row.height - 2 * v_pad, 0.0)
+        value_rect = QRectF(value_left, value_top, value_width, value_height)
+        hit_rect = QRectF(
+            row.label_left,
+            row.y,
+            value_left + value_width - row.label_left,
+            row.height,
+        )
+        self.value_rects[name] = value_rect
+        self.hit_rects[name] = hit_rect
+        self.field_rects.append(
+            FieldRect(
+                name=name,
+                pin_type=pin_type,
+                label_rect=None,
+                value_rect=value_rect,
+                render_as=render_as,
+                is_ingredient=is_ingredient,
+            )
+        )
 
 
 def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
@@ -122,6 +142,31 @@ def collect_port_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
         text_rect = text_item.boundingRect()
         port_rect = port_item.boundingRect()
         rows[field_name] = PortRowGeometry(
+            y=port_item.y(),
+            height=max(port_rect.height(), text_rect.height()),
+            label_left=text_item.x(),
+            label_right=text_item.x() + text_rect.width(),
+        )
+    return rows
+
+
+def collect_ingredient_geometry(node_item: Any) -> dict[str, PortRowGeometry]:
+    """Extract per-ingredient-port geometry from a NodeGraphQt node item.
+
+    Mirrors ``collect_port_geometry`` but selects ``ingredient_*`` ports and
+    keys the result on the port name verbatim (no prefix stripping), since
+    ingredient ports have no registry field name.
+
+    Must be called after NodeGraphQt's ``align_ports`` has run for that node.
+    """
+    rows: dict[str, PortRowGeometry] = {}
+    for port_item, text_item in node_item._input_items.items():
+        port_name = port_item.name
+        if not port_name.startswith("ingredient_"):
+            continue
+        text_rect = text_item.boundingRect()
+        port_rect = port_item.boundingRect()
+        rows[port_name] = PortRowGeometry(
             y=port_item.y(),
             height=max(port_rect.height(), text_rect.height()),
             label_left=text_item.x(),

@@ -218,3 +218,82 @@ class TestCollectPortGeometry:
 
         rows = collect_port_geometry(_FakeNodeItem([]))
         assert rows == {}
+
+
+class TestNodeLayoutIngredientRows:
+    def test_ingredient_row_gets_value_rect(self) -> None:
+        layout = NodeLayout(
+            registry=[],
+            port_rows={},
+            ingredient_rows={"ingredient_0": _row(y=20.0, label_right=60.0)},
+            value_column_width=100.0,
+            margin=8.0,
+            value_v_padding=0.0,
+        ).build()
+        assert "ingredient_0" in layout.value_rects
+        rect = layout.value_rects["ingredient_0"]
+        assert rect.x() == pytest.approx(60.0 + 8.0)
+        assert rect.y() == pytest.approx(20.0)
+
+    def test_ingredient_field_rect_marked_is_ingredient(self) -> None:
+        layout = NodeLayout(
+            registry=[],
+            port_rows={},
+            ingredient_rows={"ingredient_0": _row(y=0.0)},
+        ).build()
+        fr = layout.field_rects[0]
+        assert fr.name == "ingredient_0"
+        assert fr.is_ingredient is True
+        assert fr.pin_type is PinType.INT
+
+    def test_ingredient_and_field_share_value_column(self) -> None:
+        layout = NodeLayout(
+            registry=_registry(("item_id", PinType.STRING)),
+            port_rows={"item_id": _row(y=0.0, label_right=120.0)},
+            ingredient_rows={"ingredient_0": _row(y=22.0, label_right=50.0)},
+            margin=8.0,
+        ).build()
+        field_x = layout.value_rects["item_id"].x()
+        ing_x = layout.value_rects["ingredient_0"].x()
+        assert field_x == pytest.approx(ing_x)
+        assert field_x == pytest.approx(120.0 + 8.0)
+
+    def test_min_node_width_accounts_for_ingredient_labels(self) -> None:
+        layout = NodeLayout(
+            registry=[],
+            port_rows={},
+            ingredient_rows={"ingredient_0": _row(y=0.0, label_right=140.0)},
+            value_column_width=100.0,
+            margin=8.0,
+        ).build()
+        assert layout.min_node_width == pytest.approx(140.0 + 100.0 + 8.0)
+
+    def test_no_ingredient_rows_leaves_field_layout_unchanged(self) -> None:
+        layout = NodeLayout(
+            registry=_registry(("item_id", PinType.STRING)),
+            port_rows={"item_id": _row(y=0.0, label_right=80.0)},
+            margin=8.0,
+        ).build()
+        assert layout.value_rects["item_id"].x() == pytest.approx(80.0 + 8.0)
+        assert all(not r.is_ingredient for r in layout.field_rects)
+
+
+class TestCollectIngredientGeometry:
+    def test_returns_geometry_for_ingredient_ports_only(self) -> None:
+        from craftgraph.node_layout import collect_ingredient_geometry
+
+        items = [
+            (_FakePortItem("hierarchy", 0.0), _FakeTextItem(20.0, 60.0)),
+            (_FakePortItem("ingredient_0", 22.0), _FakeTextItem(20.0, 80.0)),
+            (_FakePortItem("ingredient_1", 44.0), _FakeTextItem(20.0, 40.0)),
+            (_FakePortItem("field_item_id", 66.0), _FakeTextItem(20.0, 50.0)),
+        ]
+        rows = collect_ingredient_geometry(_FakeNodeItem(items))
+        assert set(rows.keys()) == {"ingredient_0", "ingredient_1"}
+        assert rows["ingredient_0"].y == 22.0
+        assert rows["ingredient_0"].label_right == 100.0
+
+    def test_empty_returns_empty(self) -> None:
+        from craftgraph.node_layout import collect_ingredient_geometry
+
+        assert collect_ingredient_geometry(_FakeNodeItem([])) == {}
