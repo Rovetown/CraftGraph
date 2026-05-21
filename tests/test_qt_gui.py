@@ -44,6 +44,28 @@ def window(qapp, monkeypatch, tmp_path):
     return CraftGraphWindow()
 
 
+@pytest.fixture(autouse=True)
+def _reap_file_watchers(qapp):
+    """Stop every CraftGraphWindow's file watcher after each test.
+
+    A window that loads a folder starts a Watchdog observer (its own OS
+    threads). Production stops it in ``closeEvent``, but tests rarely
+    close their windows, so without reaping, observer threads leak and
+    pile up (~98 alive partway through a full Qt run); a leaked watcher
+    thread racing the main thread's GC of abandoned Qt objects then
+    corrupts the heap (STATUS_HEAP_CORRUPTION). This autouse teardown
+    sweeps every live window -- those built by the ``window`` fixture
+    and those constructed directly in a test -- so no observer thread
+    outlives the test that started it.
+    """
+    yield
+    from craftgraph.qt_gui import CraftGraphWindow
+
+    for widget in qapp.topLevelWidgets():
+        if isinstance(widget, CraftGraphWindow):
+            widget._stop_file_watcher()
+
+
 # ---------------------------------------------------------------------------
 # Window basics
 # ---------------------------------------------------------------------------
@@ -6583,3 +6605,44 @@ class TestIngredientRequiredEditing:
         host = window._floating_editor_host
         assert host._active_editor is host._int_editor
         assert window._active_node_for_edit is node
+
+
+class TestWatcherThreadHygiene:
+    """Regression guard for the leaked-watcher heap corruption.
+
+    Each window that loads a folder starts a Watchdog observer thread.
+    The window fixture must stop it on teardown; without that, observer
+    threads leaked and piled up (~98 alive partway through a full Qt
+    run), and a leaked watcher thread racing the main thread's GC of
+    abandoned Qt objects corrupted the heap (STATUS_HEAP_CORRUPTION).
+
+    This class is defined last so it runs after the window-using tests
+    above: by the time it runs, every earlier window fixture should
+    have reaped its watcher.
+    """
+
+    def test_no_watchdog_threads_leaked_from_window_fixture(self, window):
+        import threading
+
+        leaked = [
+            t
+            for t in threading.enumerate()
+            if type(t).__module__.startswith("watchdog")
+        ]
+        assert not leaked, (
+            f"{len(leaked)} Watchdog observer thread(s) still alive -- a "
+            f"window fixture failed to stop its file watcher on teardown"
+        )
+
+    def test_stop_file_watcher_reaps_observer_thread(self, window, tmp_path):
+        recipe_file = tmp_path / "watched.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8"
+        )
+        window.load_recipes(recipe_file)
+        watcher = window._recipe_watcher
+        assert watcher is not None and watcher.running, "watcher did not start"
+
+        window._stop_file_watcher()
+        assert window._recipe_watcher is None
+        assert not watcher.running  # observer thread joined, not leaked
