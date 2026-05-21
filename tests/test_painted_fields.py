@@ -338,3 +338,17 @@ class TestPaintedIngredientRows:
         rects = {r.name: r for r in consumer.view._cg_field_rects}
         # ingredient_1 is the spawned empty placeholder.
         assert "ingredient_1" not in rects
+
+    def test_value_text_refreshes_on_repaint_after_change(self, qapp, graph):
+        """paint() re-reads ingredient values each call, so an edited
+        Required quantity shows on the next frame without a layout rebuild."""
+        from craftgraph.models import Ingredient
+
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        assert consumer.view._cg_ingredient_values["ingredient_0"] == "4"
+        # Swap the frozen Ingredient the way set_ingredient_required would,
+        # without touching port topology, then repaint.
+        consumer.model_ref.ingredients[0] = Ingredient("Titanium", 9)
+        self._force_paint(consumer)
+        assert consumer.view._cg_ingredient_values["ingredient_0"] == "9"
