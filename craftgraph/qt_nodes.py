@@ -442,18 +442,32 @@ class PaintedFieldsNodeItem(_NodeItem):
         widget: QWidget | None = None,
     ) -> None:
         super().paint(painter, option, widget)
-        from craftgraph.node_layout import NodeLayout, collect_port_geometry
+        from craftgraph.node_layout import (
+            NodeLayout,
+            collect_ingredient_geometry,
+            collect_port_geometry,
+        )
 
         node = getattr(self, "_cg_node", None)
         if node is None or not hasattr(node, "FIELD_REGISTRY"):
             return
 
+        # Ingredient Required values are re-read every paint so an edited
+        # quantity repaints without a layout rebuild. Cheap: small lists.
+        ing_values = node.ingredient_required_values()
+        self._cg_ingredient_values = ing_values
+
         cached = getattr(self, "_cg_cached_layout", None)
         if cached is None or getattr(self, "_cg_layout_dirty", True):
             port_rows = collect_port_geometry(self)
+            all_ing_rows = collect_ingredient_geometry(self)
+            ingredient_rows = {
+                name: row for name, row in all_ing_rows.items() if name in ing_values
+            }
             cached = NodeLayout(
                 registry=node.FIELD_REGISTRY,
                 port_rows=port_rows,
+                ingredient_rows=ingredient_rows,
                 value_column_width=self.VALUE_COLUMN_WIDTH,
                 margin=self.VALUE_COLUMN_MARGIN,
             ).build()
@@ -528,7 +542,10 @@ class PaintedFieldsNodeItem(_NodeItem):
             QColor(*FIELD_TEXT_RGB) if rect.state is FieldState.NORMAL else QColor(140, 140, 140)
         )
         painter.setPen(QPen(text_color))
-        value_text = getattr(self, "_cg_field_values", {}).get(rect.name, "")
+        if rect.is_ingredient:
+            value_text = getattr(self, "_cg_ingredient_values", {}).get(rect.name, "")
+        else:
+            value_text = getattr(self, "_cg_field_values", {}).get(rect.name, "")
         painter.drawText(
             rect.value_rect.adjusted(FIELD_TEXT_PADDING_PX, 0, -FIELD_TEXT_PADDING_PX, 0),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,

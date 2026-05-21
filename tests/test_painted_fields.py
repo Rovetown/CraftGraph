@@ -285,3 +285,56 @@ class TestRenderAsDispatch:
         assert abs(corner.redF() - expected.redF()) < 0.02
         assert abs(corner.greenF() - expected.greenF()) < 0.02
         assert abs(corner.blueF() - expected.blueF()) < 0.02
+
+
+class TestPaintedIngredientRows:
+    def _wire(self, graph):
+        from craftgraph.models import Ingredient, ModifiedRecipe
+
+        consumer = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Consumer")
+        consumer.model_ref = ModifiedRecipe(
+            item_id="Consumer",
+            ingredients=[Ingredient("Titanium", 4)],
+        )
+        consumer._maybe_build_widgets()
+        src = graph.create_node("com.craftgraph.ModifiedRecipeNode", name="Src")
+        src.get_output("output").connect_to(consumer.get_input("ingredient_0"))
+        return consumer
+
+    def _force_paint(self, node):
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
+        pixmap = QPixmap(400, 600)
+        pixmap.fill()
+        painter = QPainter(pixmap)
+        node.view.paint(painter, QStyleOptionGraphicsItem(), None)
+        painter.end()
+
+    def test_connected_ingredient_gets_value_rect(self, qapp, graph):
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        rects = {r.name: r for r in consumer.view._cg_field_rects}
+        assert "ingredient_0" in rects
+        assert rects["ingredient_0"].is_ingredient is True
+        assert rects["ingredient_0"].value_rect is not None
+
+    def test_ingredient_value_text_reflects_required(self, qapp, graph):
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        assert consumer.view._cg_ingredient_values["ingredient_0"] == "4"
+
+    def test_ingredient_rect_shares_value_column_with_fields(self, qapp, graph):
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        rects = {r.name: r for r in consumer.view._cg_field_rects}
+        ing_x = rects["ingredient_0"].value_rect.x()
+        field_x = rects["item_id"].value_rect.x()
+        assert abs(ing_x - field_x) < 0.5
+
+    def test_empty_ingredient_port_has_no_rect(self, qapp, graph):
+        consumer = self._wire(graph)
+        self._force_paint(consumer)
+        rects = {r.name: r for r in consumer.view._cg_field_rects}
+        # ingredient_1 is the spawned empty placeholder.
+        assert "ingredient_1" not in rects
