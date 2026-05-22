@@ -6684,3 +6684,47 @@ class TestCrossFileKnownIDs:
         assert advanced_tab is not None
         issues = window._collect_validation_issues(advanced_tab)
         assert not any("Unknown ingredient" in issue for issue in issues)
+
+
+class TestFloatingEditorCommit:
+    """Painted-field edits on loaded nodes must commit to the model."""
+
+    def test_ingredient_edit_commits_after_repeated_wiring(self, window, tmp_path):
+        """A single ingredient-value click commits, even when the node was
+        wired for field edits more than once (as the real load path does)."""
+        from PySide6.QtCore import QRect
+
+        recipe_file = tmp_path / "r.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Iron;\n"
+            "    AmountCrafted: 1;\n"
+            "    Ingredients:\n"
+            "        ( ItemID: Gold; Required: 2; );\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        node = next(
+            n
+            for n in window.graph.all_nodes()
+            if getattr(n, "model_ref", None) is not None
+        )
+
+        # The real load path wires a node for field edits more than once;
+        # make that explicit so the test deterministically exercises it.
+        window._wire_node_signals(node)
+        window._wire_node_signals(node)
+
+        node._ensure_signals().field_edit_requested.emit(
+            node, "ingredient_0", QRect(0, 0, 80, 22), "2"
+        )
+        # Exactly one node must be tracked for the pending commit.
+        assert window._active_node_for_edit is node
+
+        host = window._floating_editor_host
+        assert host._active_editor is not None
+        host._active_editor.setText("7")
+        host._commit()
+        assert node.model_ref.ingredients[0].required == 7

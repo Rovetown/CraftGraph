@@ -3747,9 +3747,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._active_node_for_edit = None
 
     def _wire_node_signals(self, node: object) -> None:
-        if hasattr(node, "_ensure_signals"):
-            signals = node._ensure_signals()
-            signals.field_edit_requested.connect(self._on_field_edit_requested)
+        if not hasattr(node, "_ensure_signals"):
+            return
+        # Wire each node exactly once. This method is called from both the
+        # node_created signal and _on_tab_changed (which fires repeatedly
+        # during a load); without this guard, field_edit_requested gets
+        # connected N times and one click drives N summon() calls.
+        if getattr(node, "_cg_signals_wired", False):
+            return
+        node._cg_signals_wired = True
+        signals = node._ensure_signals()
+        signals.field_edit_requested.connect(self._on_field_edit_requested)
 
     def _on_field_edit_requested(
         self,
