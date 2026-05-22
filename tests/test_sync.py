@@ -1264,7 +1264,7 @@ class TestUIToModelIngredientPorts:
 
 
 class TestOrphanIngredientInteraction:
-    """Orphan nodes (model_ref=None) must not crash connect/disconnect handlers."""
+    """Connecting/disconnecting an orphan ingredient node keeps the model in sync."""
 
     def test_connect_from_orphan_adds_ingredient(self, graph):
         """Connecting an orphan output -> recipe ingredient adds the orphan's item_id."""
@@ -1299,8 +1299,8 @@ class TestOrphanIngredientInteraction:
         assert history.can_undo
         handler.disconnect()
 
-    def test_disconnect_from_orphan_is_noop(self, graph):
-        """Disconnecting orphan from recipe does not crash or modify model."""
+    def test_disconnect_from_orphan_removes_ingredient(self, graph):
+        """Disconnecting an orphan from a recipe removes the ingredient from the model."""
         from craftgraph.qt_nodes import IDENTIFIER
 
         consumer = ModifiedRecipe(
@@ -1328,14 +1328,12 @@ class TestOrphanIngredientInteraction:
             parsed_files=[pf],
         )
 
-        # Disconnect
         orphan_out = orphan.get_output("output")
         ing_in = m2n[id(consumer)].get_input("ingredient_0")
         orphan_out.disconnect_from(ing_in)
 
-        # model_ref is None on orphan -> handler returns early
-        assert len(consumer.ingredients) == 1  # unchanged
-        assert not history.can_undo
+        assert len(consumer.ingredients) == 0
+        assert history.can_undo
         handler.disconnect()
 
 

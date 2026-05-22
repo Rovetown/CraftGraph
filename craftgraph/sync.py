@@ -1444,7 +1444,7 @@ class UIToModelHandler:
         port_name = in_port.name()  # type: ignore[attr-defined]
 
         if port_name.startswith("ingredient_"):
-            self._handle_ingredient_disconnected(in_port, out_port)
+            self._handle_ingredient_disconnected(in_port)
         elif port_name in ("hierarchy", "parent"):
             self._handle_hierarchy_disconnected(in_port, out_port)
         elif port_name == "sprite_in":
@@ -1606,12 +1606,10 @@ class UIToModelHandler:
     def _handle_ingredient_disconnected(
         self,
         in_port: object,
-        out_port: object,
     ) -> None:
         consumer_model = in_port.node().model_ref  # type: ignore[attr-defined]
-        source_model = out_port.node().model_ref  # type: ignore[attr-defined]
 
-        if consumer_model is None or source_model is None:
+        if consumer_model is None:
             return
 
         # Extract port index from "ingredient_N"
