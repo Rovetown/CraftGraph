@@ -2135,10 +2135,11 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._ac_mod_compat_cb = QtWidgets.QCheckBox("Mod-compat IDs (120 items)")
         self._ac_mod_compat_cb.setChecked(ac.include_mod_compat_ids)
         sl.addWidget(self._ac_mod_compat_cb)
-        self._ac_project_ids_cb = QtWidgets.QCheckBox("IDs from open project files")
+        self._ac_project_ids_cb = QtWidgets.QCheckBox("IDs from the loaded mod folder")
         self._ac_project_ids_cb.setChecked(ac.include_project_ids)
         self._ac_project_ids_cb.setToolTip(
-            "Placeholder -- will extract IDs from loaded files in a future update"
+            "Treat item IDs defined by any recipe file in the loaded mod folder "
+            "as known, so cross-file ingredients are not flagged as unknown."
         )
         sl.addWidget(self._ac_project_ids_cb)
         col.addWidget(sources)
