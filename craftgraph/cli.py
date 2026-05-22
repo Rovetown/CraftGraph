@@ -21,9 +21,26 @@ from craftgraph.visualizer import generate_html
 
 
 @click.group()
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    default=None,
+    help="Console log verbosity for this run (overrides the saved setting).",
+)
 @click.version_option(version=__version__, prog_name="craftgraph")
-def main() -> None:
+def main(log_level: str | None) -> None:
     """CraftGraph -- recipe dependency graphs for CustomCraft3."""
+    import logging
+
+    from craftgraph import app_dirs
+    from craftgraph.log_setup import configure_logging
+
+    name = (
+        log_level.upper()
+        if log_level
+        else str(app_dirs.load_setting("log_level", "INFO"))
+    )
+    configure_logging(level=logging.getLevelNamesMapping().get(name, logging.INFO))
 
 
 # -- Shared helpers ------------------------------------------------------------
