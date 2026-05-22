@@ -3271,6 +3271,29 @@ class _PerfLogDialog(QtWidgets.QDialog):
 # ---------------------------------------------------------------------------
 
 
+def _path_targets_from_parsed_files(parsed_files: list[ParsedFile]) -> set[str]:
+    """Collect raw fabricator/tab path targets from parsed recipe files.
+
+    Returns fabricator item IDs and full tab paths. Prefix expansion (so
+    "Fab/Tab" also admits "Fab") is the caller's responsibility.
+    """
+    targets: set[str] = set()
+    for pf in parsed_files:
+        for fab in pf.custom_fabricators:
+            targets.add(fab.item_id)
+            for ctab in fab.tabs:
+                if ctab.parent_tab_path:
+                    targets.add(ctab.parent_tab_path)
+                    targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+                else:
+                    targets.add(f"{fab.item_id}/{ctab.tab_id}")
+        for ctab in pf.crafting_tabs:
+            if ctab.parent_tab_path:
+                targets.add(ctab.parent_tab_path)
+                targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+    return targets
+
+
 class CraftGraphWindow(QtWidgets.QMainWindow):
     """Main application window for the Qt-based CraftGraph editor."""
 
@@ -3286,6 +3309,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._manual_sprites: dict[str, Path] = {}
         self._id_words: list[str] | None = None
         self._project_defined_ids: frozenset[str] = frozenset()
+        self._project_path_targets: frozenset[str] = frozenset()
         self._path_words: list[str] = []
         self._node_popup = NodeCompletionPopup(self)
         self._backup_on_save = bool(app_dirs.load_setting("backup_on_save", False))
@@ -7261,27 +7285,25 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         }
     )
 
-    def _scan_project_defined_ids(
+    def _scan_project_files(
         self,
         path: Path,
         parsed_files: list[ParsedFile],
-    ) -> frozenset[str]:
-        """Collect item IDs defined by every recipe file in the loaded mod folder.
+    ) -> list[ParsedFile]:
+        """Return every parsed recipe file in the loaded mod folder.
 
         For a folder load the already-parsed files are reused.  For a single-file
-        load the file's directory is scanned recursively so cross-file ingredient
-        references resolve.
+        load the file's directory is scanned recursively so cross-file references
+        (ingredient IDs and fabricator/tab paths) resolve.
         """
-        from craftgraph.parser import collect_defined_ids, parse_directory
+        from craftgraph.parser import parse_directory
 
         if path.is_dir():
-            scanned = parsed_files
-        else:
-            try:
-                scanned = parse_directory(path.parent)
-            except (OSError, UnicodeDecodeError):
-                scanned = list(parsed_files)
-        return frozenset(collect_defined_ids(scanned))
+            return list(parsed_files)
+        try:
+            return parse_directory(path.parent)
+        except (OSError, UnicodeDecodeError):
+            return list(parsed_files)
 
     def _get_id_words(self) -> list[str]:
         """Return the cached, sorted list of TechType IDs per settings."""
@@ -7438,22 +7460,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         fabricators and crafting tabs -- i.e. valid destinations.
         """
         targets: set[str] = set(self._BUILTIN_PATH_ROOTS)
-        for file_tab in self._file_tabs:
-            if file_tab.parsed_file is None:
-                continue
-            pf: ParsedFile = file_tab.parsed_file  # type: ignore[assignment]
-            for fab in pf.custom_fabricators:
-                targets.add(fab.item_id)
-                for ctab in fab.tabs:
-                    if ctab.parent_tab_path:
-                        targets.add(ctab.parent_tab_path)
-                        targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
-                    else:
-                        targets.add(f"{fab.item_id}/{ctab.tab_id}")
-            for ctab in pf.crafting_tabs:
-                if ctab.parent_tab_path:
-                    targets.add(ctab.parent_tab_path)
-                    targets.add(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+        # In-memory open tabs first (catches unsaved fabricator/tab edits)...
+        open_files = [
+            ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None
+        ]
+        targets |= _path_targets_from_parsed_files(open_files)
+        # ...then fabricators/tabs defined anywhere in the loaded mod folder.
+        targets |= self._project_path_targets
         # Also add all prefix segments so "Fabricator/Resources" matches
         # when "Fabricator" is a known root.
         expanded: set[str] = set()
@@ -7912,12 +7925,19 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._tear_down_tabs()
             self._source_path = path
 
-            # Cross-file known IDs: treat every item defined by a recipe file in
-            # the loaded mod folder as known, so sibling-file ingredients are not
-            # flagged "unknown".  Invalidate the cached word list so the next
-            # _get_id_words() picks them up.
-            self._project_defined_ids = self._scan_project_defined_ids(
-                path, parsed_files
+            # Cross-file resolution: scan the loaded mod folder once, then treat
+            # every item ID it defines as known and every fabricator/tab path it
+            # declares as a valid Path target -- so sibling-file ingredients and
+            # paths are not falsely flagged.  Invalidate the cached word list so
+            # the next _get_id_words() picks the IDs up.
+            from craftgraph.parser import collect_defined_ids
+
+            scanned_project_files = self._scan_project_files(path, parsed_files)
+            self._project_defined_ids = frozenset(
+                collect_defined_ids(scanned_project_files)
+            )
+            self._project_path_targets = frozenset(
+                _path_targets_from_parsed_files(scanned_project_files)
             )
             self._id_words = None
 

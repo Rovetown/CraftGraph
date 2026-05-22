@@ -6774,3 +6774,46 @@ class TestFloatingEditorCommit:
         # A's pending "9" must have committed to A, leaving B untouched.
         assert node_a.model_ref.ingredients[0].required == 9
         assert node_b.model_ref.ingredients[0].required == 4
+
+
+class TestCrossFilePathTargets:
+    """A recipe Path pointing at a fabricator in a sibling file is valid."""
+
+    def test_cross_file_path_not_flagged(self, window, tmp_path):
+        """Opening a single recipe file does not flag a Path that targets a
+        fabricator defined in another file of the same mod folder."""
+        fab_file = tmp_path / "fab.txt"
+        fab_file.write_text(
+            "CustomFabricators:\n"
+            "(\n"
+            "    ItemID: MyFab;\n"
+            "    DisplayName: \"My Fab\";\n"
+            "    CustomCraftingTabs:\n"
+            "    (\n"
+            "        TabID: Tools;\n"
+            "        DisplayName: \"Tools\";\n"
+            "        ParentTabPath: MyFab;\n"
+            "    );\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        recipe_file = tmp_path / "recipe.txt"
+        recipe_file.write_text(
+            "AddedRecipes:\n"
+            "(\n"
+            "    ItemID: MyGadget;\n"
+            "    AmountCrafted: 1;\n"
+            "    Path: MyFab/Tools;\n"
+            "    Ingredients:\n"
+            "        ( ItemID: Titanium; Required: 1; );\n"
+            ")\n",
+            encoding="utf-8",
+        )
+
+        window.load_recipes(recipe_file)
+        tab = window._tab_for_source_path(recipe_file)
+        assert tab is not None
+        issues = window._collect_validation_issues(tab)
+        assert not any(
+            "does not match any known fabricator" in issue for issue in issues
+        )
