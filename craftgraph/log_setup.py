@@ -35,6 +35,11 @@ def configure_logging(
     Idempotent: removes handlers installed by a previous call before
     installing fresh ones.
 
+    The ``craftgraph`` logger keeps its default ``propagate=True``, so
+    records also reach any handler on the root logger (such as pytest's
+    log capture). The app never adds handlers to the root logger, so this
+    produces no duplicate output.
+
     Args:
         level: Minimum level for the console handler and the package logger.
         log_dir: Directory for ``craftgraph.log``. Defaults to the app log dir.
