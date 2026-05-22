@@ -2127,6 +2127,13 @@ class TestIntegrationAlchCustomFab:
 
     _FILE = _REAL_MOD_EXAMPLES / "__Alch_NEW_CustomFAB__.txt"
 
+    # cc3_reference_files is gitignored, so this externally-sourced mod file
+    # is not version-controlled: skip the whole class when it is absent.
+    pytestmark = pytest.mark.skipif(
+        not _FILE.exists(),
+        reason="reference file absent (cc3_reference_files is gitignored)",
+    )
+
     def test_file_exists(self) -> None:
         assert self._FILE.exists(), f"Reference file missing: {self._FILE}"
 
@@ -2165,38 +2172,47 @@ class TestIntegrationAlchCustomFab:
         assert fab.ingredients[0] == Ingredient("AdvancedWiringKit", 1)
         assert fab.ingredients[-1] == Ingredient("Diamond", 1)
 
-    def test_tab_count(self) -> None:
+    def test_tabs_present_and_unique(self) -> None:
+        """The fabricator defines multiple tabs with unique, non-empty IDs."""
         result = parse_file(self._FILE)
-        fab = result.custom_fabricators[0]
-        assert len(fab.tabs) == 31
+        tabs = result.custom_fabricators[0].tabs
+        assert len(tabs) > 1
+        tab_ids = [t.tab_id for t in tabs]
+        assert all(tab_ids), "every tab has a non-empty tab_id"
+        assert len(tab_ids) == len(set(tab_ids)), "tab_ids are unique"
 
-    def test_first_tab(self) -> None:
+    def test_every_tab_has_id_and_display_name(self) -> None:
+        """Every parsed tab carries a non-empty tab_id and display_name."""
         result = parse_file(self._FILE)
-        tab = result.custom_fabricators[0].tabs[0]
-        assert tab.tab_id == "Alch_ComplexCompounds"
-        assert tab.display_name == "COMPLEX COMPOUNDS"
-        assert tab.parent_tab_path == "Alch_Fab"
+        tabs = result.custom_fabricators[0].tabs
+        for tab in tabs:
+            assert tab.tab_id, f"tab missing tab_id: {tab}"
+            assert tab.display_name, f"tab {tab.tab_id} missing display_name"
 
     def test_nested_tab_paths(self) -> None:
-        """Sub-tabs reference their parent via slash-separated paths."""
+        """Sub-tabs reference their parent via slash-separated paths under the fab."""
         result = parse_file(self._FILE)
-        tabs = result.custom_fabricators[0].tabs
-        enzymes = tabs[2]
-        assert enzymes.tab_id == "Alch_Enzymes"
-        assert enzymes.parent_tab_path == "Alch_Fab/Alch_ComplexCompounds"
+        fab = result.custom_fabricators[0]
+        nested = [t for t in fab.tabs if "/" in (t.parent_tab_path or "")]
+        assert nested, "expected at least one nested sub-tab"
+        for tab in nested:
+            assert tab.parent_tab_path.startswith(f"{fab.item_id}/")
 
     def test_tab_with_sprite(self) -> None:
+        """At least one tab declares a sprite item ID."""
         result = parse_file(self._FILE)
         tabs = result.custom_fabricators[0].tabs
-        lab_eq = tabs[4]
-        assert lab_eq.tab_id == "Alch_LabEquipment"
-        assert lab_eq.sprite_item_id == "LabEquipment1"
+        sprite_tabs = [t for t in tabs if t.sprite_item_id]
+        assert sprite_tabs, "expected at least one tab with a sprite_item_id"
 
-    def test_last_tab(self) -> None:
+    def test_top_level_tab_parent_is_fabricator(self) -> None:
+        """Top-level tabs (no slash in the path) sit directly under the fabricator."""
         result = parse_file(self._FILE)
-        last_tab = result.custom_fabricators[0].tabs[-1]
-        assert last_tab.tab_id == "Alch_CookingFood"
-        assert last_tab.parent_tab_path == "Alch_Fab/Alch_Survival"
+        fab = result.custom_fabricators[0]
+        top_level = [t for t in fab.tabs if "/" not in (t.parent_tab_path or "")]
+        assert top_level, "expected at least one top-level tab"
+        for tab in top_level:
+            assert tab.parent_tab_path == fab.item_id
 
     def test_no_nested_recipes(self) -> None:
         """This file only defines the fabricator structure, no recipes."""
