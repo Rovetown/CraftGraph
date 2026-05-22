@@ -6728,3 +6728,49 @@ class TestFloatingEditorCommit:
         host._active_editor.setText("7")
         host._commit()
         assert node.model_ref.ingredients[0].required == 7
+
+    def test_cross_node_edit_commits_to_correct_node(self, window, tmp_path):
+        """Editing an ingredient on node A then clicking node B commits A's
+        pending value to A, not B."""
+        from PySide6.QtCore import QRect
+
+        recipe_file = tmp_path / "r.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: Iron;\n"
+            "    AmountCrafted: 1;\n"
+            "    Ingredients:\n"
+            "        ( ItemID: Gold; Required: 2; );\n"
+            "),\n"
+            "(\n"
+            "    ItemID: Titanium;\n"
+            "    AmountCrafted: 1;\n"
+            "    Ingredients:\n"
+            "        ( ItemID: Silver; Required: 4; );\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        nodes = {
+            n.model_ref.item_id: n
+            for n in window.graph.all_nodes()
+            if getattr(n, "model_ref", None) is not None
+        }
+        node_a, node_b = nodes["Iron"], nodes["Titanium"]
+        host = window._floating_editor_host
+
+        # Click ingredient on node A, type a new value, do NOT commit.
+        node_a._ensure_signals().field_edit_requested.emit(
+            node_a, "ingredient_0", QRect(0, 0, 80, 22), "2"
+        )
+        host._active_editor.setText("9")
+
+        # Click ingredient on node B: summon() pre-commits A's open editor.
+        node_b._ensure_signals().field_edit_requested.emit(
+            node_b, "ingredient_0", QRect(0, 0, 80, 22), "4"
+        )
+
+        # A's pending "9" must have committed to A, leaving B untouched.
+        assert node_a.model_ref.ingredients[0].required == 9
+        assert node_b.model_ref.ingredients[0].required == 4

@@ -3768,10 +3768,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     ) -> None:
         from craftgraph.qt_variable_nodes import ColorVarNode
 
-        self._active_node_for_edit = node
         if isinstance(node, ColorVarNode):
+            self._active_node_for_edit = node
             node.open_color_dialog()
             return
+        # summon() may commit a still-open editor from a previous click on a
+        # different node. That commit reads _active_node_for_edit for the OLD
+        # node, so the new node is assigned only after summon() returns.
         if field_name.startswith("ingredient_"):
             from craftgraph.pin_registry import PinType
 
@@ -3781,6 +3784,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 view_rect=view_rect,
                 current_value=current_value,
             )
+            self._active_node_for_edit = node
             return
         completer_words: list[str] | None = None
         if field_name in self._ID_WIDGET_NAMES:
@@ -3803,6 +3807,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             completer_words=completer_words,
             enum_items=enum_items,
         )
+        self._active_node_for_edit = node
 
     # -- Minimap --------------------------------------------------------------
 
