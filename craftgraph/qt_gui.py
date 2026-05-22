@@ -4927,13 +4927,6 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         app_dirs.save_setting("auto_save_interval", dialog.auto_save_interval)
         app_dirs.save_setting("default_project_folder", dialog.default_project_folder)
         app_dirs.save_setting("log_level", dialog.log_level)
-        import logging
-
-        from craftgraph.log_setup import configure_logging
-
-        configure_logging(
-            level=logging.getLevelNamesMapping().get(dialog.log_level, logging.INFO)
-        )
         app_dirs.save_setting("subnautica_cc3_path", dialog.subnautica_cc3_path)
         app_dirs.save_setting("recent_max_entries", dialog.recent_max_entries)
         app_dirs.save_setting("on_launch", dialog.on_launch)
@@ -4944,6 +4937,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._save_autocomplete_settings(self._ac_settings)
         self._save_file_watching_settings(self._fw_settings)
         self._save_keybinding_settings(self._kb_settings)
+
+        # Re-apply logging with the chosen level so it takes effect live.
+        from craftgraph.log_setup import configure_logging
+
+        configure_logging(
+            level=logging.getLevelNamesMapping().get(dialog.log_level, logging.INFO)
+        )
 
     def _apply_theme(self, theme: ThemeColors) -> None:
         """Apply visual theme changes: stylesheet, node borders, fill colors, UI scale."""
