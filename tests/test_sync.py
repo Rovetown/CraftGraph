@@ -1336,6 +1336,46 @@ class TestOrphanIngredientInteraction:
         assert history.can_undo
         handler.disconnect()
 
+    def test_rewire_ingredient_from_recipe_to_orphan_updates_model(self, graph):
+        """Rewiring an ingredient from a recipe node onto an orphan node updates the model."""
+        from craftgraph.qt_nodes import IDENTIFIER
+
+        source = ModifiedRecipe(item_id="Source")
+        consumer = ModifiedRecipe(
+            item_id="Ring",
+            ingredients=[Ingredient(item_id="Source", required=1)],
+        )
+        pf = _make_parsed_file(modified_recipes=[source, consumer])
+        guard = SyncGuard()
+        history = EditHistory()
+
+        with guard():
+            m2n = populate_graph(graph, [pf])
+            source_out = m2n[id(source)].get_output("output")
+            ing_in = m2n[id(consumer)].get_input("ingredient_0")
+            source_out.connect_to(ing_in)
+            orphan = graph.create_node(
+                f"{IDENTIFIER}.OrphanIngredientNode", name="OrphanItem"
+            )
+            orphan.set_property("item_id", "OrphanItem")
+
+        handler = UIToModelHandler(
+            graph=graph,
+            history=history,
+            guard=guard,
+            parsed_files=[pf],
+        )
+
+        # Connecting the orphan to the already-occupied single-input port makes
+        # NodeGraphQt auto-disconnect the old source, then connect the orphan.
+        orphan_out = orphan.get_output("output")
+        ing_in = m2n[id(consumer)].get_input("ingredient_0")
+        orphan_out.connect_to(ing_in)
+
+        assert len(consumer.ingredients) == 1
+        assert consumer.ingredients[0].item_id == "OrphanItem"
+        handler.disconnect()
+
 
 class TestUIToModelHierarchyPorts:
     def test_connect_nests_tab_in_fab(self, graph):
