@@ -8,7 +8,6 @@ in qt_gui.py reads from this module rather than the other way around.
 from __future__ import annotations
 
 import logging
-import sys
 import threading
 import time
 from collections import defaultdict
@@ -26,50 +25,48 @@ _installed_handlers: list[logging.Handler] = []
 def install_logger(
     *,
     log_path: Path | None = None,
-    console: bool = True,
     level: int = logging.INFO,
 ) -> None:
-    """Wire up perf_diag log output to a file and (optionally) stderr.
+    """Wire perf_diag's records to a dedicated perf log file.
 
-    Without this the logger inherits the root level (WARNING by default),
-    so ``measure()``'s INFO lines are silenced -- only ``report_frame()``
-    WARNINGs surface. Call once during app start (CLI / GUI entry point).
+    perf_diag keeps its own ``perf.log`` file handler (the Perf Log dialog
+    tails it) and propagates to the ``craftgraph`` logger, so its frametime
+    and ``measure()`` records also reach the central rich console handler
+    configured by ``craftgraph.log_setup.configure_logging``. The perf_diag
+    logger level is pinned (default INFO) so ``perf.log`` stays complete
+    regardless of the console verbosity the user chose. Call once at app
+    start (the GUI entry point).
 
     Args:
         log_path: File to append perf records to. ``None`` skips file output.
-        console: Whether to also stream records to stderr.
-        level: Minimum level the perf_diag logger surfaces (default INFO).
+        level: Level for the perf_diag logger and its file handler.
     """
-    # Detach any handlers we previously installed so repeat calls do not
+    # Detach handlers we previously installed so repeat calls do not
     # double-log. Leaves third-party handlers alone.
     for h in _installed_handlers:
         logger.removeHandler(h)
+        h.close()
     _installed_handlers.clear()
 
     logger.setLevel(level)
-    formatter = logging.Formatter(
-        fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
         file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(
+            logging.Formatter(
+                fmt="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
         logger.addHandler(file_handler)
         _installed_handlers.append(file_handler)
 
-    if console:
-        stream_handler = logging.StreamHandler(sys.stderr)
-        stream_handler.setLevel(level)
-        stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
-        _installed_handlers.append(stream_handler)
-
-    # Stop propagation so records do not also flow to the root logger
-    # (which may have its own handlers configured by callers).
-    logger.propagate = False
+    # Propagate to the central craftgraph logger so perf records also reach
+    # its rich console handler. (This was False only because there was no
+    # controlled central config to propagate into; log_setup provides one.)
+    logger.propagate = True
 
 
 @dataclass(frozen=True, slots=True)

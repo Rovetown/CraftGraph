@@ -62,11 +62,11 @@ def test_frame_under_budget_does_not_log(
 
 
 class TestInstallLogger:
-    """install_logger() routes perf_diag output to file + stderr."""
+    """install_logger() routes perf_diag output to file."""
 
     def teardown_method(self) -> None:
         # Reset state so other tests are not affected by our handler installs.
-        perf_diag.install_logger(log_path=None, console=False)
+        perf_diag.install_logger(log_path=None)
         # Then detach the no-op handlers we just registered.
         for h in list(perf_diag._installed_handlers):
             perf_diag.logger.removeHandler(h)
@@ -76,7 +76,7 @@ class TestInstallLogger:
         self, tmp_path
     ) -> None:
         log_path = tmp_path / "diag" / "perf.log"
-        perf_diag.install_logger(log_path=log_path, console=False)
+        perf_diag.install_logger(log_path=log_path)
 
         with measure("test_action"):
             time.sleep(0.001)
@@ -91,8 +91,8 @@ class TestInstallLogger:
 
     def test_install_logger_is_idempotent(self, tmp_path) -> None:
         log_path = tmp_path / "perf.log"
-        perf_diag.install_logger(log_path=log_path, console=False)
-        perf_diag.install_logger(log_path=log_path, console=False)
+        perf_diag.install_logger(log_path=log_path)
+        perf_diag.install_logger(log_path=log_path)
 
         with measure("only_once"):
             pass
@@ -103,11 +103,11 @@ class TestInstallLogger:
         # Exactly one record per call -- handler not duplicated.
         assert text.count("action=only_once") == 1
 
-    def test_install_logger_disables_propagation(self, tmp_path) -> None:
-        # Without propagate=False, perf_diag records would also reach the
-        # root logger and could surprise unrelated consumers.
-        perf_diag.install_logger(log_path=tmp_path / "perf.log", console=False)
-        assert perf_diag.logger.propagate is False
+    def test_install_logger_enables_propagation(self, tmp_path) -> None:
+        # With propagate=True, perf_diag records flow to the central
+        # craftgraph logger and its rich console handler.
+        perf_diag.install_logger(log_path=tmp_path / "perf.log")
+        assert perf_diag.logger.propagate is True
 
 
 class TestPaintStats:
@@ -164,3 +164,57 @@ class TestPaintRecordingToggle:
         perf_diag.record_paint("X", 99.0)
         # Second call must not have been counted.
         assert perf_diag.paint_stats()["X"].count == 1
+
+
+class TestInstallLoggerUnified:
+    """perf_diag.install_logger keeps only its perf.log file handler and
+    propagates to the central craftgraph logger."""
+
+    def _reset(self):
+        import logging
+
+        from craftgraph import perf_diag
+
+        for handler in list(perf_diag.logger.handlers):
+            perf_diag.logger.removeHandler(handler)
+            handler.close()
+        perf_diag._installed_handlers.clear()
+        perf_diag.logger.propagate = True
+        perf_diag.logger.setLevel(logging.NOTSET)
+
+    def test_propagate_is_true(self, tmp_path):
+        from craftgraph import perf_diag
+
+        try:
+            perf_diag.install_logger(log_path=tmp_path / "perf.log")
+            assert perf_diag.logger.propagate is True
+        finally:
+            self._reset()
+
+    def test_no_stream_handler_installed(self, tmp_path):
+        import logging
+
+        from craftgraph import perf_diag
+
+        try:
+            perf_diag.install_logger(log_path=tmp_path / "perf.log")
+            # FileHandler subclasses StreamHandler, so check the exact type.
+            bare_streams = [
+                h for h in perf_diag.logger.handlers
+                if type(h) is logging.StreamHandler
+            ]
+            assert bare_streams == []
+        finally:
+            self._reset()
+
+    def test_perf_log_file_still_receives_records(self, tmp_path):
+        from craftgraph import perf_diag
+
+        log_path = tmp_path / "perf.log"
+        try:
+            perf_diag.install_logger(log_path=log_path)
+            perf_diag.report_frame(500.0)  # 500ms > 33ms budget -> warning
+            assert log_path.exists()
+            assert "frame_budget_violation" in log_path.read_text(encoding="utf-8")
+        finally:
+            self._reset()
