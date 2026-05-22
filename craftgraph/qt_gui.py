@@ -6884,12 +6884,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         idx = labels.index(chosen)
         ingredients.pop(idx)
 
-        # Disconnect the corresponding ingredient port if connected
+        # Disconnect the corresponding ingredient port if connected.  The pop
+        # above is the authoritative model edit; guard the disconnect so the
+        # port_disconnected handler does not remove a second ingredient.
         ing_ports = [p for p in node.input_ports() if p.name().startswith("ingredient_")]
         if idx < len(ing_ports):
             port = ing_ports[idx]
-            for connected in port.connected_ports():
-                port.disconnect_from(connected)
+            with self.sync_guard():
+                for connected in port.connected_ports():
+                    port.disconnect_from(connected)
 
         # Resync the code editor, child count labels, and title
         self._on_model_changed()
