@@ -8062,8 +8062,9 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
 
     hwnd_diag.install_logger(threshold=20, on_threshold_exceeded=_hwnd_threshold_warning)
 
-    # Surface perf_diag's INFO lines (action= delta_ms=) on stderr and
-    # persist them to ~/.craftgraph/diagnostics/perf.log for later review.
+    # Persist perf_diag records (action= delta_ms=, frame_budget_violation)
+    # to perf.log for the Perf Log dialog. perf_diag also propagates to the
+    # central craftgraph logger, so its records reach the rich console too.
     perf_diag.install_logger(
         log_path=app_dirs.log_dir() / "diagnostics" / "perf.log",
     )
