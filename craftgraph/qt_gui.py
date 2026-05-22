@@ -7262,7 +7262,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         else:
             try:
                 scanned = parse_directory(path.parent)
-            except (FileNotFoundError, NotADirectoryError):
+            except (OSError, UnicodeDecodeError):
                 scanned = list(parsed_files)
         return frozenset(collect_defined_ids(scanned))
 
@@ -7277,7 +7277,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if self._ac_settings.include_mod_compat_ids:
                 ids |= load_mod_compat_ids()
             if self._ac_settings.include_project_ids:
-                ids |= set(self._project_defined_ids)
+                ids |= self._project_defined_ids
             effective = self._effective_custom_ids()
             if effective:
                 ids |= set(effective)
