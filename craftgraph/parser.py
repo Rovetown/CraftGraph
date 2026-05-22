@@ -811,13 +811,7 @@ def collect_defined_ids(parsed_files: list[ParsedFile]) -> set[str]:
     """
     ids: set[str] = set()
     for pf in parsed_files:
+        # pf.all_recipes already includes fabricator-nested recipes.
         for recipe in pf.all_recipes:
             ids.add(recipe.item_id)
-        for fab in pf.custom_fabricators:
-            for recipe in fab.added_recipes:
-                ids.add(recipe.item_id)
-            for recipe in fab.alias_recipes:
-                ids.add(recipe.item_id)
-            for recipe in fab.custom_foods:
-                ids.add(recipe.item_id)
     return ids

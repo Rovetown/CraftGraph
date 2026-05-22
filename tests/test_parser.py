@@ -2601,3 +2601,25 @@ def test_collect_defined_ids_excludes_ingredient_references() -> None:
     defined = collect_defined_ids([parsed])
     assert "WidgetCraft" in defined
     assert "MysteryOre" not in defined
+
+
+def test_collect_defined_ids_includes_fabricator_nested_recipes() -> None:
+    """collect_defined_ids collects ItemIDs of recipes nested inside a fabricator."""
+    from craftgraph.parser import collect_defined_ids
+
+    parsed = parse_text(
+        "CustomFabricators:\n"
+        "(\n"
+        "    ItemID: MyFab;\n"
+        "    DisplayName: \"My Fabricator\";\n"
+        "    AddedRecipes:\n"
+        "    (\n"
+        "        ItemID: FabItem;\n"
+        "        AmountCrafted: 1;\n"
+        "        Path: MyFab;\n"
+        "    );\n"
+        ")",
+        source_path=Path("fab.txt"),
+    )
+
+    assert "FabItem" in collect_defined_ids([parsed])
