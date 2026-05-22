@@ -1564,12 +1564,22 @@ class UIToModelHandler:
         out_port: object,
     ) -> None:
         consumer_model = in_port.node().model_ref  # type: ignore[attr-defined]
-        source_model = out_port.node().model_ref  # type: ignore[attr-defined]
+        source_node = out_port.node()  # type: ignore[attr-defined]
+        source_model = source_node.model_ref
 
-        if consumer_model is None or source_model is None:
+        if consumer_model is None:
             return
 
-        source_id = getattr(source_model, "item_id", None)
+        # Orphan ingredient nodes carry no model_ref; their item_id lives in
+        # a node property instead.  Resolve the source ID from whichever the
+        # source node provides.
+        if source_model is not None:
+            source_id = getattr(source_model, "item_id", None)
+        elif getattr(source_node, "IS_ORPHAN", False):
+            source_id = source_node.get_property("item_id")
+        else:
+            return
+
         consumer_id = getattr(consumer_model, "item_id", None)
         if not source_id or not consumer_id:
             return
