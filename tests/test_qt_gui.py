@@ -6646,3 +6646,41 @@ class TestWatcherThreadHygiene:
         window._stop_file_watcher()
         assert window._recipe_watcher is None
         assert not watcher.running  # observer thread joined, not leaked
+
+
+class TestCrossFileKnownIDs:
+    """Ingredients defined in a sibling recipe file must not be flagged unknown."""
+
+    def test_cross_file_ingredient_not_flagged_unknown(self, window, tmp_path):
+        """An ingredient defined in another file of the loaded folder is known."""
+        basic = tmp_path / "basic.txt"
+        basic.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: CustomAlloy;\n    AmountCrafted: 1;\n)",
+            encoding="utf-8",
+        )
+        advanced = tmp_path / "advanced.txt"
+        advanced.write_text(
+            "ModifiedRecipes:\n"
+            "(\n"
+            "    ItemID: CustomGadget;\n"
+            "    AmountCrafted: 1;\n"
+            "    Ingredients:\n"
+            "    (\n"
+            "        ItemID: CustomAlloy;\n"
+            "        Required: 2;\n"
+            "    );\n"
+            ")",
+            encoding="utf-8",
+        )
+
+        window.load_recipes(tmp_path)
+
+        # CustomAlloy is defined in basic.txt -> known after a folder load.
+        known = {w.lower() for w in window._get_id_words()}
+        assert "customalloy" in known
+
+        # The advanced.txt tab must have no "Unknown ingredient" issue.
+        advanced_tab = window._tab_for_source_path(advanced)
+        assert advanced_tab is not None
+        issues = window._collect_validation_issues(advanced_tab)
+        assert not any("Unknown ingredient" in issue for issue in issues)

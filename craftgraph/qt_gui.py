@@ -3284,6 +3284,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._sprite_lookup: dict[str, Path] = {}
         self._manual_sprites: dict[str, Path] = {}
         self._id_words: list[str] | None = None
+        self._project_defined_ids: frozenset[str] = frozenset()
         self._path_words: list[str] = []
         self._node_popup = NodeCompletionPopup(self)
         self._backup_on_save = bool(app_dirs.load_setting("backup_on_save", False))
@@ -7243,6 +7244,28 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         }
     )
 
+    def _scan_project_defined_ids(
+        self,
+        path: Path,
+        parsed_files: list[ParsedFile],
+    ) -> frozenset[str]:
+        """Collect item IDs defined by every recipe file in the loaded mod folder.
+
+        For a folder load the already-parsed files are reused.  For a single-file
+        load the file's directory is scanned recursively so cross-file ingredient
+        references resolve.
+        """
+        from craftgraph.parser import collect_defined_ids, parse_directory
+
+        if path.is_dir():
+            scanned = parsed_files
+        else:
+            try:
+                scanned = parse_directory(path.parent)
+            except (FileNotFoundError, NotADirectoryError):
+                scanned = list(parsed_files)
+        return frozenset(collect_defined_ids(scanned))
+
     def _get_id_words(self) -> list[str]:
         """Return the cached, sorted list of TechType IDs per settings."""
         if self._id_words is None:
@@ -7253,7 +7276,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 ids |= load_vanilla_ids()
             if self._ac_settings.include_mod_compat_ids:
                 ids |= load_mod_compat_ids()
-            # include_project_ids: placeholder for future project-extracted IDs
+            if self._ac_settings.include_project_ids:
+                ids |= set(self._project_defined_ids)
             effective = self._effective_custom_ids()
             if effective:
                 ids |= set(effective)
@@ -7870,6 +7894,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
             self._tear_down_tabs()
             self._source_path = path
+
+            # Cross-file known IDs: treat every item defined by a recipe file in
+            # the loaded mod folder as known, so sibling-file ingredients are not
+            # flagged "unknown".  Invalidate the cached word list so the next
+            # _get_id_words() picks them up.
+            self._project_defined_ids = self._scan_project_defined_ids(
+                path, parsed_files
+            )
+            self._id_words = None
 
             # Scan for sprite assets -- CC3 Assets/ is the primary source
             if self._subnautica_cc3_path:
