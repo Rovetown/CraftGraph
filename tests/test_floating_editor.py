@@ -2,24 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import QApplication, QComboBox, QGraphicsView, QLineEdit
+from PySide6.QtWidgets import QComboBox, QGraphicsView, QLineEdit
 
 from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.pin_registry import PinType
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication (one per test run)."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

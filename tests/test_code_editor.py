@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_code_editor.py -v
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 
@@ -24,15 +23,6 @@ from craftgraph.code_editor import CodeEditor, FieldContext, LineNumberArea
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication (one per test run)."""
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

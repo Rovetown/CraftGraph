@@ -21,7 +21,6 @@ pytest.importorskip(
     reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
 )
 
-from PySide6 import QtWidgets  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TIER_B = (
@@ -34,14 +33,6 @@ TIER_B = (
     / "EquipmentSalvage"
 )
 TIER_A = REPO_ROOT / "craftgraph" / "cc3_reference_files" / "real-mod-examples"
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

@@ -9,14 +9,6 @@ import pytest
 from PySide6 import QtWidgets
 
 
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
-
-
 class TestHandleCounters:
     def test_gui_handle_count_returns_int(self):
         from craftgraph.hwnd_diag import gui_handle_count

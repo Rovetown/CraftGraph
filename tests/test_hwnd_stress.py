@@ -75,14 +75,6 @@ SAMPLE_FOLDER = _SAMPLE_FILES_DIR / "EquipmentSalvage"
 SAMPLE_FOLDER_B = _SAMPLE_FILES_DIR / "VModFabricator"
 
 
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
-
-
 @pytest.fixture
 def window(qapp, monkeypatch, tmp_path):
     from craftgraph import app_dirs

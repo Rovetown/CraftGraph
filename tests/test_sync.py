@@ -10,7 +10,6 @@ Run (all, with Qt):      uv run --extra qt pytest tests/test_sync.py -v
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -92,7 +91,6 @@ _qt_available = pytest.importorskip(
     reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
 )
 
-from PySide6 import QtWidgets
 
 from craftgraph.commands import EditHistory
 from craftgraph.models import (
@@ -114,7 +112,6 @@ from craftgraph.sync import (
     _LAYOUT_X_RECIPE,
     _LAYOUT_X_TAB,
     _LAYOUT_Y_GROUP_GAP,
-    _LAYOUT_Y_STEP,
     _node_step,
     UIToModelHandler,
     apply_layout,
@@ -127,15 +124,6 @@ from craftgraph.sync import (
     update_child_count_labels,
     update_node_issue_overlays,
 )
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication."""
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture
@@ -1794,7 +1782,7 @@ class TestCycleEdgeHighlighting:
 
     def test_orphan_edges_never_highlighted_as_cycle(self, graph, qapp):
         """Orphan -> recipe edges are never colored red, even with cycles present."""
-        from craftgraph.sync import _CYCLE_COLOR, _DEFAULT_PIPE_COLOR
+        from craftgraph.sync import _DEFAULT_PIPE_COLOR
 
         # Cycle: A -> B -> A. Plus orphan: Copper -> A
         recipe_a = ModifiedRecipe(

@@ -6,15 +6,8 @@ from unittest.mock import patch
 
 import pytest
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication
 
 from craftgraph.qt_variable_nodes import ColorVarNode
-
-
-@pytest.fixture
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    yield app
 
 
 @pytest.fixture

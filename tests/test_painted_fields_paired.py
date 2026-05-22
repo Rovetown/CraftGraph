@@ -2,22 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 from PySide6.QtCore import QRectF
-from PySide6.QtWidgets import QApplication
 
 from craftgraph.painted_fields import FieldRect, FieldState
 from craftgraph.pin_registry import PinType
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

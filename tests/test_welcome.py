@@ -6,7 +6,6 @@ Run: uv run --extra qt pytest tests/test_welcome.py -v
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 
@@ -16,14 +15,6 @@ pytest.importorskip(
 )
 
 from PySide6 import QtWidgets
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 def _noop(*_args: object) -> None:

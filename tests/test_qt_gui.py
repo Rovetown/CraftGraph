@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_qt_gui.py -v
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 
@@ -23,15 +22,6 @@ from PySide6 import QtCore, QtWidgets
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication (one per test run)."""
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture
@@ -1647,7 +1637,6 @@ class TestSpriteContextMenu:
 
     def test_set_sprite_stores_manual_override(self, window, tmp_path):
         """Manually setting a sprite stores it in _manual_sprites."""
-        from pathlib import Path
         from unittest.mock import patch
 
         recipe_file = tmp_path / "test.txt"
@@ -3763,7 +3752,6 @@ class TestNewFileDefault:
     """_on_new_file uses CC3 WorkingFiles as cold-start default."""
 
     def test_new_file_default_uses_cc3_when_no_source(self, window: CraftGraphWindow) -> None:
-        from pathlib import Path
 
         window._subnautica_cc3_path = "/fake/CC3"
         # Default _source_path is Path("untitled.txt") -- not a real file or dir
@@ -3775,7 +3763,6 @@ class TestNewFileDefault:
     def test_new_file_default_uses_source_when_loaded(
         self, window: CraftGraphWindow, tmp_path
     ) -> None:
-        from pathlib import Path
 
         window._subnautica_cc3_path = "/fake/CC3"
         recipe_dir = tmp_path / "recipes"
@@ -3790,7 +3777,6 @@ class TestNewProjectDefault:
     """NewProjectDialog accepts a default_dir; _on_new_project passes CC3 WorkingFiles."""
 
     def test_new_project_dialog_uses_default_dir(self, window: CraftGraphWindow, tmp_path) -> None:
-        from pathlib import Path
 
         from craftgraph.qt_gui import NewProjectDialog
 
@@ -5537,7 +5523,6 @@ class TestProjectCustomIdPersistence:
     def test_effective_custom_ids_returns_global_when_no_project(
         self, window: CraftGraphWindow,
     ) -> None:
-        from craftgraph.qt_gui import CraftGraphWindow
         from craftgraph.theme import AutocompleteSettings
 
         window._project = None
@@ -5548,7 +5533,6 @@ class TestProjectCustomIdPersistence:
         self, window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
-        from craftgraph.qt_gui import CraftGraphWindow
         from craftgraph.theme import AutocompleteSettings
 
         window._project = ProjectFile(
@@ -5564,7 +5548,6 @@ class TestProjectCustomIdPersistence:
         self, window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
-        from craftgraph.qt_gui import CraftGraphWindow
 
         window._project = ProjectFile(
             version=1, name="test", description="", cc3_path="",
@@ -5578,7 +5561,6 @@ class TestProjectCustomIdPersistence:
         self, window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
-        from craftgraph.qt_gui import CraftGraphWindow
         from craftgraph.theme import AutocompleteSettings
 
         window._project = ProjectFile(

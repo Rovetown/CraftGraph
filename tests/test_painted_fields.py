@@ -7,7 +7,6 @@ alignment to port rows).
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 
@@ -53,16 +52,6 @@ class TestFieldRectIsIngredient:
             is_ingredient=True,
         )
         assert rect.is_ingredient is True
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

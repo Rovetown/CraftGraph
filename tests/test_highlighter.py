@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_highlighter.py -v
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 
@@ -17,7 +16,7 @@ pytest.importorskip(
     reason="PySide6 not installed (install with: uv sync --extra qt)",
 )
 
-from PySide6 import QtGui, QtWidgets
+from PySide6 import QtGui
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QTextCharFormat
 
@@ -30,15 +29,6 @@ from craftgraph.highlighter import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication (one per test run)."""
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

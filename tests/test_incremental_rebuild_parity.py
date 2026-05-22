@@ -11,7 +11,6 @@ Marked @pytest.mark.slow so this runs under `just test-qt` but not
 from __future__ import annotations
 
 import shutil
-import sys
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -19,20 +18,11 @@ import pytest
 
 pytest.importorskip("NodeGraphQt")
 
-from PySide6 import QtWidgets
 
 pytestmark = pytest.mark.slow
 
 
 _BASELINE = Path("craftgraph/cc3_reference_files/real-mod-examples")
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

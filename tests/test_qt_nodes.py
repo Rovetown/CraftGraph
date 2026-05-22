@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_qt_nodes.py -v
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
@@ -24,17 +23,6 @@ from NodeGraphQt import NodeGraph  # noqa: E402
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication (one per test run)."""
-    from PySide6 import QtWidgets
-
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

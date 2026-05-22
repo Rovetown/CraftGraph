@@ -2,23 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 
 import pytest
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QDoubleValidator
-from PySide6.QtWidgets import QApplication, QGraphicsView, QLineEdit
+from PySide6.QtWidgets import QGraphicsView, QLineEdit
 
 from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.pin_registry import PinType
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture

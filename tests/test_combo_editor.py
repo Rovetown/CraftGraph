@@ -4,16 +4,10 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QRect
-from PySide6.QtWidgets import QApplication, QComboBox, QGraphicsView
+from PySide6.QtWidgets import QComboBox, QGraphicsView
 
 from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.pin_registry import PinType
-
-
-@pytest.fixture
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    yield app
 
 
 @pytest.fixture

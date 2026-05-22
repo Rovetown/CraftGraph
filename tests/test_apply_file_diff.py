@@ -2,25 +2,15 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
 pytest.importorskip("NodeGraphQt")
 
-from PySide6 import QtWidgets
 
 from craftgraph.model_diff import FileDiff
 from craftgraph.models import Ingredient, ModifiedRecipe, ParsedFile
-
-
-@pytest.fixture(scope="session")
-def qapp():
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        app = QtWidgets.QApplication(sys.argv)
-    return app
 
 
 @pytest.fixture
