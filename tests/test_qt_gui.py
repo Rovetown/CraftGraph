@@ -6817,3 +6817,39 @@ class TestCrossFilePathTargets:
         assert not any(
             "does not match any known fabricator" in issue for issue in issues
         )
+
+
+class TestSettingsLogLevel:
+    """The Settings dialog exposes and persists a log level."""
+
+    def test_dialog_reports_constructor_log_level(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(log_level="WARNING")
+        try:
+            assert dialog.log_level == "WARNING"
+        finally:
+            dialog.deleteLater()
+
+    def test_dialog_defaults_to_info(self, qapp):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog()
+        try:
+            assert dialog.log_level == "INFO"
+        finally:
+            dialog.deleteLater()
+
+    def test_apply_persists_log_level(self, window, monkeypatch):
+        import craftgraph.log_setup as log_setup
+        from craftgraph import app_dirs
+        from craftgraph.qt_gui import _SettingsDialog
+
+        monkeypatch.setattr(log_setup, "configure_logging", lambda **_kw: None)
+
+        dialog = _SettingsDialog(log_level="ERROR")
+        try:
+            window._apply_settings_from_dialog(dialog)
+            assert app_dirs.load_setting("log_level", "INFO") == "ERROR"
+        finally:
+            dialog.deleteLater()

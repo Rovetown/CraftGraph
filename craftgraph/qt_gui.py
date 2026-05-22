@@ -683,6 +683,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         recent_max_entries: int = 10,
         on_launch: str = "welcome",
         check_for_updates: bool = True,
+        log_level: str = "INFO",
         theme: ThemeColors | None = None,
         node_editor: NodeEditorSettings | None = None,
         code_editor: CodeEditorSettings | None = None,
@@ -719,6 +720,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._recent_spin: QtWidgets.QSpinBox | None = None
         self._on_launch_combo: QtWidgets.QComboBox | None = None
         self._update_check_cb: QtWidgets.QCheckBox | None = None
+        self._log_level_combo: QtWidgets.QComboBox | None = None
         # -- Appearance tab widgets --
         self._theme_combo: QtWidgets.QComboBox | None = None
         self._accent_combo: QtWidgets.QComboBox | None = None
@@ -808,6 +810,7 @@ class _SettingsDialog(QtWidgets.QDialog):
                         recent_max_entries=recent_max_entries,
                         on_launch=on_launch,
                         check_for_updates=check_for_updates,
+                        log_level=log_level,
                     ),
                 ),
             ),
@@ -920,6 +923,12 @@ class _SettingsDialog(QtWidgets.QDialog):
         if self._update_check_cb is not None:
             return self._update_check_cb.isChecked()
         return True
+
+    @property
+    def log_level(self) -> str:
+        if self._log_level_combo is not None:
+            return self._log_level_combo.currentText()
+        return "INFO"
 
     @property
     def theme_colors(self) -> ThemeColors:
@@ -1566,6 +1575,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         recent_max_entries: int = 10,
         on_launch: str = "welcome",
         check_for_updates: bool = True,
+        log_level: str = "INFO",
     ) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
@@ -1636,6 +1646,16 @@ class _SettingsDialog(QtWidgets.QDialog):
         ul.addWidget(self._update_check_cb)
         col.addWidget(updates)
 
+        # Logging
+        log_box = QtWidgets.QGroupBox("Logging")
+        ll = QtWidgets.QFormLayout(log_box)
+        self._log_level_combo = QtWidgets.QComboBox()
+        self._log_level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        combo_idx = self._log_level_combo.findText(log_level)
+        self._log_level_combo.setCurrentIndex(combo_idx if combo_idx >= 0 else 1)
+        ll.addRow("Console log level:", self._log_level_combo)
+        col.addWidget(log_box)
+
         col.addStretch()
         col.addLayout(self._restore_defaults_row(self._reset_general))
         return content
@@ -1658,6 +1678,8 @@ class _SettingsDialog(QtWidgets.QDialog):
             self._cc3_path_edit.setText("")
         if self._update_check_cb is not None:
             self._update_check_cb.setChecked(True)
+        if self._log_level_combo is not None:
+            self._log_level_combo.setCurrentText("INFO")
 
     # =========================================================================
     # Tab 2: Appearance (with subtabs)
@@ -4836,6 +4858,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 recent_max_entries=self._recent.max_entries,
                 on_launch=str(app_dirs.load_setting("on_launch", "welcome")),
                 check_for_updates=self._check_for_updates,
+                log_level=str(app_dirs.load_setting("log_level", "INFO")),
                 theme=active_theme(),
                 node_editor=self._ne_settings,
                 code_editor=self._ce_settings,
@@ -4903,6 +4926,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         app_dirs.save_setting("auto_save_enabled", dialog.auto_save_enabled)
         app_dirs.save_setting("auto_save_interval", dialog.auto_save_interval)
         app_dirs.save_setting("default_project_folder", dialog.default_project_folder)
+        app_dirs.save_setting("log_level", dialog.log_level)
+        import logging
+
+        from craftgraph.log_setup import configure_logging
+
+        configure_logging(
+            level=logging.getLevelNamesMapping().get(dialog.log_level, logging.INFO)
+        )
         app_dirs.save_setting("subnautica_cc3_path", dialog.subnautica_cc3_path)
         app_dirs.save_setting("recent_max_entries", dialog.recent_max_entries)
         app_dirs.save_setting("on_launch", dialog.on_launch)
