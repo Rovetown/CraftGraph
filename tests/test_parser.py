@@ -2562,3 +2562,42 @@ class TestExtractIds:
         )
         result = extract_ids([pf])
         assert result == {"Titanium"}
+
+
+def test_collect_defined_ids_spans_multiple_files() -> None:
+    """collect_defined_ids unions recipe ItemIDs across all parsed files."""
+    from craftgraph.parser import collect_defined_ids
+
+    file_a = parse_text(
+        "ModifiedRecipes:\n(\n    ItemID: CustomAlloy;\n    AmountCrafted: 1;\n)",
+        source_path=Path("a.txt"),
+    )
+    file_b = parse_text(
+        "ModifiedRecipes:\n(\n    ItemID: CustomGadget;\n    AmountCrafted: 1;\n)",
+        source_path=Path("b.txt"),
+    )
+
+    assert collect_defined_ids([file_a, file_b]) == {"CustomAlloy", "CustomGadget"}
+
+
+def test_collect_defined_ids_excludes_ingredient_references() -> None:
+    """collect_defined_ids returns defined IDs only, not ingredient references."""
+    from craftgraph.parser import collect_defined_ids
+
+    parsed = parse_text(
+        "ModifiedRecipes:\n"
+        "(\n"
+        "    ItemID: WidgetCraft;\n"
+        "    AmountCrafted: 1;\n"
+        "    Ingredients:\n"
+        "    (\n"
+        "        ItemID: MysteryOre;\n"
+        "        Required: 1;\n"
+        "    );\n"
+        ")",
+        source_path=Path("w.txt"),
+    )
+
+    defined = collect_defined_ids([parsed])
+    assert "WidgetCraft" in defined
+    assert "MysteryOre" not in defined

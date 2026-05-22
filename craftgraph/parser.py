@@ -798,3 +798,26 @@ def extract_ids(parsed_files: list[ParsedFile]) -> set[str]:
         for fc in pf.custom_fragment_counts:
             ids.add(fc.item_id)
     return ids
+
+
+def collect_defined_ids(parsed_files: list[ParsedFile]) -> set[str]:
+    """Collect the item IDs *defined* by recipes across *parsed_files*.
+
+    A "defined" ID is the ``ItemID`` of a ModifiedRecipe, AddedRecipe,
+    AliasRecipe, or CustomFood - top-level or nested inside a fabricator.
+    Unlike :func:`extract_ids`, ingredient / linked / unlock references are
+    NOT included: only IDs the files actually define.  Used to decide whether
+    an ingredient reference is "known" across a multi-file mod.
+    """
+    ids: set[str] = set()
+    for pf in parsed_files:
+        for recipe in pf.all_recipes:
+            ids.add(recipe.item_id)
+        for fab in pf.custom_fabricators:
+            for recipe in fab.added_recipes:
+                ids.add(recipe.item_id)
+            for recipe in fab.alias_recipes:
+                ids.add(recipe.item_id)
+            for recipe in fab.custom_foods:
+                ids.add(recipe.item_id)
+    return ids
