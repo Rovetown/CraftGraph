@@ -39,6 +39,7 @@ def test_measure_logs_action_and_delta(caplog: pytest.LogCaptureFixture) -> None
 
 def test_frame_budget_violation_logs_when_over_threshold(
     caplog: pytest.LogCaptureFixture,
+    restore_frame_budget_logging,
 ) -> None:
     caplog.set_level(logging.WARNING, logger="craftgraph.perf_diag")
     perf_diag.report_frame(frame_ms=50.0)
@@ -50,6 +51,7 @@ def test_frame_budget_violation_logs_when_over_threshold(
 
 def test_frame_under_budget_does_not_log(
     caplog: pytest.LogCaptureFixture,
+    restore_frame_budget_logging,
 ) -> None:
     caplog.set_level(logging.WARNING, logger="craftgraph.perf_diag")
     perf_diag.report_frame(frame_ms=10.0)
@@ -207,7 +209,9 @@ class TestInstallLoggerUnified:
         finally:
             self._reset()
 
-    def test_perf_log_file_still_receives_records(self, tmp_path):
+    def test_perf_log_file_still_receives_records(
+        self, tmp_path, restore_frame_budget_logging
+    ):
         from craftgraph import perf_diag
 
         log_path = tmp_path / "perf.log"
