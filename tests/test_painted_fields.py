@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import make_scene_mouse_event
+
 from craftgraph.painted_fields import FieldRect, FieldState
 from craftgraph.pin_registry import PinType
 
@@ -157,18 +159,6 @@ class TestPaintedFieldsSingleClickEdit:
         node.view.paint(painter, option, None)
         painter.end()
 
-    def _make_event(self, pos, button):
-        from PySide6.QtCore import QEvent, QPointF, Qt
-        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
-
-        event = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMousePress)
-        event.setPos(QPointF(pos))
-        event.setScenePos(QPointF(pos))
-        event.setButton(button)
-        event.setButtons(button)
-        event.setModifiers(Qt.KeyboardModifier.NoModifier)
-        return event
-
     def test_left_click_on_value_rect_fires_edit_signal(self, qapp, graph):
         from PySide6.QtCore import Qt
 
@@ -182,7 +172,7 @@ class TestPaintedFieldsSingleClickEdit:
         node._ensure_signals().field_edit_requested.connect(
             lambda n, name, r, val: fired.append((name, val))
         )
-        event = self._make_event(item_id_rect.value_rect.center(), Qt.MouseButton.LeftButton)
+        event = make_scene_mouse_event(item_id_rect.value_rect.center(), Qt.MouseButton.LeftButton)
         node.view.mousePressEvent(event)
         assert fired
         assert fired[0][0] == "item_id"
@@ -200,7 +190,9 @@ class TestPaintedFieldsSingleClickEdit:
         node._ensure_signals().field_edit_requested.connect(
             lambda n, name, r, val: fired.append((name, val))
         )
-        event = self._make_event(item_id_rect.value_rect.center(), Qt.MouseButton.RightButton)
+        event = make_scene_mouse_event(
+            item_id_rect.value_rect.center(), Qt.MouseButton.RightButton
+        )
         node.view.mousePressEvent(event)
         assert not fired
 
@@ -395,18 +387,6 @@ class TestPaintedIngredientClick:
         node.view.paint(painter, QStyleOptionGraphicsItem(), None)
         painter.end()
 
-    def _make_event(self, pos, button):
-        from PySide6.QtCore import QEvent, QPointF, Qt
-        from PySide6.QtWidgets import QGraphicsSceneMouseEvent
-
-        event = QGraphicsSceneMouseEvent(QEvent.Type.GraphicsSceneMousePress)
-        event.setPos(QPointF(pos))
-        event.setScenePos(QPointF(pos))
-        event.setButton(button)
-        event.setButtons(button)
-        event.setModifiers(Qt.KeyboardModifier.NoModifier)
-        return event
-
     def test_left_click_on_ingredient_rect_fires_edit_signal(self, qapp, graph):
         from PySide6.QtCore import Qt
 
@@ -420,7 +400,7 @@ class TestPaintedIngredientClick:
         consumer._ensure_signals().field_edit_requested.connect(
             lambda n, name, r, val: fired.append((name, val))
         )
-        event = self._make_event(ing_rect.value_rect.center(), Qt.MouseButton.LeftButton)
+        event = make_scene_mouse_event(ing_rect.value_rect.center(), Qt.MouseButton.LeftButton)
         consumer.view.mousePressEvent(event)
         assert fired
         assert fired[0] == ("ingredient_0", "4")
