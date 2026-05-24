@@ -17,6 +17,10 @@ pytest.importorskip(
     reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
 )
 
+
+pytestmark = pytest.mark.slow
+
+
 from PySide6 import QtCore, QtWidgets
 
 # ---------------------------------------------------------------------------
@@ -32,28 +36,6 @@ def window(qapp, monkeypatch, tmp_path):
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
     return CraftGraphWindow()
-
-
-@pytest.fixture(autouse=True)
-def _reap_file_watchers(qapp):
-    """Stop every CraftGraphWindow's file watcher after each test.
-
-    A window that loads a folder starts a Watchdog observer (its own OS
-    threads). Production stops it in ``closeEvent``, but tests rarely
-    close their windows, so without reaping, observer threads leak and
-    pile up (~98 alive partway through a full Qt run); a leaked watcher
-    thread racing the main thread's GC of abandoned Qt objects then
-    corrupts the heap (STATUS_HEAP_CORRUPTION). This autouse teardown
-    sweeps every live window -- those built by the ``window`` fixture
-    and those constructed directly in a test -- so no observer thread
-    outlives the test that started it.
-    """
-    yield
-    from craftgraph.qt_gui import CraftGraphWindow
-
-    for widget in qapp.topLevelWidgets():
-        if isinstance(widget, CraftGraphWindow):
-            widget._stop_file_watcher()
 
 
 # ---------------------------------------------------------------------------

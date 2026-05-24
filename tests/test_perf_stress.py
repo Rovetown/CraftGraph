@@ -22,6 +22,9 @@ pytest.importorskip(
 )
 
 
+pytestmark = pytest.mark.slow
+
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TIER_B = (
     REPO_ROOT

@@ -39,6 +39,36 @@ def restore_frame_budget_logging():
         logger.addFilter(_FRAME_BUDGET_FILTER)
 
 
+@pytest.fixture(autouse=True)
+def _reap_file_watchers():
+    """Stop every CraftGraphWindow's file watcher after each test.
+
+    A window that loads a folder starts a Watchdog observer (its own OS
+    threads). Production stops it in ``closeEvent``, but tests rarely
+    close their windows, so without reaping, observer threads leak and
+    pile up; a leaked watcher thread racing the main thread's GC of
+    abandoned Qt objects then corrupts the heap (STATUS_HEAP_CORRUPTION).
+    Lives at the conftest level so it applies suite-wide, not just to
+    test_qt_gui.py; non-Qt tests short-circuit when no QApplication has
+    been created yet.
+    """
+    yield
+    try:
+        from PySide6 import QtWidgets
+    except ImportError:
+        return
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return
+    try:
+        from craftgraph.qt_gui import CraftGraphWindow
+    except ImportError:
+        return
+    for widget in app.topLevelWidgets():
+        if isinstance(widget, CraftGraphWindow):
+            widget._stop_file_watcher()
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--no-stress",

@@ -4,8 +4,8 @@ For each scenario, two windows converge to the same end state via different
 paths. Both windows' snapshots must be equal modulo positions, undo state,
 and selection (see the design spec).
 
-Marked @pytest.mark.slow so this runs under `just test-qt` but not
-`just test-fast`.
+Marked @pytest.mark.slow so this runs under `just test-all` /
+`just test-slow` but not the default `just test`.
 """
 
 from __future__ import annotations

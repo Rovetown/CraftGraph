@@ -61,33 +61,29 @@ add *PACKAGES:
 add-dev *PACKAGES:
     uv add --dev {{PACKAGES}}
 
-# Run the full test suite
+# Run the default test sweep (excludes @pytest.mark.slow). Use `just test-all` for the full suite.
 test *ARGS:
-    uv run pytest {{ARGS}}
+    uv run --extra qt pytest -m "not slow" {{ARGS}}
 
-# Run tests with verbose output
+# Verbose default test sweep (still excludes @pytest.mark.slow)
 test-v *ARGS:
-    uv run pytest -v {{ARGS}}
+    uv run --extra qt pytest -v -m "not slow" {{ARGS}}
 
-# Run a specific test file
+# Run the entire suite including @pytest.mark.slow tests
+test-all *ARGS:
+    uv run --extra qt pytest {{ARGS}}
+
+# Run only @pytest.mark.slow tests (test_qt_gui + test_perf_stress + test_hwnd_stress + test_incremental_rebuild_parity)
+test-slow *ARGS:
+    uv run --extra qt pytest -m slow {{ARGS}}
+
+# Run a specific test file (no marker filter; explicit file wins)
 test-file FILE *ARGS:
-    uv run pytest {{FILE}} {{ARGS}}
+    uv run --extra qt pytest {{FILE}} {{ARGS}}
 
-# Run the full qt suite with stdout unbuffered + capture disabled.
-# Workaround for the agent-shell pipe-buffering issue where the default
-# `pytest tests/test_qt_gui.py` invocation stalls and never flushes
-# progress dots. PYTHONUNBUFFERED=1 forces line-flushed stdout; -s
-# disables pytest output capture so dots stream live; --tb=line keeps
-# failure output compact. Use this for full Qt regression sweeps.
+# Run the full qt sweep with PYTHONUNBUFFERED + -s (works around pipe-buffering stalls)
 test-qt *ARGS:
     PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_gui.py tests/test_qt_nodes.py -s --tb=line {{ARGS}}
-
-# Run only the non-Qt-window tests. Fast regression check that finishes
-# in seconds: skips test_qt_gui.py (the slow file) but still covers
-# nodes, parser, sync, perf, watcher, etc. Safe default during agent
-# sessions when the full Qt sweep keeps timing out.
-test-fast *ARGS:
-    PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_nodes.py tests/test_proc_diag.py tests/test_perf_diag.py tests/test_sync.py tests/test_parser.py tests/test_graph.py tests/test_serializer.py tests/test_watcher.py -q {{ARGS}}
 
 # ---------------------------------------------------------------------------
 # Code Quality

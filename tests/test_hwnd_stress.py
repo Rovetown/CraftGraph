@@ -23,6 +23,7 @@ pytest.importorskip(
 
 pytestmark = [
     pytest.mark.skipif(sys.platform != "win32", reason="HWND metric is Windows-only"),
+    pytest.mark.slow,
 ]
 
 
