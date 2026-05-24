@@ -69,6 +69,36 @@ def _reap_file_watchers():
             widget._stop_file_watcher()
 
 
+def make_scene_mouse_event(
+    pos,
+    button,
+    *,
+    event_type=None,
+    modifiers=None,
+):
+    """Build a QGraphicsSceneMouseEvent for unit-testing painted-field click handlers.
+
+    Tests deliver the returned event directly to ``node.view.mousePressEvent``
+    to bypass scene dispatch (the intentional unit-test surface). Imported
+    from conftest by test files that need to synthesize scene mouse events.
+    """
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtWidgets import QGraphicsSceneMouseEvent
+
+    if event_type is None:
+        event_type = QEvent.Type.GraphicsSceneMousePress
+    if modifiers is None:
+        modifiers = Qt.KeyboardModifier.NoModifier
+
+    event = QGraphicsSceneMouseEvent(event_type)
+    event.setPos(QPointF(pos))
+    event.setScenePos(QPointF(pos))
+    event.setButton(button)
+    event.setButtons(button)
+    event.setModifiers(modifiers)
+    return event
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--no-stress",
