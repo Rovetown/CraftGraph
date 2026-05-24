@@ -99,6 +99,22 @@ def make_scene_mouse_event(
     return event
 
 
+def make_test_window(qtbot):
+    """Single test-suite construction path for CraftGraphWindow.
+
+    Builds the window with a non-modal close confirmer (DISCARD) so
+    closeEvent never blocks on a modal in offscreen tests, and registers
+    the window with qtbot.addWidget so pytest-qt manages its lifecycle.
+    Together these replace the autouse _reap_file_watchers fixture once
+    every CraftGraphWindow() call in the suite is routed through here.
+    """
+    from craftgraph.qt_gui import CloseDecision, CraftGraphWindow
+
+    win = CraftGraphWindow(close_confirmer=lambda _w: CloseDecision.DISCARD)
+    qtbot.addWidget(win)
+    return win
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--no-stress",
