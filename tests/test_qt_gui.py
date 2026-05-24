@@ -6483,7 +6483,7 @@ class TestWatcherThreadHygiene:
 class TestCloseConfirmer:
     """Tests inject close_confirmer so closeEvent's modal does not block."""
 
-    def test_inject_discard_skips_modal_and_accepts(self, monkeypatch):
+    def test_inject_discard_skips_modal_and_accepts(self, qapp, monkeypatch):
         """A confirmer returning DISCARD lets closeEvent accept without modal."""
         from craftgraph.qt_gui import CloseDecision, CraftGraphWindow
 
