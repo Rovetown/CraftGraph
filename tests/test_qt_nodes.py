@@ -26,7 +26,7 @@ from NodeGraphQt import NodeGraph  # noqa: E402
 
 
 @pytest.fixture
-def graph(qapp):
+def graph(qapp, qtbot):
     """Fresh NodeGraph for each test."""
     from craftgraph.qt_nodes import all_node_classes
 
@@ -34,6 +34,7 @@ def graph(qapp):
     g.set_acyclic(False)
     for cls in all_node_classes():
         g.register_node(cls)
+    qtbot.addWidget(g.widget)
     return g
 
 
