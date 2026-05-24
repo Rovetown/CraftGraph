@@ -17,6 +17,7 @@ Architecture notes:
 from __future__ import annotations
 
 import contextlib
+import enum
 import json
 import logging
 import re
@@ -3316,11 +3317,47 @@ def _path_targets_from_parsed_files(parsed_files: list[ParsedFile]) -> set[str]:
     return targets
 
 
+class CloseDecision(enum.Enum):
+    """Decision returned by a CraftGraphWindow close confirmer."""
+
+    SAVE = "save"
+    DISCARD = "discard"
+    CANCEL = "cancel"
+
+
+def _default_close_confirmer(window: CraftGraphWindow) -> CloseDecision:
+    """Default close confirmer: shows the QMessageBox.question modal.
+
+    Production code path -- behavior identical to pre-refactor closeEvent.
+    Tests inject their own confirmer to skip the modal.
+    """
+    result = QtWidgets.QMessageBox.question(
+        window,
+        "Unsaved Changes",
+        "You have unsaved changes. Do you want to save before closing?",
+        QtWidgets.QMessageBox.StandardButton.Save
+        | QtWidgets.QMessageBox.StandardButton.Discard
+        | QtWidgets.QMessageBox.StandardButton.Cancel,
+        QtWidgets.QMessageBox.StandardButton.Save,
+    )
+    if result == QtWidgets.QMessageBox.StandardButton.Save:
+        return CloseDecision.SAVE
+    if result == QtWidgets.QMessageBox.StandardButton.Discard:
+        return CloseDecision.DISCARD
+    return CloseDecision.CANCEL
+
+
 class CraftGraphWindow(QtWidgets.QMainWindow):
     """Main application window for the Qt-based CraftGraph editor."""
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        close_confirmer: Callable[[CraftGraphWindow], CloseDecision] | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._close_confirmer = close_confirmer
         self.setWindowTitle("CraftGraph")
         self.resize(*_MAIN_WINDOW_DEFAULT_SIZE)
 
@@ -4159,7 +4196,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
-        """Prompt the user if there are unsaved changes before closing."""
+        """Prompt the confirmer if there are unsaved changes before closing."""
         if not self._has_unsaved_changes():
             if self._project is not None:
                 self._update_project_state()
@@ -4169,21 +4206,19 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             event.accept()
             return
 
-        result = QtWidgets.QMessageBox.question(
-            self,
-            "Unsaved Changes",
-            "You have unsaved changes. Do you want to save before closing?",
-            QtWidgets.QMessageBox.StandardButton.Save
-            | QtWidgets.QMessageBox.StandardButton.Discard
-            | QtWidgets.QMessageBox.StandardButton.Cancel,
-            QtWidgets.QMessageBox.StandardButton.Save,
-        )
+        confirmer = self._close_confirmer or _default_close_confirmer
+        try:
+            decision = confirmer(self)
+        except Exception:
+            logger.exception("close confirmer raised; treating as CANCEL")
+            event.ignore()
+            return
 
-        if result == QtWidgets.QMessageBox.StandardButton.Save:
+        if decision is CloseDecision.SAVE:
             self._save_all()
             self._stop_file_watcher()
             event.accept()
-        elif result == QtWidgets.QMessageBox.StandardButton.Discard:
+        elif decision is CloseDecision.DISCARD:
             # Still save project state (positions, editor state) even on discard
             if self._project is not None:
                 self._update_project_state()
