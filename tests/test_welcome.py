@@ -167,7 +167,7 @@ class TestCallbacks:
         btn.click()
         assert fired == ["proj"]
 
-    def test_recent_entry_click_fires_callback(self, qapp: QtWidgets.QApplication, tmp_path: object) -> None:
+    def test_recent_entry_click_fires_callback(self, qapp: QtWidgets.QApplication, qtbot, tmp_path: object) -> None:
         d = tmp_path / "TestMod"
         d.mkdir()
         fired: list[tuple[str, str]] = []
@@ -181,18 +181,10 @@ class TestCallbacks:
 
         items = widget.findChildren(_RecentEntryItem)
         assert len(items) == 1
-        # Simulate mouse press
-        from PySide6.QtCore import QPoint
-        from PySide6.QtGui import QMouseEvent, Qt
+        # Simulate mouse press through qtbot so the widget's event filters fire
+        from PySide6.QtCore import QPoint, Qt
 
-        event = QMouseEvent(
-            QMouseEvent.Type.MouseButtonPress,
-            QPoint(5, 5),
-            Qt.MouseButton.LeftButton,
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-        )
-        items[0].mousePressEvent(event)
+        qtbot.mousePress(items[0], Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
         assert fired == [(str(d), "folder")]
 
     def test_startup_checkbox_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
