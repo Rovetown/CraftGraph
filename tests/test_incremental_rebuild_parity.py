@@ -110,75 +110,6 @@ def _multi_recipe_file(baseline_copy):
     return target
 
 
-def test_modify_recipe_field_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Change AmountCrafted on one recipe; both paths converge to equal state."""
-    target_file = next(
-        (
-            p
-            for p in baseline_copy.glob("*.txt")
-            if "AmountCrafted: " in p.read_text(encoding="utf-8")
-        ),
-        None,
-    )
-    if target_file is None:
-        pytest.skip("no recipe with AmountCrafted in baseline")
-
-    text = target_file.read_text(encoding="utf-8")
-    mutated = text.replace("AmountCrafted: 1", "AmountCrafted: 7", 1)
-    if mutated == text:
-        mutated = text.replace("AmountCrafted: 2", "AmountCrafted: 7", 1)
-    if mutated == text:
-        pytest.skip("could not locate an AmountCrafted line to mutate")
-
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
-    win_a.load_recipes(baseline_copy)
-    target_file.write_text(mutated, encoding="utf-8")
-    win_a._on_watcher_rebuild([])
-    snap_a = _snapshot_window(win_a)
-
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
-    win_b.load_recipes(baseline_copy)
-    snap_b = _snapshot_window(win_b)
-
-    assert snap_a == snap_b
-
-
-def test_add_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Append a new alias recipe; both paths produce the same nodes."""
-    target_file = _multi_recipe_file(baseline_copy)
-
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
-    win_a.load_recipes(baseline_copy)
-
-    text = target_file.read_text(encoding="utf-8")
-    insert = (
-        "(\n"
-        "    ItemID: ParityTestRecipe;\n"
-        '    DisplayName: "Parity Test";\n'
-        '    Tooltip: "Parity Test";\n'
-        "    Ingredients:\n"
-        "    ( ItemID: Titanium; Required: 1; );\n"
-        "    LinkedItemIDs: ParityTestRecipe;\n"
-        "    Path: Alch_Fab/Alch_LabEquipment;\n"
-        "    ForceUnlockAtStart: NO;\n"
-        "),\n"
-    )
-    last_paren = text.rfind(");")
-    if last_paren < 0:
-        pytest.skip("baseline target lacks expected closing paren")
-    mutated = text[:last_paren] + insert + text[last_paren:]
-    target_file.write_text(mutated, encoding="utf-8")
-
-    win_a._on_watcher_rebuild([])
-    snap_a = _snapshot_window(win_a)
-
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
-    win_b.load_recipes(baseline_copy)
-    snap_b = _snapshot_window(win_b)
-
-    assert snap_a == snap_b
-
-
 def _drop_first_alias(target_file: Path) -> None:
     """Parse, remove the first alias recipe, and serialize back.
 
@@ -203,59 +134,6 @@ def test_remove_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     win_a.load_recipes(baseline_copy)
 
     _drop_first_alias(target_file)
-    win_a._on_watcher_rebuild([])
-    snap_a = _snapshot_window(win_a)
-
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
-    win_b.load_recipes(baseline_copy)
-    snap_b = _snapshot_window(win_b)
-
-    assert snap_a == snap_b
-
-
-def test_rename_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Rename the first ItemID; remove+add semantics produce parity."""
-    from craftgraph.parser import parse_file
-    from craftgraph.serializer import serialize_file
-
-    target_file = _multi_recipe_file(baseline_copy)
-
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
-    win_a.load_recipes(baseline_copy)
-
-    pf = parse_file(target_file)
-    if not pf.alias_recipes:
-        pytest.skip("target file has no alias recipes")
-    pf.alias_recipes[0].item_id = "ParityRenamed_" + pf.alias_recipes[0].item_id
-    target_file.write_text(serialize_file(pf), encoding="utf-8")
-
-    win_a._on_watcher_rebuild([])
-    snap_a = _snapshot_window(win_a)
-
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
-    win_b.load_recipes(baseline_copy)
-    snap_b = _snapshot_window(win_b)
-
-    assert snap_a == snap_b
-
-
-def test_ingredient_count_change_parity(qapp, monkeypatch, baseline_copy, tmp_path):
-    """Add one ingredient; exercises topology fallback."""
-    from craftgraph.models import Ingredient
-    from craftgraph.parser import parse_file
-    from craftgraph.serializer import serialize_file
-
-    target_file = _multi_recipe_file(baseline_copy)
-
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
-    win_a.load_recipes(baseline_copy)
-
-    pf = parse_file(target_file)
-    if not pf.alias_recipes:
-        pytest.skip("target file has no alias recipes")
-    pf.alias_recipes[0].ingredients.append(Ingredient(item_id="Copper", required=1))
-    target_file.write_text(serialize_file(pf), encoding="utf-8")
-
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 

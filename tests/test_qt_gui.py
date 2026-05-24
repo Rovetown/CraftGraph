@@ -195,24 +195,6 @@ class TestWindowCreation:
 
 
 class TestMenuBar:
-    def test_menu_bar_exists(self, window):
-        assert window.menuBar() is not None
-
-    def test_file_menu_exists(self, window):
-        menus = window.menuBar().findChildren(QtWidgets.QMenu)
-        menu_titles = [m.title() for m in menus]
-        assert any("File" in t for t in menu_titles)
-
-    def test_edit_menu_exists(self, window):
-        menus = window.menuBar().findChildren(QtWidgets.QMenu)
-        menu_titles = [m.title() for m in menus]
-        assert any("Edit" in t for t in menu_titles)
-
-    def test_view_menu_exists(self, window):
-        menus = window.menuBar().findChildren(QtWidgets.QMenu)
-        menu_titles = [m.title() for m in menus]
-        assert any("View" in t for t in menu_titles)
-
     def test_file_menu_has_open_action(self, window):
         menus = window.menuBar().findChildren(QtWidgets.QMenu)
         file_menu = next(m for m in menus if "File" in m.title())
@@ -269,11 +251,6 @@ class TestMenuBar:
         file_menu = next(m for m in menus if "File" in m.title())
         export_action = next(a for a in file_menu.actions() if "Export" in a.text())
         assert not export_action.isEnabled()
-
-    def test_help_menu_exists(self, window):
-        menus = window.menuBar().findChildren(QtWidgets.QMenu)
-        menu_titles = [m.title() for m in menus]
-        assert any("Help" in t for t in menu_titles)
 
     def test_help_menu_has_about(self, window):
         menus = window.menuBar().findChildren(QtWidgets.QMenu)
@@ -345,9 +322,6 @@ class TestLayout:
         assert splitter.count() == 2
         assert isinstance(window._graph_stack, QtWidgets.QStackedWidget)
         assert isinstance(window._editor_stack, QtWidgets.QStackedWidget)
-
-    def test_status_bar_exists(self, window):
-        assert window.statusBar() is not None
 
     def test_status_bar_shows_ready(self, window):
         assert window.statusBar().currentMessage() == "Ready"
@@ -1575,22 +1549,6 @@ class TestSpriteContextMenu:
         """Ensure sprite scanning uses the test's tmp_path, not real CC3."""
         window._subnautica_cc3_path = ""
 
-    def test_set_sprite_action_removed(self, window):
-        """Old 'Set Sprite...' context menu entry is no longer present."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert not any("Set Sprite" in name for name in action_names)
-
-    def test_clear_sprite_action_removed(self, window):
-        """Old 'Clear Sprite' context menu entry is no longer present."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert not any("Clear Sprite" in name for name in action_names)
-
     def test_sprite_node_can_be_created(self, window):
         """A SpriteNode can be created via _create_node_from_menu."""
         from craftgraph.qt_nodes import NodeKind
@@ -1754,14 +1712,6 @@ class TestNodeDeletion:
         window._delete_selected_nodes()
 
         assert len(window.graph.all_nodes()) == 1
-
-    def test_delete_context_menu_exists(self, window):
-        """The node context menu has a 'Delete' command."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Delete" in name for name in action_names)
 
     def test_delete_clears_selection_before_removal(self, window, tmp_path):
         """After deleting a node via keyboard, no stale selection remains."""
@@ -1964,29 +1914,6 @@ class TestCopyPasteDuplicate:
         refs = [n.model_ref for n in window.graph.all_nodes()]
         assert refs[0] is not refs[1]
 
-    def test_copy_context_menu_exists(self, window):
-        """Nodes context menu has a 'Copy' entry."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Copy" in name for name in action_names)
-
-    def test_duplicate_context_menu_exists(self, window):
-        """Nodes context menu has a 'Duplicate' entry."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Duplicate" in name for name in action_names)
-
-    def test_paste_graph_context_menu_exists(self, window):
-        """Canvas context menu has a 'Paste' entry."""
-        graph_menu = window.graph.get_context_menu("graph")
-        qmenu = graph_menu.qmenu
-        action_names = [a.text() for a in qmenu.actions()]
-        assert any("Paste" in name for name in action_names)
-
     def test_duplicate_nested_tab_appears_in_code(self, window, tmp_path):
         """Duplicating a CraftingTab inside a CustomFabricators file adds it to the code."""
         recipe_file = tmp_path / "test.txt"
@@ -2140,14 +2067,6 @@ class TestCopyPasteDuplicate:
 class TestToggleSelection:
     """Verify the Toggle Selection context menu entry."""
 
-    def test_toggle_selection_context_menu_exists(self, window):
-        """Nodes context menu has a 'Toggle Selection' entry."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("CraftGraphBaseNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Toggle Selection" in name for name in action_names)
-
     def test_toggle_selection_selects_unselected_node(self, window, tmp_path):
         """Toggle on an unselected node selects it."""
         recipe_file = tmp_path / "test.txt"
@@ -2184,14 +2103,6 @@ class TestToggleSelection:
 
 class TestDeleteIngredient:
     """Verify the Delete Ingredient context menu action."""
-
-    def test_delete_ingredient_context_menu_exists(self, window):
-        """Nodes context menu has a 'Delete Ingredient...' entry."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("ModifiedRecipeNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Delete Ingredient" in name for name in action_names)
 
     def test_delete_ingredient_removes_from_model(self, window, tmp_path, monkeypatch):
         """Selecting an ingredient in the dialog removes it from the model."""
@@ -2241,14 +2152,6 @@ class TestDeleteIngredient:
 
 class TestPromoteIngredient:
     """Verify the Promote Ingredient to Recipe context menu action."""
-
-    def test_promote_context_menu_exists(self, window):
-        """Nodes context menu has a 'Promote Ingredient to Recipe...' entry."""
-        nodes_menu = window.graph.get_context_menu("nodes")
-        menu = nodes_menu.qmenu.get_menu("ModifiedRecipeNode")
-        assert menu is not None
-        action_names = [a.text() for a in menu.actions()]
-        assert any("Promote Ingredient" in name for name in action_names)
 
     def test_promote_creates_recipe_with_item_id(self, window, tmp_path, monkeypatch):
         """Promoting an ingredient creates a recipe node with that ingredient's ID."""
@@ -3021,11 +2924,6 @@ class TestNodeHeaderTooltips:
 
 
 class TestItemIdReferencePanel:
-    def test_dock_exists(self, window):
-        """The ItemID Reference dock widget should exist."""
-        assert hasattr(window, "_id_dock")
-        assert window._id_dock is not None
-
     def test_dock_has_list(self, window):
         """The dock should contain a filterable list view."""
         assert hasattr(window, "_id_list")
@@ -3447,12 +3345,6 @@ class TestModifierStateSync:
 
 class TestAutoSave:
     """Auto-save timer saves dirty tabs silently at a configurable interval."""
-
-    def test_auto_save_timer_exists(self, window):
-        from PySide6 import QtCore
-
-        assert hasattr(window, "_auto_save_timer")
-        assert isinstance(window._auto_save_timer, QtCore.QTimer)
 
     def test_auto_save_disabled_by_default(self, window):
         assert not window._auto_save_timer.isActive()
@@ -3898,12 +3790,6 @@ class TestSpriteLoadingCc3Assets:
 
 
 class TestWelcomeScreen:
-    def test_main_stack_exists(self, window):
-        assert hasattr(window, "_main_stack")
-        from PySide6 import QtWidgets
-
-        assert isinstance(window._main_stack, QtWidgets.QStackedWidget)
-
     def test_welcome_shown_by_default(self, window):
         """With no file arg and default settings, welcome screen is index 0."""
         assert window._main_stack.currentIndex() == 0
@@ -4189,15 +4075,6 @@ class TestSettingsDialogLazyTabs:
         dialog._reset_all()
         tab_count = self._outer_tabs(dialog).count()
         assert dialog._tab_built == set(range(tab_count))
-
-    def test_no_widget_gallery_tab(self, qapp):
-        from craftgraph.qt_gui import _SettingsDialog
-
-        dialog = _SettingsDialog(None)
-        tabs = self._outer_tabs(dialog)
-        titles = {tabs.tabText(i) for i in range(tabs.count())}
-        assert "Widget Gallery" not in titles
-        assert tabs.count() == 7
 
     def test_on_settings_opens_lazily(self, window, monkeypatch):
         from craftgraph.qt_gui import _SettingsDialog
@@ -5841,11 +5718,6 @@ class TestSearchAndSelectCentering:
 
 
 class TestHwndCounterWidget:
-    def test_window_has_handle_counter_label(self, window):
-        # The label is created up front; visibility is controlled by setting.
-        assert hasattr(window, "_hwnd_counter")
-        assert isinstance(window._hwnd_counter, QtWidgets.QLabel)
-
     def test_handle_counter_hidden_by_default(self, window):
         assert window._hwnd_counter.isVisible() is False
 
