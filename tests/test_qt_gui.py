@@ -3300,40 +3300,36 @@ class TestTabBarTooltips:
 class TestModifierStateSync:
     """Viewer ALT_state is synced from actual modifiers on mouse press."""
 
-    def test_stale_alt_state_reset_on_mouse_press(self, window):
+    def test_stale_alt_state_reset_on_mouse_press(self, window, qtbot):
         """If ALT_state gets stuck True, a mouse press without ALT resets it."""
-        from PySide6 import QtCore, QtGui
+        from PySide6.QtCore import QPoint, Qt
 
         viewer = window.graph.viewer()
         # Simulate stale ALT_state (as if ALT was pressed then focus lost)
         viewer.ALT_state = True
 
-        # Deliver event through the event system so filters intercept it
-        press = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(100, 100),
-            QtCore.Qt.MouseButton.MiddleButton,
-            QtCore.Qt.MouseButton.MiddleButton,
-            QtCore.Qt.KeyboardModifier.NoModifier,
+        # qtbot.mousePress dispatches through the event system so filters fire
+        qtbot.mousePress(
+            viewer,
+            Qt.MouseButton.MiddleButton,
+            Qt.KeyboardModifier.NoModifier,
+            QPoint(100, 100),
         )
-        QtCore.QCoreApplication.sendEvent(viewer, press)
 
         assert not viewer.ALT_state, "ALT_state should be synced to False on mouse press"
 
-    def test_alt_state_preserved_when_alt_held(self, window):
+    def test_alt_state_preserved_when_alt_held(self, window, qtbot):
         """If ALT is actually held during mouse press, ALT_state stays True."""
-        from PySide6 import QtCore, QtGui
+        from PySide6.QtCore import QPoint, Qt
 
         viewer = window.graph.viewer()
 
-        press = QtGui.QMouseEvent(
-            QtCore.QEvent.Type.MouseButtonPress,
-            QtCore.QPointF(100, 100),
-            QtCore.Qt.MouseButton.MiddleButton,
-            QtCore.Qt.MouseButton.MiddleButton,
-            QtCore.Qt.KeyboardModifier.AltModifier,
+        qtbot.mousePress(
+            viewer,
+            Qt.MouseButton.MiddleButton,
+            Qt.KeyboardModifier.AltModifier,
+            QPoint(100, 100),
         )
-        QtCore.QCoreApplication.sendEvent(viewer, press)
 
         assert viewer.ALT_state, "ALT_state should be True when ALT is held"
 
