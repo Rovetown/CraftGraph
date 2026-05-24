@@ -77,13 +77,14 @@ SAMPLE_FOLDER_B = _SAMPLE_FILES_DIR / "VModFabricator"
 
 
 @pytest.fixture
-def window(qapp, monkeypatch, tmp_path):
+def window(qapp, qtbot, monkeypatch, tmp_path):
     from craftgraph import app_dirs
-    from craftgraph.qt_gui import CraftGraphWindow
+
+    from tests.conftest import make_test_window
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
     monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
-    return CraftGraphWindow()
+    return make_test_window(qtbot)
 
 
 def _drain_deferred_delete():

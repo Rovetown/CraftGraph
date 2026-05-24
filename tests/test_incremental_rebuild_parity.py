@@ -89,17 +89,18 @@ def _snapshot_window(window) -> dict:
     return snapshot
 
 
-def _make_window(qapp, monkeypatch, tmp_path):
+def _make_window(qapp, qtbot, monkeypatch, tmp_path):
     """Construct a CraftGraphWindow isolated from real settings."""
     from craftgraph import app_dirs
-    from craftgraph.qt_gui import CraftGraphWindow
+
+    from tests.conftest import make_test_window
 
     settings_dir = tmp_path / "settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(
         app_dirs, "settings_path", lambda: settings_dir / "settings.json"
     )
-    return CraftGraphWindow()
+    return make_test_window(qtbot)
 
 
 def _multi_recipe_file(baseline_copy):
@@ -126,29 +127,29 @@ def _drop_first_alias(target_file: Path) -> None:
     target_file.write_text(serialize_file(pf), encoding="utf-8")
 
 
-def test_remove_recipe_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+def test_remove_recipe_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Delete one recipe; both paths produce the same nodes."""
     target_file = _multi_recipe_file(baseline_copy)
 
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a = _make_window(qapp, qtbot, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
     _drop_first_alias(target_file)
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b = _make_window(qapp, qtbot, monkeypatch, tmp_path / "b")
     win_b.load_recipes(baseline_copy)
     snap_b = _snapshot_window(win_b)
 
     assert snap_a == snap_b
 
 
-def test_unchanged_file_skipped(qapp, monkeypatch, baseline_copy, tmp_path):
+def test_unchanged_file_skipped(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Touching an unchanged file fires a watcher event but creates zero nodes."""
     target_file = next(baseline_copy.glob("*.txt"))
 
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a = _make_window(qapp, qtbot, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
     nodes_before = sum(len(t.model_to_node) for t in win_a._file_tabs)
@@ -167,7 +168,7 @@ def test_unchanged_file_skipped(qapp, monkeypatch, baseline_copy, tmp_path):
     assert pre_node_ids == post_node_ids
 
 
-def test_cross_file_fab_rename_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+def test_cross_file_fab_rename_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Rename a CustomFabricator ItemID. Cross-file Path strings still resolve."""
     fab_file = next(
         (p for p in baseline_copy.glob("*.txt") if "CustomFabricators:" in p.read_text(encoding="utf-8")),
@@ -176,7 +177,7 @@ def test_cross_file_fab_rename_parity(qapp, monkeypatch, baseline_copy, tmp_path
     if fab_file is None:
         pytest.skip("no fabricator file in baseline")
 
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a = _make_window(qapp, qtbot, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
     text = fab_file.read_text(encoding="utf-8")
@@ -186,16 +187,16 @@ def test_cross_file_fab_rename_parity(qapp, monkeypatch, baseline_copy, tmp_path
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b = _make_window(qapp, qtbot, monkeypatch, tmp_path / "b")
     win_b.load_recipes(baseline_copy)
     snap_b = _snapshot_window(win_b)
 
     assert snap_a == snap_b
 
 
-def test_added_file_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+def test_added_file_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Drop a new .txt into the baseline; both paths produce the new tab."""
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a = _make_window(qapp, qtbot, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
     new_file = baseline_copy / "ParityAdded_Sizes.txt"
@@ -211,25 +212,25 @@ def test_added_file_parity(qapp, monkeypatch, baseline_copy, tmp_path):
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b = _make_window(qapp, qtbot, monkeypatch, tmp_path / "b")
     win_b.load_recipes(baseline_copy)
     snap_b = _snapshot_window(win_b)
 
     assert snap_a == snap_b
 
 
-def test_removed_file_parity(qapp, monkeypatch, baseline_copy, tmp_path):
+def test_removed_file_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Delete a .txt; tab closes on path A, never appears on path B."""
     target = next(baseline_copy.glob("*.txt"))
 
-    win_a = _make_window(qapp, monkeypatch, tmp_path / "a")
+    win_a = _make_window(qapp, qtbot, monkeypatch, tmp_path / "a")
     win_a.load_recipes(baseline_copy)
 
     target.unlink()
     win_a._on_watcher_rebuild([])
     snap_a = _snapshot_window(win_a)
 
-    win_b = _make_window(qapp, monkeypatch, tmp_path / "b")
+    win_b = _make_window(qapp, qtbot, monkeypatch, tmp_path / "b")
     win_b.load_recipes(baseline_copy)
     snap_b = _snapshot_window(win_b)
 
