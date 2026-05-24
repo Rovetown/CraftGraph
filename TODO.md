@@ -7,11 +7,13 @@ file tracks only what is left, plus a record of the performance techniques shipp
 
 ## Test infrastructure
 
-- [ ] **Faster, nicer test runs.** Tag slow / interactive tests with `@pytest.mark.slow`
-  and drop them from the default `just test` (opt-in via `just test-slow`) so the
-  default sweep finishes fast enough that "did my change regress anything" never
-  times out. Optionally evaluate moving to a nicer test setup -- better logging,
-  colored output.
+- [x] **Faster, nicer test runs.** `test_qt_gui`, `test_perf_stress`, `test_hwnd_stress`,
+  and `test_incremental_rebuild_parity` are tagged `@pytest.mark.slow` at module level.
+  `just test` excludes them (1490 passed / 5 skipped in ~10s); `just test-all` runs
+  the full suite; `just test-slow` runs only the tagged set. The autouse
+  `_reap_file_watchers` reaper was hoisted from `test_qt_gui.py` to `tests/conftest.py`
+  so any test file that builds a `CraftGraphWindow` is still safe from the leaked
+  Watchdog thread / heap-corruption regression once test_qt_gui is excluded.
 
 > **Resolved knowledge -- headless test hangs.** Traced to three causes:
 > (1) **Pipe buffering** -- `2>&1 | tail` only flushes the tail of stdout; redirect to
