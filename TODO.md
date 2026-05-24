@@ -13,7 +13,26 @@ file tracks only what is left, plus a record of the performance techniques shipp
   the full suite; `just test-slow` runs only the tagged set. The autouse
   `_reap_file_watchers` reaper was hoisted from `test_qt_gui.py` to `tests/conftest.py`
   so any test file that builds a `CraftGraphWindow` is still safe from the leaked
-  Watchdog thread / heap-corruption regression once test_qt_gui is excluded.
+  Watchdog thread / heap-corruption regression once test_qt_gui is excluded. Later
+  retired entirely at `f29057c` after sub-project 4 routed every construction
+  through `make_test_window(qtbot)` and qtbot's lifecycle replaced the reaper.
+
+- [ ] **Defensive `save_project` / closeEvent on empty `project_path`.** Sub-project 4
+  surfaced that `closeEvent` (DISCARD branch) calls `save_project(self._project)` at
+  teardown, which crashes with `PermissionError: '.'` when `project_path == ""`.
+  Currently 2 tests in `TestProjectCustomIdPersistence` (`test_qt_gui.py`) work around
+  this with `try/finally: window._project = None`. The proper fix is either
+  `save_project` to no-op on empty path, or `closeEvent` to skip the save branch
+  when `not self._project.project_path`. Either way, drop the try/finally workaround
+  from the two tests once production is defensive.
+
+- [ ] **Robust patch-script pattern for mass test-file refactors.** Sub-project 4's
+  test_qt_gui conversion needed two patch scripts because the first regex used
+  `\s+` (greedy cross-line whitespace) for indent and required `)` on the same line
+  as `def test_x(`. Future bulk edits should use ` *` for indent and handle
+  multi-line signatures in one pass. Either codify the pattern as a small reusable
+  utility (e.g., `scripts/_patch_helpers.py`) or document the rules in CLAUDE.md so
+  the next round avoids the same regressions.
 
 > **Resolved knowledge -- headless test hangs.** Traced to three causes:
 > (1) **Pipe buffering** -- `2>&1 | tail` only flushes the tail of stdout; redirect to
