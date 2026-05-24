@@ -57,7 +57,7 @@ class TestFieldRectIsIngredient:
 
 
 @pytest.fixture
-def graph(qapp):
+def graph(qapp, qtbot):
     """Fresh NodeGraph for each test."""
     from NodeGraphQt import NodeGraph
 
@@ -67,6 +67,7 @@ def graph(qapp):
     g.set_acyclic(False)
     for cls in all_node_classes():
         g.register_node(cls)
+    qtbot.addWidget(g.widget)
     return g
 
 
