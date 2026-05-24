@@ -195,7 +195,7 @@ class TestNoQtImports:
     """The module must not depend on Qt."""
 
     def test_no_pyside6_import(self) -> None:
-        import importlib
+        import importlib.util
 
         source = importlib.util.find_spec("craftgraph.file_assoc")
         assert source is not None
