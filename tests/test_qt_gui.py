@@ -23,19 +23,22 @@ pytestmark = pytest.mark.slow
 
 from PySide6 import QtCore, QtWidgets
 
+from tests.conftest import make_test_window
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def window(qapp, monkeypatch, tmp_path):
+def window(qapp, qtbot, monkeypatch, tmp_path):
     """Fresh CraftGraphWindow for each test, isolated from real settings."""
     from craftgraph import app_dirs
-    from craftgraph.qt_gui import CraftGraphWindow
+
+    from tests.conftest import make_test_window
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-    return CraftGraphWindow()
+    return make_test_window(qtbot)
 
 
 # ---------------------------------------------------------------------------
@@ -3802,30 +3805,27 @@ class TestWelcomeScreen:
 
 
 class TestLaunchFlow:
-    def test_welcome_shown_when_setting_is_welcome(self, qapp, tmp_path, monkeypatch):
+    def test_welcome_shown_when_setting_is_welcome(self, qapp, qtbot, tmp_path, monkeypatch):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("on_launch", "welcome")
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._main_stack.currentIndex() == 0
 
-    def test_editor_shown_when_setting_is_empty(self, qapp, tmp_path, monkeypatch):
+    def test_editor_shown_when_setting_is_empty(self, qapp, qtbot, tmp_path, monkeypatch):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("on_launch", "empty")
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._main_stack.currentIndex() == 1
 
-    def test_missing_settings_defaults_to_welcome(self, qapp, tmp_path, monkeypatch):
+    def test_missing_settings_defaults_to_welcome(self, qapp, qtbot, tmp_path, monkeypatch):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._main_stack.currentIndex() == 0
 
 
@@ -4093,44 +4093,40 @@ class TestUpdateChecker:
         assert "Update available" not in window.statusBar().currentMessage()
         assert window.statusBar().currentMessage() == msg_before
 
-    def test_check_for_updates_false_skips_check(self, qapp, monkeypatch, tmp_path):
+    def test_check_for_updates_false_skips_check(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("check_for_updates", False)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._check_for_updates is False
 
 
 class TestSettingsPersistenceRoundTrip:
     """Settings saved from _on_settings are restored on next window creation."""
 
-    def test_backup_on_save_persists(self, qapp, monkeypatch, tmp_path):
+    def test_backup_on_save_persists(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("backup_on_save", True)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._backup_on_save is True
 
-    def test_auto_save_interval_persists(self, qapp, monkeypatch, tmp_path):
+    def test_auto_save_interval_persists(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("auto_save_interval", 120)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._auto_save_interval == 120
 
-    def test_default_project_folder_persists(self, qapp, monkeypatch, tmp_path):
+    def test_default_project_folder_persists(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("default_project_folder", "/custom/path")
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._default_project_folder == "/custom/path"
 
     def test_on_settings_saves_all_keys(self, window, monkeypatch, tmp_path):
@@ -4352,18 +4348,17 @@ class TestThemePersistence:
         assert "node" in data["theme"]
         assert "syntax" in data["theme"]
 
-    def test_theme_loaded_on_startup(self, qapp, monkeypatch, tmp_path):
+    def test_theme_loaded_on_startup(self, qapp, qtbot, monkeypatch, tmp_path):
         import json
 
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
         from craftgraph.theme import NodeColors, ThemeColors, active_theme, theme_to_dict
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         custom = ThemeColors(node=NodeColors(sprite=(11, 22, 33)))
         settings_data = {"version": 1, "theme": theme_to_dict(custom)}
         (tmp_path / "settings.json").write_text(json.dumps(settings_data), encoding="utf-8")
-        CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert active_theme().node.sprite == (11, 22, 33)
 
 
@@ -5397,7 +5392,10 @@ class TestProjectCustomIdPersistence:
             settings_overrides={"custom_ids": ["ProjectId"]},
         )
         window._ac_settings = AutocompleteSettings(custom_ids=["GlobalId"])
-        assert window._effective_custom_ids() == ["ProjectId"]
+        try:
+            assert window._effective_custom_ids() == ["ProjectId"]
+        finally:
+            window._project = None  # close: avoid save_project on empty path
 
     def test_effective_custom_ids_returns_empty_when_project_has_no_key(
         self, window: CraftGraphWindow,
@@ -5410,7 +5408,10 @@ class TestProjectCustomIdPersistence:
             node_positions={}, editor_state={},
             settings_overrides={},
         )
-        assert window._effective_custom_ids() == []
+        try:
+            assert window._effective_custom_ids() == []
+        finally:
+            window._project = None  # close: avoid save_project on empty path
 
     def test_update_project_state_syncs_custom_ids(
         self, window: CraftGraphWindow,
@@ -5764,13 +5765,12 @@ class TestHwndCounterMenuToggle:
         action.trigger()  # toggles to False, persists
         assert app_dirs.load_setting("show_hwnd_counter", True) is False
 
-    def test_initial_state_loaded_from_settings(self, qapp, tmp_path, monkeypatch):
+    def test_initial_state_loaded_from_settings(self, qapp, qtbot, tmp_path, monkeypatch):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         app_dirs.save_setting("show_hwnd_counter", True)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         try:
             assert win._hwnd_counter.isHidden() is False
             assert win._hwnd_counter_action.isChecked() is True
@@ -5860,7 +5860,7 @@ class TestSnapshotMenuAction:
 
 
 class TestLauncherInstallsLogger:
-    def test_launcher_installs_threshold_logger(self, qapp, tmp_path, monkeypatch):
+    def test_launcher_installs_threshold_logger(self, qapp, qtbot, tmp_path, monkeypatch):
         from craftgraph import app_dirs, hwnd_diag
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -5888,15 +5888,14 @@ class TestLauncherInstallsLogger:
 
 class TestFrameTimeOverlay:
     def test_overlay_starts_hidden_and_shows_when_toggled(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._frame_time_overlay is None
         win._toggle_frame_time_overlay(True)
         assert win._frame_time_overlay is not None
@@ -5906,31 +5905,29 @@ class TestFrameTimeOverlay:
         win._toggle_frame_time_overlay(False)
         assert not win._frame_time_overlay.isVisibleTo(win)
 
-    def test_overlay_renders_metrics(self, qapp, monkeypatch, tmp_path):
+    def test_overlay_renders_metrics(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         win._toggle_frame_time_overlay(True)
         win._frame_time_overlay.update_metrics(fps=60.0, last_ms=10.0, p99_ms=15.0)
         text = win._frame_time_overlay.text()
         assert "60" in text
         assert "10" in text
 
-    def test_view_menu_has_show_frame_time_action(self, window):
+    def test_view_menu_has_show_frame_time_action(self, qtbot, window):
         view_menu = window.menuBar().findChild(QtWidgets.QMenu, "view_menu")
         assert view_menu is not None
         labels = [a.text().replace("&", "") for a in view_menu.actions()]
         assert any("Show Frame Time" in t for t in labels)
 
     def test_frame_tick_reports_frame_to_perf_diag(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs, perf_diag
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
@@ -5940,7 +5937,7 @@ class TestFrameTimeOverlay:
             perf_diag, "report_frame", lambda frame_ms, **_: calls.append(frame_ms)
         )
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         # First tick seeds the timestamp; no frame reported.
         win._frame_tick(now_ns=1_000_000)
         assert calls == []
@@ -5950,15 +5947,14 @@ class TestFrameTimeOverlay:
         assert abs(calls[0] - 50.0) < 0.01
 
     def test_frame_tick_pushes_metrics_into_visible_overlay(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         win._toggle_frame_time_overlay(True)
         # Throttle is 1-in-6; force the next refresh to fire on the second tick.
         win._frame_overlay_skip = 5
@@ -5983,15 +5979,14 @@ class TestFrameTimeOverlay:
         assert p99_ms >= last_ms - 0.01
 
     def test_frame_tick_skips_overlay_when_hidden(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         # Overlay never shown -- update_metrics must not be called.
         win._frame_tick(now_ns=1_000_000)
         win._frame_tick(now_ns=21_000_000)
@@ -6023,15 +6018,14 @@ class TestPerfMeasureWiring:
         monkeypatch.setattr(perf_diag, "measure", fake_measure)
         return actions
 
-    def test_load_recipes_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+    def test_load_recipes_emits_perf_measure(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
         actions = self._capture_actions(monkeypatch)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
 
         recipe = tmp_path / "r.txt"
         recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8")
@@ -6039,24 +6033,23 @@ class TestPerfMeasureWiring:
 
         assert "load_recipes" in actions
 
-    def test_watcher_rebuild_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+    def test_watcher_rebuild_emits_perf_measure(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
         actions = self._capture_actions(monkeypatch)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         # Skip the dialog branch.
         win._fw_settings.on_external_change = "ignore"
         win._on_watcher_rebuild([])
 
         assert "watcher_rebuild" in actions
 
-    def test_open_settings_emits_perf_measure(self, qapp, monkeypatch, tmp_path):
+    def test_open_settings_emits_perf_measure(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow, _SettingsDialog
+        from craftgraph.qt_gui import _SettingsDialog
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
@@ -6064,21 +6057,20 @@ class TestPerfMeasureWiring:
         actions = self._capture_actions(monkeypatch)
         # Auto-close the modal dialog.
         monkeypatch.setattr(_SettingsDialog, "exec", lambda self: 0)
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         win._on_settings()
 
         assert "open_settings" in actions
 
     def test_apply_code_editor_text_emits_perf_measure(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         recipe = tmp_path / "r.txt"
         recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8")
         win.load_recipes(recipe)
@@ -6095,7 +6087,7 @@ class TestBulkLoadSignalBlocker:
     """_create_file_tab blocks NodeGraph signals during bulk node creation."""
 
     def test_node_created_does_not_fire_during_bulk_load(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
         from craftgraph.qt_gui import CraftGraphWindow
@@ -6103,7 +6095,7 @@ class TestBulkLoadSignalBlocker:
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
 
         # Recipe with multiple nodes -- a single ItemID is enough for the
         # signal-blocker check; we just need at least one create_node call.
@@ -6153,18 +6145,17 @@ class TestBulkLoadSignalBlocker:
 class TestDumpMemorySnapshot:
     """Help > Dump Memory Snapshot writes a file under diagnostics/."""
 
-    def test_dump_memory_action_writes_file(self, qapp, tmp_path, monkeypatch):
+    def test_dump_memory_action_writes_file(self, qapp, qtbot, tmp_path, monkeypatch):
         import tracemalloc
 
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
         tracemalloc.start()
         try:
-            win = CraftGraphWindow()
+            win = make_test_window(qtbot)
             win._on_dump_memory_snapshot()
         finally:
             tracemalloc.stop()
@@ -6173,14 +6164,13 @@ class TestDumpMemorySnapshot:
         files = list(diag_dir.glob("mem_*.txt"))
         assert files, f"expected mem_*.txt in {diag_dir}, found nothing"
 
-    def test_dump_memory_action_in_help_menu(self, qapp, monkeypatch, tmp_path):
+    def test_dump_memory_action_in_help_menu(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         menus = win.menuBar().findChildren(QtWidgets.QMenu)
         help_menu = next(m for m in menus if "Help" in m.title())
         labels = [a.text().replace("&", "") for a in help_menu.actions()]
@@ -6196,11 +6186,10 @@ class TestLayoutCacheReadThrough:
     """load_layout runs before the auto-layout solver so saved positions win."""
 
     def test_load_layout_called_before_compute_hierarchy_layout(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
         from craftgraph import qt_gui as qt_gui_mod
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
@@ -6220,7 +6209,7 @@ class TestLayoutCacheReadThrough:
         monkeypatch.setattr(qt_gui_mod, "load_layout", record_load)
         monkeypatch.setattr(qt_gui_mod, "compute_hierarchy_layout", record_compute)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         recipe = tmp_path / "r.txt"
         recipe.write_text(
             "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8"
@@ -6242,24 +6231,22 @@ class TestProcStatsWidget:
     """Status bar shows live CPU% / RSS readout updated on a timer."""
 
     def test_proc_stats_widget_present_in_status_bar(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         assert win._proc_stats_widget is not None
         assert win._proc_stats_widget.parent() is not None
 
     def test_proc_stats_tick_pushes_metrics_into_widget(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs, proc_diag
         from craftgraph.proc_diag import ProcSnapshot
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
@@ -6268,7 +6255,7 @@ class TestProcStatsWidget:
             lambda: ProcSnapshot(cpu_percent=42.5, rss_bytes=123_456_789),
         )
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         win._proc_stats_tick()
 
         text = win._proc_stats_widget.text()
@@ -6313,24 +6300,23 @@ class TestLoadRecipesTimeSlicing:
 class TestPerfLogDialog:
     """Help > Show Perf Log opens a dialog showing the perf.log tail."""
 
-    def test_perf_log_action_in_help_menu(self, qapp, monkeypatch, tmp_path):
+    def test_perf_log_action_in_help_menu(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         menus = win.menuBar().findChildren(QtWidgets.QMenu)
         help_menu = next(m for m in menus if "Help" in m.title())
         labels = [a.text().replace("&", "") for a in help_menu.actions()]
         assert any("Perf Log" in t for t in labels)
 
     def test_perf_log_dialog_loads_file_content(
-        self, qapp, monkeypatch, tmp_path
+        self, qapp, qtbot, monkeypatch, tmp_path
     ):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow, _PerfLogDialog
+        from craftgraph.qt_gui import _PerfLogDialog
 
         log_dir = tmp_path / "diagnostics"
         log_dir.mkdir()
@@ -6343,7 +6329,7 @@ class TestPerfLogDialog:
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         dialog = _PerfLogDialog(win)
         text = dialog._log_view.toPlainText()
         assert "action=test delta_ms=42.000" in text
@@ -6357,27 +6343,25 @@ class TestPerfLogDialog:
 class TestPanZoomProfiler:
     """View > Profile Pan/Zoom turns cProfile on for N seconds and saves a .prof."""
 
-    def test_action_in_view_menu(self, qapp, monkeypatch, tmp_path):
+    def test_action_in_view_menu(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         menus = win.menuBar().findChildren(QtWidgets.QMenu)
         view_menu = next(m for m in menus if "View" in m.title())
         labels = [a.text().replace("&", "") for a in view_menu.actions()]
         assert any("Profile Pan/Zoom" in t for t in labels)
 
-    def test_start_writes_prof_after_stop(self, qapp, monkeypatch, tmp_path):
+    def test_start_writes_prof_after_stop(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
-        from craftgraph.qt_gui import CraftGraphWindow
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
 
-        win = CraftGraphWindow()
+        win = make_test_window(qtbot)
         # Drive the profiler manually instead of going through the menu /
         # QTimer so the test does not have to wait for real wall-clock.
         win._start_panzoom_profile(duration_ms=0)
