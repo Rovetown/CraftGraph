@@ -6480,6 +6480,29 @@ class TestWatcherThreadHygiene:
         assert not watcher.running  # observer thread joined, not leaked
 
 
+class TestCloseConfirmer:
+    """Tests inject close_confirmer so closeEvent's modal does not block."""
+
+    def test_inject_discard_skips_modal_and_accepts(self, monkeypatch):
+        """A confirmer returning DISCARD lets closeEvent accept without modal."""
+        from craftgraph.qt_gui import CloseDecision, CraftGraphWindow
+
+        monkeypatch.setattr(
+            CraftGraphWindow, "_has_unsaved_changes", lambda self: True
+        )
+
+        confirmer_calls: list[CraftGraphWindow] = []
+
+        def confirmer(w: CraftGraphWindow) -> CloseDecision:
+            confirmer_calls.append(w)
+            return CloseDecision.DISCARD
+
+        win = CraftGraphWindow(close_confirmer=confirmer)
+        accepted = win.close()
+        assert accepted is True
+        assert confirmer_calls == [win]
+
+
 class TestCrossFileKnownIDs:
     """Ingredients defined in a sibling recipe file must not be flagged unknown."""
 
