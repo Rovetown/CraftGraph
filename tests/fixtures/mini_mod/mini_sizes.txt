@@ -1,0 +1,11 @@
+CustomSizes:
+(
+    ItemID: GlassPipe;
+    Width: 1;
+    Height: 2;
+),
+(
+    ItemID: ReinforcedDiveSuit;
+    Width: 2;
+    Height: 2;
+);

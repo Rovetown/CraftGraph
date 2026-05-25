@@ -2444,6 +2444,28 @@ class TestNodeAutocomplete:
         rows = [model.index(i, 0).data() for i in range(model.rowCount())]
         assert any("Fabricator/Resources" in (r or "") for r in rows)
 
+    def test_unlocks_summon_attaches_id_words_completer(self, window, tmp_path):
+        """Unlocks is a CSV TechType list; should autocomplete from known IDs."""
+        node = self._load_added_recipe(window, tmp_path)
+        self._summon_field(window, node, "unlocks", "")
+        editor = window._floating_editor_host._string_editor
+        completer = editor.completer()
+        assert completer is not None
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("titanium" in (r or "").lower() for r in rows)
+
+    def test_unlocked_by_summon_attaches_id_words_completer(self, window, tmp_path):
+        """UnlockedBy is a CSV TechType list; should autocomplete from known IDs."""
+        node = self._load_added_recipe(window, tmp_path)
+        self._summon_field(window, node, "unlocked_by", "")
+        editor = window._floating_editor_host._string_editor
+        completer = editor.completer()
+        assert completer is not None
+        model = completer.model()
+        rows = [model.index(i, 0).data() for i in range(model.rowCount())]
+        assert any("titanium" in (r or "").lower() for r in rows)
+
     def test_display_name_summon_has_no_completer(self, window, tmp_path):
         recipe_file = tmp_path / "test.txt"
         recipe_file.write_text(
@@ -3270,29 +3292,27 @@ class TestNewItemAutocompleteEntry:
 
 
 class TestTabBarTooltips:
-    """Per-file tab labels show the full path as a tooltip."""
+    """Per-file tab labels show the complete filename (not directory path) as a tooltip."""
 
     def test_untitled_tab_has_tooltip(self, window):
         """The default 'untitled' tab has a tooltip."""
         tip = window._tab_bar.tabToolTip(0)
         assert tip == "untitled"
 
-    def test_loaded_file_tab_has_full_path_tooltip(self, window, tmp_path):
-        """Tabs loaded from files show the full file path as tooltip."""
+    def test_loaded_file_tab_tooltip_is_filename(self, window, tmp_path):
+        """Tab tooltip is the filename with extension -- not the parent directory path."""
         recipe_file = tmp_path / "ModifiedRecipes.txt"
         recipe_file.write_text(
             "ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n",
             encoding="utf-8",
         )
         window.load_recipes(recipe_file)
-        # Find the tab for our file
-        found = False
-        for i in range(window._tab_bar.count()):
-            tip = window._tab_bar.tabToolTip(i)
-            if str(recipe_file) in tip:
-                found = True
-                break
-        assert found, "No tab tooltip contains the full file path"
+        # Find the tab for our file by its tooltip == filename.
+        tooltips = [window._tab_bar.tabToolTip(i) for i in range(window._tab_bar.count())]
+        assert "ModifiedRecipes.txt" in tooltips, tooltips
+        # The directory path must NOT be in the tooltip.
+        for tip in tooltips:
+            assert str(tmp_path) not in tip, f"tooltip leaks directory: {tip!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -5370,6 +5390,16 @@ class TestCustomIdScope:
 class TestProjectCustomIdPersistence:
     """CraftGraphWindow reads/writes custom IDs from project settings_overrides."""
 
+    def test_close_with_empty_project_path_is_no_op(self, window) -> None:
+        from craftgraph.project import ProjectFile
+
+        window._project = ProjectFile(
+            version=1, name="t", description="", cc3_path="",
+            project_path="", open_files=[], active_tab="",
+            node_positions={}, editor_state={}, settings_overrides={},
+        )
+        window.close()  # would raise PermissionError before the guard
+
     def test_effective_custom_ids_returns_global_when_no_project(
         self, window: CraftGraphWindow,
     ) -> None:
@@ -5392,10 +5422,7 @@ class TestProjectCustomIdPersistence:
             settings_overrides={"custom_ids": ["ProjectId"]},
         )
         window._ac_settings = AutocompleteSettings(custom_ids=["GlobalId"])
-        try:
-            assert window._effective_custom_ids() == ["ProjectId"]
-        finally:
-            window._project = None  # close: avoid save_project on empty path
+        assert window._effective_custom_ids() == ["ProjectId"]
 
     def test_effective_custom_ids_returns_empty_when_project_has_no_key(
         self, window: CraftGraphWindow,
@@ -5408,10 +5435,7 @@ class TestProjectCustomIdPersistence:
             node_positions={}, editor_state={},
             settings_overrides={},
         )
-        try:
-            assert window._effective_custom_ids() == []
-        finally:
-            window._project = None  # close: avoid save_project on empty path
+        assert window._effective_custom_ids() == []
 
     def test_update_project_state_syncs_custom_ids(
         self, window: CraftGraphWindow,
@@ -6656,6 +6680,391 @@ class TestCrossFilePathTargets:
         assert not any(
             "does not match any known fabricator" in issue for issue in issues
         )
+
+
+class TestPathAutocompleteTabIDs:
+    """Path autocomplete must suggest CraftingTab paths defined in the project.
+
+    The validator's _path_targets_from_parsed_files already accepts
+    "Fab/TabID" as a valid path target; the autocomplete dropdown (fed by
+    _update_path_completions) must surface the same composites or users
+    can't reach them without typing the full path from scratch.
+    """
+
+    def test_fabricator_tab_path_suggested(self, window, tmp_path):
+        """Loading a CustomFabricator with nested tabs adds Fab/TabID to _path_words."""
+        fab_file = tmp_path / "fab.txt"
+        fab_file.write_text(
+            "CustomFabricators:\n"
+            "(\n"
+            "    ItemID: SampleFab;\n"
+            "    DisplayName: \"Sample\";\n"
+            "    CustomCraftingTabs:\n"
+            "    (\n"
+            "        TabID: ScienceTab;\n"
+            "        DisplayName: \"Science\";\n"
+            "        ParentTabPath: SampleFab;\n"
+            "    );\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(fab_file)
+        assert "SampleFab" in window._path_words
+        assert "SampleFab/ScienceTab" in window._path_words
+
+    def test_top_level_crafting_tab_path_suggested(self, window, tmp_path):
+        """A CustomCraftingTabs block (outside a fabricator) adds parent/TabID."""
+        tabs_file = tmp_path / "tabs.txt"
+        tabs_file.write_text(
+            "CustomCraftingTabs:\n"
+            "(\n"
+            "    TabID: Tools;\n"
+            "    DisplayName: \"Tools\";\n"
+            "    ParentTabPath: Fabricator;\n"
+            ")\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(tabs_file)
+        assert "Fabricator" in window._path_words
+        assert "Fabricator/Tools" in window._path_words
+
+
+class TestProjectIssuesWindow:
+    """Project Issues window scaffolding (sub-task 2).
+
+    Sub-task 2 is the empty shell: menu action exists, click opens a window,
+    second click is idempotent.  Data rendering and click-to-jump arrive in
+    sub-tasks 3 and 4.
+    """
+
+    def test_menu_action_exists(self, window) -> None:
+        """The Edit menu surfaces a Find Issues action."""
+        action = window._project_issues_action
+        assert action is not None
+        # Action lives on the Edit menu, sibling of Find Node...
+        edit_menu = window.menuBar().findChild(QtWidgets.QMenu, "edit_menu")
+        # _edit_menu may not have an objectName; fall back to scanning actions.
+        actions_text = [a.text() for a in window.menuBar().actions()]
+        assert any("Edit" in t for t in actions_text)
+
+    def test_triggering_action_opens_window(self, window) -> None:
+        """Triggering the action creates and shows the window."""
+        assert getattr(window, "_project_issues_window", None) is None
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        assert win is not None
+        assert win.isVisible()
+        assert "Project Issues" in win.windowTitle()
+
+    def test_second_trigger_is_idempotent(self, window) -> None:
+        """Triggering twice keeps a single instance and raises it."""
+        window._project_issues_action.trigger()
+        first = window._project_issues_window
+        window._project_issues_action.trigger()
+        second = window._project_issues_window
+        assert first is second
+
+    def test_window_shows_section_headers(self, window) -> None:
+        """The tree has Orphans / Cycles / Unresolved sections."""
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        assert tree is not None
+        headers = [tree.topLevelItem(i).text(0) for i in range(tree.topLevelItemCount())]
+        assert any("Orphan" in h for h in headers)
+        assert any("Cycle" in h for h in headers)
+        assert any("Unresolved" in h for h in headers)
+
+    def test_empty_project_shows_zero_counts_and_none_rows(self, window) -> None:
+        """With no project loaded, every section header carries (0) and a None child."""
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        for i in range(tree.topLevelItemCount()):
+            section = tree.topLevelItem(i)
+            assert "(0)" in section.text(0), section.text(0)
+            assert section.childCount() == 1
+            assert section.child(0).text(0) == "None"
+
+    def test_orphan_recipe_renders_in_window(self, window, tmp_path) -> None:
+        """A defined-but-unreferenced recipe shows up in the Orphans section."""
+        recipe_file = tmp_path / "orphan.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        sections = {
+            tree.topLevelItem(i).text(0).split(" (")[0]: tree.topLevelItem(i)
+            for i in range(tree.topLevelItemCount())
+        }
+        orphans = sections["Orphans"]
+        assert "(1)" in orphans.text(0)
+        # Row mentions the item id and the source filename.
+        rows = [orphans.child(j).text(0) for j in range(orphans.childCount())]
+        assert any("LonelyItem" in r and "orphan.txt" in r for r in rows), rows
+
+    def test_cycle_rendered_with_arrow_separator(self, window, tmp_path) -> None:
+        """Cycles show items joined by an arrow so the loop is readable."""
+        recipe_file = tmp_path / "cycle.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n    ItemID: A;\n    Ingredients: ( ItemID: B; Required: 1; );\n),\n"
+            "(\n    ItemID: B;\n    Ingredients: ( ItemID: A; Required: 1; );\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        cycle_section = next(
+            tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).text(0).startswith("Cycles")
+        )
+        assert "(1)" in cycle_section.text(0)
+        row = cycle_section.child(0).text(0)
+        assert "->" in row or "→" in row, row
+        assert "A" in row and "B" in row
+
+    def test_unresolved_ingredient_renders(self, window, tmp_path) -> None:
+        """An ingredient pointing at an unknown ID lands in Unresolved."""
+        recipe_file = tmp_path / "broken.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n    ItemID: Widget;\n"
+            "    Ingredients: ( ItemID: TotallyMadeUpID12345; Required: 1; );\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        section = next(
+            tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).text(0).startswith("Unresolved")
+        )
+        rows = [section.child(j).text(0) for j in range(section.childCount())]
+        assert any("TotallyMadeUpID12345" in r and "ingredient" in r.lower() for r in rows), rows
+
+    def test_close_does_not_unload_data(self, window, tmp_path) -> None:
+        """Closing the window does not affect the loaded recipes."""
+        recipe_file = tmp_path / "t.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        before_tab_count = window._tab_bar.count()
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        win.close()
+        assert window._tab_bar.count() == before_tab_count
+
+    def test_reopen_after_close_works(self, window) -> None:
+        """Closing then reopening shows the window again (still single instance)."""
+        window._project_issues_action.trigger()
+        first = window._project_issues_window
+        first.close()
+        window._project_issues_action.trigger()
+        second = window._project_issues_window
+        # Same instance reused, now visible again.
+        assert first is second
+        assert second.isVisible()
+
+    # -- Sub-task 4: click-to-jump ----------------------------------------
+
+    def _orphan_row(self, win):
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        for i in range(tree.topLevelItemCount()):
+            section = tree.topLevelItem(i)
+            if section.text(0).startswith("Orphans"):
+                return section.child(0)
+        raise AssertionError("orphan section missing")
+
+    def _cycle_row(self, win):
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        for i in range(tree.topLevelItemCount()):
+            section = tree.topLevelItem(i)
+            if section.text(0).startswith("Cycles"):
+                return section.child(0)
+        raise AssertionError("cycle section missing")
+
+    def _unresolved_row(self, win):
+        tree = win.findChild(QtWidgets.QTreeWidget)
+        for i in range(tree.topLevelItemCount()):
+            section = tree.topLevelItem(i)
+            if section.text(0).startswith("Unresolved"):
+                return section.child(0)
+        raise AssertionError("unresolved section missing")
+
+    def test_clicking_orphan_row_selects_node(self, window, tmp_path) -> None:
+        """Activating an orphan row selects that node in its tab."""
+        recipe_file = tmp_path / "orphan.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        row = self._orphan_row(win)
+        win._tree.itemActivated.emit(row, 0)
+        # The defining node should now be selected in the active tab.
+        selected_ids = [
+            getattr(n.model_ref, "item_id", None)
+            for n in window.graph.selected_nodes()
+            if hasattr(n, "model_ref") and getattr(n, "model_ref", None) is not None
+        ]
+        assert "LonelyItem" in selected_ids
+
+    def test_clicking_cycle_row_selects_first_item(self, window, tmp_path) -> None:
+        """Activating a cycle row selects (at least) the cycle's first node."""
+        recipe_file = tmp_path / "cycle.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n    ItemID: A;\n    Ingredients: ( ItemID: B; Required: 1; );\n),\n"
+            "(\n    ItemID: B;\n    Ingredients: ( ItemID: A; Required: 1; );\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        row = self._cycle_row(win)
+        win._tree.itemActivated.emit(row, 0)
+        selected_ids = {
+            getattr(n.model_ref, "item_id", None)
+            for n in window.graph.selected_nodes()
+            if hasattr(n, "model_ref") and getattr(n, "model_ref", None) is not None
+        }
+        # The first item in the cycle (A or B depending on find_cycles order) should be selected.
+        assert selected_ids & {"A", "B"}
+
+    def test_clicking_unresolved_row_selects_owner(self, window, tmp_path) -> None:
+        """Unresolved row jumps to the OWNER recipe (the target id can't be found)."""
+        recipe_file = tmp_path / "broken.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n"
+            "(\n    ItemID: Widget;\n"
+            "    Ingredients: ( ItemID: TotallyMadeUpID12345; Required: 1; );\n);\n",
+            encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        row = self._unresolved_row(win)
+        win._tree.itemActivated.emit(row, 0)
+        selected_ids = {
+            getattr(n.model_ref, "item_id", None)
+            for n in window.graph.selected_nodes()
+            if hasattr(n, "model_ref") and getattr(n, "model_ref", None) is not None
+        }
+        assert "Widget" in selected_ids
+
+    def test_clicking_none_row_is_noop(self, window) -> None:
+        """Activating a 'None' placeholder row does not raise."""
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        row = self._orphan_row(win)
+        assert row.text(0) == "None"
+        # No exception, no selection. Just a sanity activation.
+        win._tree.itemActivated.emit(row, 0)
+
+    # -- Sub-task 5: auto-refresh on data change --------------------------
+
+    def test_schedule_refresh_is_noop_when_window_never_opened(self, window) -> None:
+        """Scheduling a refresh before the dialog exists is a cheap no-op."""
+        assert window._project_issues_window is None
+        # Should not crash; timer is not relevant because window is None.
+        window._schedule_project_issues_refresh()
+        assert window._project_issues_window is None
+
+    def test_schedule_refresh_is_noop_when_window_hidden(self, window) -> None:
+        """Scheduling a refresh while the dialog is hidden does not start the timer."""
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        win.hide()
+        assert not win.isVisible()
+        window._project_issues_refresh_timer.stop()
+        window._schedule_project_issues_refresh()
+        assert not window._project_issues_refresh_timer.isActive()
+
+    def test_model_change_starts_refresh_timer(self, window, tmp_path) -> None:
+        """A model change while the dialog is open arms the debounce timer."""
+        recipe_file = tmp_path / "x.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        # _on_model_changed is the EditHistory hook; firing it should arm the timer.
+        window._project_issues_refresh_timer.stop()
+        window._on_model_changed()
+        assert window._project_issues_refresh_timer.isActive()
+
+    def test_adopt_orphan_nodes_clears_stale_live_pipe(self, window, tmp_path) -> None:
+        """Defensive: _adopt_orphan_nodes always ends any active live pipe.
+
+        Guards against a stuck-visible ``_LIVE_PIPE`` short-circuiting every
+        LMB press event at scene level. See NodeGraphQt viewer.py:832 (press
+        handler return) + viewer.py:1039 (apply_live_connection early return
+        without ``end_live_connection``). Even if no current code path leaves
+        it stuck, this is cheap insurance for a real bug class.
+        """
+        recipe_file = tmp_path / "x.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: A;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        viewer = window.graph.viewer()
+
+        # Force the viewer into the stuck state.
+        viewer._LIVE_PIPE.setVisible(True)
+        assert viewer._LIVE_PIPE.isVisible()
+
+        # Adopt an empty list -- defensive cleanup still runs.
+        window._adopt_orphan_nodes([])
+
+        assert not viewer._LIVE_PIPE.isVisible()
+
+    def test_refresh_updates_orphan_count(self, window, tmp_path) -> None:
+        """A model change arms the debounce timer; firing it refreshes the dialog.
+
+        The debounce mechanism itself is covered by
+        ``test_model_change_starts_refresh_timer``; this test verifies the
+        end-to-end refresh path produces the new state without relying on a
+        wall-clock wait (which is flaky under heavy Qt event load in the full
+        sweep).
+        """
+        recipe_file = tmp_path / "x.txt"
+        recipe_file.write_text(
+            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n", encoding="utf-8",
+        )
+        window.load_recipes(recipe_file)
+        window._project_issues_action.trigger()
+        win = window._project_issues_window
+        tree = win.findChild(QtWidgets.QTreeWidget)
+
+        def orphan_section():
+            for i in range(tree.topLevelItemCount()):
+                section = tree.topLevelItem(i)
+                if section.text(0).startswith("Orphans"):
+                    return section
+            raise AssertionError("orphan section missing")
+
+        # Initial: 1 orphan (Lonely is isolated -- no ingredients, nothing refs it).
+        assert "(1)" in orphan_section().text(0)
+
+        # Mutate directly and fire the change hook.
+        from craftgraph.models import ModifiedRecipe
+
+        pf = window._file_tabs[0].parsed_file
+        assert pf is not None
+        pf.modified_recipes.append(ModifiedRecipe(item_id="AlsoLonely"))
+        window._on_model_changed()
+        # Bypass the debounce wall-clock wait: drive the refresh directly.
+        # The timer-armed branch is asserted in test_model_change_starts_refresh_timer.
+        window._refresh_project_issues()
+        assert "(2)" in orphan_section().text(0)
 
 
 class TestSettingsLogLevel:

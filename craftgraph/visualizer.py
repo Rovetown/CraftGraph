@@ -29,6 +29,12 @@ _CYCLE_EDGE_COLOR = _VIS_CFG.cycle_edge_color
 _NORMAL_EDGE_WIDTH = _VIS_CFG.normal_edge_width
 _CYCLE_EDGE_WIDTH = _VIS_CFG.cycle_edge_width
 
+# Unlock-edge palette. Public so tests can assert against the same values.
+# Distinct from the cycle red and from the muted ingredient gray. Solid line
+# for ``unlocks`` (ALL-of semantics); dashed for ``unlocked_by`` (any-of).
+UNLOCKS_EDGE_COLOR = "#27ae60"      # green
+UNLOCKED_BY_EDGE_COLOR = "#e67e22"  # orange
+
 
 def _build_cycle_edge_set(cycles: list[list[str]]) -> set[tuple[str, str]]:
     """Convert cycle lists into a set of directed (source, target) edge pairs.
@@ -158,14 +164,23 @@ def generate_html(
 
     # Add edges
     for source, target in graph.edges:
+        edge_kind = graph.edges[source, target].get("edge_kind", "ingredient")
+        dashes = False
         if (source, target) in cycle_edges:
             color = _CYCLE_EDGE_COLOR
             width = _CYCLE_EDGE_WIDTH
+        elif edge_kind == "unlocks":
+            color = UNLOCKS_EDGE_COLOR
+            width = _NORMAL_EDGE_WIDTH
+        elif edge_kind == "unlocked_by":
+            color = UNLOCKED_BY_EDGE_COLOR
+            width = _NORMAL_EDGE_WIDTH
+            dashes = True
         else:
             color = _NORMAL_EDGE_COLOR
             width = _NORMAL_EDGE_WIDTH
 
-        net.add_edge(source, target, color=color, width=width)
+        net.add_edge(source, target, color=color, width=width, dashes=dashes)
 
     # Pyvis's save_graph/write_html uses the default system encoding,
     # which on Windows (cp1252) can't handle Unicode in tooltips.

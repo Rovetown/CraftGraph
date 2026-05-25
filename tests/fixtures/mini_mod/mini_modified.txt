@@ -1,0 +1,16 @@
+ModifiedRecipes:
+(
+    ItemID: GlassPipe;
+    AmountCrafted: 1;
+    Ingredients:
+    ( ItemID: Titanium; Required: 2; ),
+    ( ItemID: Quartz; Required: 1; );
+),
+(
+    ItemID: ReinforcedDiveSuit;
+    AmountCrafted: 1;
+    Ingredients:
+    ( ItemID: Titanium; Required: 3; ),
+    ( ItemID: ComputerChip; Required: 1; );
+    ForceUnlockAtStart: YES;
+);

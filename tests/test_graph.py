@@ -251,6 +251,87 @@ class TestBuildGraphCrossFile:
 
 
 # ---------------------------------------------------------------------------
+# Unlock relationships
+# ---------------------------------------------------------------------------
+
+
+class TestBuildGraphUnlocks:
+    """Unlocks / UnlockedBy emit distinct edges tagged with edge_kind.
+
+    Direction: ``recipe.unlocks = [B]`` -> edge ``recipe -> B``
+               ``recipe.unlocked_by = [B]`` -> edge ``B -> recipe``
+    """
+
+    def test_ingredient_edges_carry_kind_attribute(self) -> None:
+        """Existing ingredient edges gain edge_kind='ingredient'."""
+        recipe = ModifiedRecipe(
+            item_id="Titanium",
+            ingredients=[Ingredient("ScrapMetal", 1)],
+        )
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert graph.edges["Titanium", "ScrapMetal"]["edge_kind"] == "ingredient"
+
+    def test_unlocks_creates_forward_edge(self) -> None:
+        """recipe.unlocks=[B] yields recipe -> B with edge_kind='unlocks'."""
+        recipe = ModifiedRecipe(item_id="Knife", unlocks=["Spear", "Sword"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert graph.has_edge("Knife", "Spear")
+        assert graph.edges["Knife", "Spear"]["edge_kind"] == "unlocks"
+        assert graph.has_edge("Knife", "Sword")
+        assert graph.edges["Knife", "Sword"]["edge_kind"] == "unlocks"
+
+    def test_unlocked_by_creates_reverse_edge(self) -> None:
+        """recipe.unlocked_by=[B] yields B -> recipe with edge_kind='unlocked_by'."""
+        recipe = ModifiedRecipe(item_id="Sword", unlocked_by=["Knife"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert graph.has_edge("Knife", "Sword")
+        assert graph.edges["Knife", "Sword"]["edge_kind"] == "unlocked_by"
+
+    def test_unlock_target_added_as_node_if_missing(self) -> None:
+        """Items referenced only by unlocks still appear as nodes (is_crafted=False)."""
+        recipe = ModifiedRecipe(item_id="Knife", unlocks=["Spear"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert "Spear" in graph.nodes
+        assert graph.nodes["Spear"]["is_crafted"] is False
+
+    def test_ingredient_takes_precedence_over_unlock(self) -> None:
+        """If an ingredient edge already exists, an overlapping unlock edge is skipped."""
+        recipe = ModifiedRecipe(
+            item_id="Hybrid",
+            ingredients=[Ingredient("Titanium", 1)],
+            unlocks=["Titanium"],
+        )
+        graph = build_graph([_make_parsed_file([recipe])])
+        # The pair only has one edge, kept as ingredient.
+        assert graph.edges["Hybrid", "Titanium"]["edge_kind"] == "ingredient"
+        assert graph.edges["Hybrid", "Titanium"]["required"] == 1
+
+    def test_unlocks_self_does_not_create_edge(self) -> None:
+        """A recipe with Unlocks: <self_id> is a CC3 idiom, not a dependency.
+
+        The graph must not contain the A -> A self-loop or false cycles would
+        be reported.  Ingredient self-loops are a different case and stay
+        cycle-flagged via test_self_loop in TestFindCycles.
+        """
+        recipe = ModifiedRecipe(item_id="Alch_Lab", unlocks=["Alch_Lab"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert not graph.has_edge("Alch_Lab", "Alch_Lab")
+
+    def test_unlocked_by_self_does_not_create_edge(self) -> None:
+        """A recipe with UnlockedBy: <self_id> does not create a self-loop either."""
+        recipe = ModifiedRecipe(item_id="Alch_Lab", unlocked_by=["Alch_Lab"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        assert not graph.has_edge("Alch_Lab", "Alch_Lab")
+
+    def test_unlocks_self_is_not_reported_as_cycle(self) -> None:
+        """The self-unlock idiom never appears in find_cycles output."""
+        recipe = ModifiedRecipe(item_id="Alch_Lab", unlocks=["Alch_Lab"])
+        graph = build_graph([_make_parsed_file([recipe])])
+        cycles = find_cycles(graph)
+        assert all("Alch_Lab" not in c or len(c) != 1 for c in cycles)
+
+
+# ---------------------------------------------------------------------------
 # find_cycles
 # ---------------------------------------------------------------------------
 

@@ -32,6 +32,9 @@ dev = [
     "pytest-sugar>=1.1.1",
     "pytest-clarity>=1.0.1",
     "pytest-qt>=4.5.0",
+    "hypothesis>=6.152.9",
+    "pytest-benchmark>=5.2.3",
+    "pytest-cov>=7.1.0",
 ]
 
 [project.scripts]
@@ -55,6 +58,24 @@ filterwarnings = [
 markers = [
     "slow: marks tests that take meaningful time (deselect with '-m \"not slow\"')",
 ]
+
+[tool.coverage.run]
+source = ["craftgraph"]
+branch = true
+omit = [
+    "craftgraph/__main__.py",
+    "craftgraph/cc3_reference_files/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true
+skip_covered = false
 
 [tool.ruff]
 target-version = "py314"

@@ -13,6 +13,13 @@ build/
 dist/
 *.spec
 
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.benchmarks/
+
 # IDE
 .idea/
 

@@ -39,6 +39,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 from craftgraph import app_dirs, config, hwnd_diag, mem_diag, perf_diag
 from craftgraph.code_editor import CodeEditor
+from craftgraph.diagnostics import (
+    CycleIssue,
+    OrphanIssue,
+    ProjectIssues,
+    UnresolvedRefIssue,
+    find_project_issues,
+)
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
 from craftgraph.minimap import MinimapWidget
@@ -624,6 +631,126 @@ def collect_fab_tab_choices(
                 tab_choices.append(f"{tab.parent_tab_path}/{tab.tab_id}")
 
     return fab_choices, tab_choices
+
+
+class _ProjectIssuesDialog(QtWidgets.QDialog):
+    """Modeless dialog listing orphans / cycles / unresolved refs in the project.
+
+    Sub-task 2 ships the shell + tree.  Sub-task 3 wires ``populate``.  Sub-task
+    4 hooks click-to-jump via the ``item_activated`` signal.  Sub-task 5 will
+    hook auto-refresh.
+    """
+
+    _SECTION_ORPHANS = "Orphans"
+    _SECTION_CYCLES = "Cycles"
+    _SECTION_UNRESOLVED = "Unresolved References"
+
+    # Emitted when the user activates (Enter / double-click) a row that
+    # carries a navigation target.  Payload is the item id to jump to.
+    item_activated = QtCore.Signal(str)
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Project Issues")
+        self.setMinimumSize(480, 360)
+        # Modeless: do not block the main window.  Caller raises us on retrigger.
+        self.setModal(False)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self._tree = QtWidgets.QTreeWidget(self)
+        self._tree.setHeaderHidden(True)
+        self._tree.itemActivated.connect(self._on_item_activated)
+        layout.addWidget(self._tree)
+
+        self._orphan_section = QtWidgets.QTreeWidgetItem(self._tree)
+        self._cycle_section = QtWidgets.QTreeWidgetItem(self._tree)
+        self._unresolved_section = QtWidgets.QTreeWidgetItem(self._tree)
+        # Render empty state up-front so the UI is meaningful even before scan.
+        self.populate(ProjectIssues())
+
+    def populate(self, issues: ProjectIssues) -> None:
+        """Refill the tree from a :class:`ProjectIssues` result.
+
+        Each renderable row carries its jump target (an item id) in
+        ``UserRole`` data so :meth:`_on_item_activated` can emit a navigation
+        request without re-deriving the target.
+        """
+        self._fill_section(
+            self._orphan_section,
+            self._SECTION_ORPHANS,
+            [(self._render_orphan(o), o.item_id) for o in issues.orphans],
+        )
+        self._fill_section(
+            self._cycle_section,
+            self._SECTION_CYCLES,
+            [
+                (self._render_cycle(c), c.items[0] if c.items else "")
+                for c in issues.cycles
+            ],
+        )
+        self._fill_section(
+            self._unresolved_section,
+            self._SECTION_UNRESOLVED,
+            [
+                (self._render_unresolved(u), u.item_id)
+                for u in issues.unresolved_refs
+            ],
+        )
+        self._tree.expandAll()
+
+    # -- Signals ----------------------------------------------------------
+
+    def _on_item_activated(
+        self,
+        item: QtWidgets.QTreeWidgetItem,
+        _column: int,
+    ) -> None:
+        """Forward an activation to the main window via ``item_activated``.
+
+        Section headers, "None" placeholders, and any row without a stored
+        target are silently ignored.
+        """
+        target = item.data(0, QtCore.Qt.ItemDataRole.UserRole)
+        if isinstance(target, str) and target:
+            self.item_activated.emit(target)
+
+    # -- Section rendering helpers ----------------------------------------
+
+    @staticmethod
+    def _fill_section(
+        section: QtWidgets.QTreeWidgetItem,
+        label: str,
+        rows: list[tuple[str, str]],
+    ) -> None:
+        section.takeChildren()
+        section.setText(0, f"{label} ({len(rows)})")
+        if not rows:
+            QtWidgets.QTreeWidgetItem(section, ["None"])
+            return
+        for text, target in rows:
+            child = QtWidgets.QTreeWidgetItem(section, [text])
+            child.setData(0, QtCore.Qt.ItemDataRole.UserRole, target)
+
+    @staticmethod
+    def _render_orphan(issue: OrphanIssue) -> str:
+        name = Path(issue.source_file).name if issue.source_file else "?"
+        return f"{issue.item_id}  -  {name}"
+
+    @staticmethod
+    def _render_cycle(issue: CycleIssue) -> str:
+        items = list(issue.items)
+        if not items:
+            return ""
+        # Always close the loop visually, including length-1 ingredient self-
+        # loops which would otherwise render as a bare name.
+        return " -> ".join([*items, items[0]])
+
+    @staticmethod
+    def _render_unresolved(issue: UnresolvedRefIssue) -> str:
+        name = Path(issue.source_file).name if issue.source_file else "?"
+        return (
+            f"{issue.item_id}.{issue.ref_type} -> {issue.target}  -  {name}"
+        )
 
 
 class _SettingsDialog(QtWidgets.QDialog):
@@ -3385,6 +3512,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         )
         self._check_for_updates = bool(app_dirs.load_setting("check_for_updates", True))
 
+        # Project Issues modeless dialog -- created lazily on first open.
+        self._project_issues_window: _ProjectIssuesDialog | None = None
+        # Debounced refresh timer so a burst of model changes only triggers
+        # one scan. Fires _refresh_project_issues after a quiet 300 ms.
+        self._project_issues_refresh_timer = QtCore.QTimer(self)
+        self._project_issues_refresh_timer.setSingleShot(True)
+        self._project_issues_refresh_timer.setInterval(300)
+        self._project_issues_refresh_timer.timeout.connect(
+            self._refresh_project_issues
+        )
+
         # Scene position captured when any context menu was last opened.
         # Spawn-at-cursor callbacks use this instead of live QCursor.pos()
         # (which has drifted to the menu item the user clicked by the time
@@ -3602,6 +3740,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._find_action = QtGui.QAction("&Find Node...", self)
         self._find_action.triggered.connect(self._find_node_by_id)
         edit_menu.addAction(self._find_action)
+
+        self._project_issues_action = QtGui.QAction("Find &Issues...", self)
+        self._project_issues_action.triggered.connect(self._on_open_project_issues)
+        edit_menu.addAction(self._project_issues_action)
 
         # View menu
         view_menu = menu_bar.addMenu("&View")
@@ -4195,12 +4337,21 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             hasattr(tab.history, "is_dirty") and tab.history.is_dirty for tab in self._file_tabs
         )
 
+    def _persist_project_state(self) -> None:
+        """Sync workspace state into ``self._project`` and write to disk.
+
+        No-op when there is no project, or when the project has no path
+        (some tests assign an unsaved ``ProjectFile(project_path="")``).
+        """
+        if self._project is None or not self._project.project_path:
+            return
+        self._update_project_state()
+        save_project(self._project)
+
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         """Prompt the confirmer if there are unsaved changes before closing."""
         if not self._has_unsaved_changes():
-            if self._project is not None:
-                self._update_project_state()
-                save_project(self._project)
+            self._persist_project_state()
             self._save_positions()
             self._stop_file_watcher()
             event.accept()
@@ -4220,9 +4371,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             event.accept()
         elif decision is CloseDecision.DISCARD:
             # Still save project state (positions, editor state) even on discard
-            if self._project is not None:
-                self._update_project_state()
-                save_project(self._project)
+            self._persist_project_state()
             self._save_positions()
             self._stop_file_watcher()
             event.accept()
@@ -4437,7 +4586,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._tab_bar.addTab(pf.source_path.stem)
         self._tab_bar.setTabToolTip(
             self._tab_bar.count() - 1,
-            str(pf.source_path),
+            pf.source_path.name,
         )
 
         # Switch to the new tab
@@ -5647,7 +5796,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._tab_bar.addTab(new_pf.source_path.stem)
             self._tab_bar.setTabToolTip(
                 self._tab_bar.count() - 1,
-                str(new_pf.source_path),
+                new_pf.source_path.name,
             )
 
         known_ids = frozenset(i.lower() for i in self._get_id_words())
@@ -5662,6 +5811,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 known_ids,
             )
             update_child_count_labels(tab.model_to_node)
+        # Watcher diff happens outside the EditHistory path so it does not
+        # naturally trigger _on_model_changed; schedule the issues refresh here.
+        self._schedule_project_issues_refresh()
 
     def _flash_tab_bar(self) -> None:
         """Briefly highlight the tab bar to signal an external change."""
@@ -5950,6 +6102,44 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         bar.focus_field()
         self._update_search_matches()
 
+    def _on_open_project_issues(self) -> None:
+        """Show the Project Issues dialog, creating it on first call.
+
+        Idempotent: triggering the menu action twice keeps a single instance
+        and raises it to the front instead of stacking new dialogs. Each
+        trigger refreshes the dialog with the latest project state.
+        """
+        if self._project_issues_window is None:
+            self._project_issues_window = _ProjectIssuesDialog(self)
+            self._project_issues_window.item_activated.connect(self._jump_to_id)
+        self._refresh_project_issues()
+        win = self._project_issues_window
+        if not win.isVisible():
+            win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _refresh_project_issues(self) -> None:
+        """Re-scan the currently loaded files and refill the issues dialog."""
+        if self._project_issues_window is None:
+            return
+        parsed = [
+            ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None
+        ]
+        issues = find_project_issues(parsed)
+        self._project_issues_window.populate(issues)
+
+    def _schedule_project_issues_refresh(self) -> None:
+        """Restart the debounce timer; a burst of edits only fires one refresh.
+
+        No-op when the dialog has never been opened or is currently hidden --
+        no point doing a scan whose result nobody is looking at.
+        """
+        win = self._project_issues_window
+        if win is None or not win.isVisible():
+            return
+        self._project_issues_refresh_timer.start()
+
     def _ensure_search_bar(self) -> NodeSearchBar:
         """Create the search bar lazily and wire its signals."""
         if self._search_bar is not None:
@@ -6188,16 +6378,13 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                         return idx, node
         return None
 
-    def _go_to_definition(self, node: object) -> bool:
-        """Switch to the tab where *node* is defined and select it.
+    def _jump_to_id(self, item_id: str) -> bool:
+        """Switch to the tab defining *item_id* and select its node.
 
-        Returns ``True`` when navigation happened, ``False`` when the
-        definition could not be located (e.g. references an ID with no
-        defining recipe in any open tab).
+        Returns ``True`` when navigation happened, ``False`` when no open
+        tab defines that id.
         """
-        item_id = self._node_lookup_id(node)
-        if item_id is None:
-            self._show_error_status("No ID on this node to look up")
+        if not item_id:
             return False
         target = self._find_definition(item_id)
         if target is None:
@@ -6212,6 +6399,14 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._center_view_on_nodes(tab.graph, [def_node])
         self.statusBar().showMessage(f"Jumped to '{item_id}'")
         return True
+
+    def _go_to_definition(self, node: object) -> bool:
+        """Switch to the tab where *node* is defined and select it."""
+        item_id = self._node_lookup_id(node)
+        if item_id is None:
+            self._show_error_status("No ID on this node to look up")
+            return False
+        return self._jump_to_id(item_id)
 
     def _on_go_to_definition(
         self,
@@ -6292,7 +6487,18 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         properties but no ``model_ref``. This method reads each node's
         properties, creates a matching model object, appends it to the
         parsed file, and sets ``model_ref``.
+
+        Also defensively ends any active live-pipe connection on the
+        viewer. NodeGraphQt's ``apply_live_connection`` has an
+        early-return path (``viewer.py:1039``) that bails *without*
+        calling ``end_live_connection``; if that branch ever fires, the
+        scene's mouse-press handler short-circuits at
+        ``viewer.py:832`` and the user can no longer click-select,
+        deselect, or drag any node. Calling ``end_live_connection``
+        is idempotent when no pipe is active, so this is cheap
+        insurance even when the trigger is not currently understood.
         """
+        self.graph.viewer().end_live_connection()
         from craftgraph.models import (
             AddedRecipe,
             AliasRecipe,
@@ -6472,6 +6678,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(title)
         self._update_code_editor_from_model()
         update_child_count_labels(tab.model_to_node)
+        self._schedule_project_issues_refresh()
 
     def _update_code_editor_from_model(self) -> None:
         """Serialize the active tab's model into its code editor.
@@ -7340,6 +7547,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         {
             "item_id",
             "tab_id",
+            "unlocks",
+            "unlocked_by",
+            "linked_item_ids",
         }
     )
     # Widget names that should complete against crafting-tree paths.
@@ -7482,6 +7692,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     _add_path(r.path)
             for ctab in pf.crafting_tabs:
                 _add_path(ctab.parent_tab_path)
+                if ctab.parent_tab_path:
+                    _add_path(f"{ctab.parent_tab_path}/{ctab.tab_id}")
             for mr in pf.moved_recipes:
                 _add_path(mr.old_path or "")
                 _add_path(mr.new_path or "")
@@ -7489,6 +7701,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 paths.add(fab.item_id)
                 for ctab in fab.tabs:
                     _add_path(ctab.parent_tab_path)
+                    if ctab.parent_tab_path:
+                        _add_path(f"{ctab.parent_tab_path}/{ctab.tab_id}")
+                    else:
+                        _add_path(f"{fab.item_id}/{ctab.tab_id}")
                 for r in fab.added_recipes + fab.alias_recipes + fab.custom_foods:
                     if hasattr(r, "path"):
                         _add_path(r.path)
@@ -8038,7 +8254,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 self._tab_bar.addTab(pf.source_path.stem)
                 self._tab_bar.setTabToolTip(
                     self._tab_bar.count() - 1,
-                    str(pf.source_path),
+                    pf.source_path.name,
                 )
                 QtWidgets.QApplication.processEvents(
                     QtCore.QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents,

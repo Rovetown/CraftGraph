@@ -1,0 +1,10 @@
+AddedRecipes:
+(
+    ItemID: DepletedReactorRod;
+    AmountCrafted: 1;
+    Ingredients:
+    ( ItemID: ReactorRod; Required: 1; );
+    LinkedItemIDs: UraniniteCrystal, UraniniteCrystal;
+    Path: Fabricator/Resources/Electronics;
+    ForceUnlockAtStart: NO;
+);

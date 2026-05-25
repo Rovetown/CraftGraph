@@ -81,9 +81,30 @@ test-slow *ARGS:
 test-file FILE *ARGS:
     uv run --extra qt pytest {{FILE}} {{ARGS}}
 
+# Run the default sweep with coverage; print a per-file summary with missing-line ranges.
+cov *ARGS:
+    uv run --extra qt pytest -m "not slow" --cov=craftgraph --cov-report=term-missing {{ARGS}}
+
+# Same as `just cov` but writes an HTML report to htmlcov/ and opens it.
+cov-html *ARGS:
+    uv run --extra qt pytest -m "not slow" --cov=craftgraph --cov-report=html {{ARGS}}
+    @echo "Report: htmlcov/index.html"
+
+# Full-suite coverage (including @pytest.mark.slow). Closer to the true number.
+cov-all *ARGS:
+    uv run --extra qt pytest --cov=craftgraph --cov-report=term-missing {{ARGS}}
+
 # Run the full qt sweep with PYTHONUNBUFFERED + -s (works around pipe-buffering stalls)
 test-qt *ARGS:
     PYTHONUNBUFFERED=1 uv run --extra qt pytest tests/test_qt_gui.py tests/test_qt_nodes.py -s --tb=line {{ARGS}}
+
+# Run the pytest-benchmark suite (slow-tagged). Pass --benchmark-only to skip non-benchmark tests, --benchmark-compare to diff against a saved baseline.
+bench *ARGS:
+    uv run pytest tests/test_benchmarks.py --benchmark-only {{ARGS}}
+
+# Save current benchmark results as a named baseline (e.g. `just bench-save before`).
+bench-save NAME:
+    uv run pytest tests/test_benchmarks.py --benchmark-only --benchmark-save={{NAME}}
 
 # ---------------------------------------------------------------------------
 # Code Quality
@@ -131,6 +152,10 @@ unregister:
 # Bundle into a standalone binary with PyInstaller (--optimize 2 strips asserts/docstrings)
 build:
     uv run pyinstaller --onefile --name craftgraph --collect-data pyvis --collect-data craftgraph --optimize 2 craftgraph/cli.py
+
+# Compare dev vs release wall-clock on the mini fixture. Pass --build to auto-build first.
+compare-release *ARGS:
+    uv run python scripts/compare_dev_release.py {{ARGS}}
 
 # Clean build artifacts
 clean:

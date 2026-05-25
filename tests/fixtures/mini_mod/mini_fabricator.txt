@@ -1,0 +1,31 @@
+CustomFabricators:
+(
+    ItemID: SampleFab;
+    DisplayName: "Sample Fabricator";
+    Tooltip: "A sample fabricator for tests.";
+    Model: Workbench;
+    AllowedInBase: YES;
+    AllowedInCyclops: YES;
+    Ingredients:
+    ( ItemID: ComputerChip; Required: 1; ),
+    ( ItemID: Titanium; Required: 2; );
+    ForceUnlockAtStart: YES;
+    PdaGroup: InteriorModules;
+    PdaCategory: InteriorModule;
+    CustomCraftingTabs:
+    (
+        TabID: ScienceTab;
+        DisplayName: "Science";
+        SpriteItemID: LabEquipment3;
+        ParentTabPath: SampleFab;
+    );
+    AddedRecipes:
+    (
+        ItemID: LabEquipment1;
+        AmountCrafted: 1;
+        Ingredients:
+        ( ItemID: Glass; Required: 1; ),
+        ( ItemID: Titanium; Required: 1; );
+        Path: SampleFab/ScienceTab;
+    );
+);

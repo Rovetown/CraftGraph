@@ -86,7 +86,38 @@ def build_graph(parsed_files: list[ParsedFile]) -> nx.DiGraph[str]:
                 ing_id = ingredient.item_id
                 if ing_id not in graph:
                     graph.add_node(ing_id, is_crafted=False)
-                graph.add_edge(item_id, ing_id, required=ingredient.required)
+                graph.add_edge(
+                    item_id, ing_id,
+                    required=ingredient.required,
+                    edge_kind="ingredient",
+                )
+
+            # Unlocks: crafting this recipe reveals each listed TechType.
+            # Direction matches ingredient (recipe -> target). Ingredient
+            # wins on overlap so cycle detection and tooltips keep the
+            # required-count metadata. Self-loops (Unlocks: <SelfID>) are
+            # a known CC3 idiom (not a real dependency) and would falsely
+            # trigger cycle detection -- skip them.
+            for unlocked_id in recipe.unlocks:
+                if unlocked_id == item_id:
+                    continue
+                if unlocked_id not in graph:
+                    graph.add_node(unlocked_id, is_crafted=False)
+                if graph.has_edge(item_id, unlocked_id):
+                    continue
+                graph.add_edge(item_id, unlocked_id, edge_kind="unlocks")
+
+            # UnlockedBy: scanning any of these reveals this recipe.
+            # Direction is reversed (source -> this recipe). Self-loops are
+            # skipped for the same reason as Unlocks above.
+            for unlocker_id in recipe.unlocked_by:
+                if unlocker_id == item_id:
+                    continue
+                if unlocker_id not in graph:
+                    graph.add_node(unlocker_id, is_crafted=False)
+                if graph.has_edge(unlocker_id, item_id):
+                    continue
+                graph.add_edge(unlocker_id, item_id, edge_kind="unlocked_by")
 
     return graph
 
@@ -98,15 +129,19 @@ _CYCLE_CACHE_KEY = "_cycle_cache"
 
 
 def find_cycles(graph: nx.DiGraph[str]) -> list[list[str]]:
-    """Find all simple cycles (circular dependencies) in the graph.
+    """Find all simple cycles formed by *ingredient* edges.
+
+    Only ingredient edges (``edge_kind == "ingredient"`` or unset, for
+    backward compatibility with older code paths) participate in cycle
+    detection. Unlock / UnlockedBy edges encode discovery requirements,
+    not buildability constraints -- a recipe being unlocked by something
+    doesn't prevent crafting it, so mixed-kind loops are not real cycles.
 
     Returns a list of cycles, where each cycle is a list of item IDs
-    forming the circular path. Returns an empty list if the graph is
-    acyclic.
+    forming the circular path. Returns an empty list if the ingredient
+    subgraph is acyclic.
 
-    Uses ``networkx.simple_cycles()`` which yields all elementary
-    circuits without raising exceptions for acyclic graphs. Results
-    are memoized on the graph itself, keyed by ``(n_nodes, n_edges)``;
+    Results are memoized on the graph itself, keyed by ``(n_nodes, n_edges)``;
     a fresh ``build_graph`` call (or any add/remove that changes those
     counts) invalidates the cache.
     """
@@ -114,7 +149,12 @@ def find_cycles(graph: nx.DiGraph[str]) -> list[list[str]]:
     cached = graph.graph.get(_CYCLE_CACHE_KEY)
     if cached is not None and cached[0] == key:
         return cached[1]
-    cycles = [list(cycle) for cycle in nx.simple_cycles(graph)]
+    ingredient_graph: nx.DiGraph[str] = nx.DiGraph()
+    ingredient_graph.add_nodes_from(graph.nodes(data=True))
+    for u, v, data in graph.edges(data=True):
+        if data.get("edge_kind", "ingredient") == "ingredient":
+            ingredient_graph.add_edge(u, v, **data)
+    cycles = [list(cycle) for cycle in nx.simple_cycles(ingredient_graph)]
     graph.graph[_CYCLE_CACHE_KEY] = (key, cycles)
     return cycles
 
