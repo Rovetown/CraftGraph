@@ -1,8 +1,12 @@
 # CraftGraph
 
-Recipe dependency graphs for [CustomCraft3](https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3) (Subnautica).
+A node based recipe editor for [CustomCraft3](https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3), the Subnautica modding framework.
 
-Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects circular dependencies, visualizes as interactive HTML graph. Watches mod folder for changes, rebuilds automatically.
+Open a mod folder and every recipe becomes a node you can wire together. Ingredients are
+connections, not text you retype in four places. The EasyMarkup source stays visible beside the
+graph and edits flow both ways, so you can work in whichever view suits the change.
+
+Circular dependencies are caught while you draw them, not after the game refuses to load.
 
 <p align="center">
   <a href="craftgraph/data/assets/screenshot-node-editor.png">
@@ -13,12 +17,27 @@ Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects ci
   <sub><i>Node editor, live source view and ItemID reference, editing an AliasRecipes file</i></sub>
 </p>
 
-## Features
+> **Status: 0.1.0-alpha.1.** Early and rough in places. No installer yet, so the source install
+> below is the way in. Expect sharp edges; bug reports are welcome.
 
-- **Parse** all 10 CC3 block types (ModifiedRecipes, AddedRecipes, AliasRecipes, CustomFabricators, etc.)
-- **Detect** circular dependencies, report full cycle path
-- **Visualize** dependency graph as interactive HTML page with color-coded nodes
-- **Watch** recipe directory, auto-rebuild on every save
+## What it does
+
+- **Edit all 10 CC3 block types** as nodes: ModifiedRecipes, AddedRecipes, AliasRecipes,
+  CustomFabricators, CustomCraftingTabs, CustomFoods, CustomBioFuels, CustomSizes,
+  CustomFragmentCounts and MovedRecipes.
+- **Wire ingredients by dragging** between nodes, and edit every field inline on the node.
+- **Catch cycles live.** Offending edges turn red and a warning fires before a link that would
+  close a loop is made.
+- **Round-trip the source.** A syntax-highlighted EasyMarkup editor sits beside the graph; type in
+  either and the other follows. Export writes valid `.txt` files back out.
+- **Autocomplete item IDs** from the vanilla TechType list, the mod-compat list and every ID your
+  own mod folder defines, in both the node fields and the code editor.
+- **Find problems across the project.** `Edit > Find Issues` lists orphans, cycles and unresolved
+  references, and clicking a row jumps to the node that owns it.
+- **Follow the files.** A folder watcher reparses on external saves and node positions persist in
+  `.craftgraph/layout.json` beside the mod.
+- **Work from the terminal too.** The CLI checks cycles, renders an interactive HTML graph and
+  watches a folder without opening the GUI at all.
 
 ## Roadmap
 
@@ -31,17 +50,39 @@ Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects ci
   </a>
 </p>
 
-## Installation
+## Install
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.14+.
+Requires [uv](https://docs.astral.sh/uv/). It fetches its own Python 3.14, so nothing else needs
+installing first.
 
 ```bash
-git clone https://github.com/you/craftgraph
-cd craftgraph
+git clone https://github.com/Rovetown/CraftGraph
+cd CraftGraph
 uv sync
+uv run craftgraph gui
 ```
 
-## Usage
+`uv sync` installs the GUI. Two optional extras exist for the CLI:
+
+```bash
+uv sync --extra visualizer    # pyvis, needed by `view` and `watch`
+uv sync --extra pretty        # rich, for colored console logs
+```
+
+A packaged Windows installer is planned but not yet built, so there is nothing on the releases
+page to download for now.
+
+## The GUI
+
+```bash
+uv run craftgraph gui                        # start at the welcome screen
+uv run craftgraph gui ./my-mod/WorkingFiles/ # open a mod folder directly
+```
+
+Each `.txt` file in the folder opens as its own tab with its own graph. The right hand panel lists
+every item ID the project can reference. Undo and redo cover every edit, graph or text.
+
+## The CLI
 
 ### Check for circular dependencies
 
@@ -49,81 +90,75 @@ uv sync
 craftgraph check ./my-mod/WorkingFiles/
 ```
 
-Reports circular dependencies found, or prints "No circular dependencies found."
-Add `-v` for detailed stats (file count, recipe count, node types).
+Reports every cycle it finds with the full path, or says there are none. Add `-v` for file, recipe
+and node-type counts.
 
-```bash
-craftgraph check ./my-mod/WorkingFiles/ -v
-```
-
-### Visualize dependency graph
+### Render an interactive graph
 
 ```bash
 craftgraph view ./my-mod/WorkingFiles/
 ```
 
-Generates `craftgraph.html` and opens in browser. Use `-o` to change output path:
+Writes `craftgraph.html` and opens it. `-o` sets a different path. The layout is hierarchical,
+top down:
 
-```bash
-craftgraph view ./my-mod/WorkingFiles/ -o my-graph.html
-```
+- **Green** nodes are raw materials, crafted from nothing
+- **Blue** nodes are intermediates, crafted and then used as an ingredient
+- **Gold** nodes are end products, crafted and used by nothing else
+- **Red** edges are circular dependencies
+- **Solid green** edges are `Unlocks`, **dashed orange** are `UnlockedBy`
 
-Graph uses hierarchical top-down layout:
+Hover a node for its recipe type, source file, ingredients and dependents.
 
-- **Green nodes** = raw materials (not crafted from anything)
-- **Blue nodes** = intermediates (crafted and used as ingredients)
-- **Gold nodes** = end products (crafted but not used by anything else)
-- **Red edges** = circular dependencies
-
-Hover over any node to see recipe type, source file, ingredients, and what uses it.
-
-### Watch for changes
+### Watch a folder
 
 ```bash
 craftgraph watch ./my-mod/WorkingFiles/
 ```
 
-Opens graph in browser, watches directory for `.txt` changes. On recipe file save, graph rebuilds automatically within ~1 second. Refresh browser tab to see updates. `Ctrl+C` to stop.
+Opens the graph, then rebuilds it within about a second of any `.txt` save. Refresh the tab to see
+the new one. `Ctrl+C` stops.
+
+### Export and file association
 
 ```bash
-craftgraph watch ./my-mod/WorkingFiles/ -o live-graph.html -v
+craftgraph export ./my-mod/WorkingFiles/ -o ./out/   # model back to EasyMarkup text
+craftgraph register                                   # associate .craftgraph files (Windows)
+craftgraph unregister
 ```
 
 ## Development
 
-All commands go through [justfile](https://github.com/casey/just):
+Commands go through [just](https://github.com/casey/just):
 
 ```bash
-just --list          # Show all available commands
-just sync            # Install/sync dependencies
-just test            # Run the test suite (293 tests)
-just test-v          # Run tests with verbose output
-just qa              # Run all quality checks (lint + format + typecheck)
-just lint-fix        # Auto-fix lint issues
-just fmt             # Auto-format code
-just build           # Bundle into a standalone binary
+just --list      # every recipe
+just sync        # install and sync dependencies
+just test        # the fast suite, slow Qt files excluded
+just test-all    # everything, 2096 tests
+just qa          # lint, format check and typecheck
+just build       # PyInstaller bundle
 ```
 
-### Running from source
-
-```bash
-uv run craftgraph check ./recipes/
-uv run craftgraph view ./recipes/
-uv run craftgraph watch ./recipes/
-```
+Ruff and mypy both run clean; `qt_gui`, `sync` and `qt_nodes` are exempt from strict typing for
+now, which `pyproject.toml` records as debt rather than hiding.
 
 ### Tech stack
 
-| Layer           | Choice     | Why                                                  |
-|-----------------|------------|------------------------------------------------------|
-| Language        | Python 3.14| Strong ecosystem, great for scripts and GUIs         |
-| Graph logic     | NetworkX   | Cycle detection, topological sort, all graph algos   |
-| File watching   | Watchdog   | Cross-platform directory/file watcher                |
-| Visualization   | Pyvis      | Interactive HTML graph, zero GUI dependencies        |
-| CLI             | Click      | Clean argument parsing with subcommands              |
-| Package manager | uv         | Fast, lockfile-based, `uv run` = no manual venv      |
-| Distribution    | PyInstaller| Single portable binary, no Python install needed     |
+| Layer           | Choice                | Why                                                    |
+|-----------------|-----------------------|--------------------------------------------------------|
+| Language        | Python 3.14           | Strong ecosystem, good for both scripts and GUIs        |
+| GUI             | PySide6 + NodeGraphQt | Mature Qt node graph, retained mode, native widgets     |
+| Graph logic     | NetworkX              | Cycle detection, topological sort, everything else      |
+| File watching   | Watchdog              | Cross-platform folder watcher                           |
+| HTML output     | Pyvis                 | Interactive graph with no GUI dependency                |
+| CLI             | Click                 | Subcommands without ceremony                            |
+| Package manager | uv                    | Fast, lockfile based, no manual virtualenv              |
+| Distribution    | PyInstaller           | One portable binary, no Python install on the far end   |
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
+
+CustomCraft3 itself is by [MrPurple6411](https://github.com/MrPurple6411/PrimeSonicSubnauticaMods)
+and is not affiliated with this project.
