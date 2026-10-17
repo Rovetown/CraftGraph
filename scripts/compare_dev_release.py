@@ -31,7 +31,8 @@ from statistics import median
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURE = REPO_ROOT / "tests" / "fixtures" / "mini_mod"
 DIST = REPO_ROOT / "dist"
-BINARY = DIST / ("craftgraph.exe" if sys.platform == "win32" else "craftgraph")
+# --onedir layout: dist/craftgraph/craftgraph(.exe) lives alongside _internal/.
+BINARY = DIST / "craftgraph" / ("craftgraph.exe" if sys.platform == "win32" else "craftgraph")
 
 
 # (label, args-after-binary). Side-effect-free; no GUI, no browser, no watch.
@@ -66,7 +67,7 @@ def _ensure_binary(build: bool) -> None:
         raise SystemExit(2)
     sys.stderr.write(f"Building release binary at {BINARY}...\n")
     build_cmd = [
-        "uv", "run", "pyinstaller", "--onefile", "--name", "craftgraph",
+        "uv", "run", "pyinstaller", "--onedir", "--name", "craftgraph",
         "--collect-data", "pyvis", "--collect-data", "craftgraph",
         "--optimize", "2", "--noconfirm",
         str(REPO_ROOT / "craftgraph" / "cli.py"),
@@ -86,17 +87,17 @@ def _print_table(rows: list[tuple[str, float, float]]) -> None:
     )
     print(header)
     print("-" * len(header))
-    # Thresholds account for PyInstaller --onefile bootloader cost (unpacks
-    # the bundle to a temp dir on every invocation; typically 3-5x cold-start
-    # overhead on Windows). Anything past that is worth investigating.
+    # Thresholds calibrated for --onedir: no per-invocation bootloader, so
+    # release should track dev within measurement noise. Anything past ~1.5x
+    # is worth investigating (real work-side regression).
     for label, dev_ms, rel_ms in rows:
         ratio = rel_ms / dev_ms if dev_ms > 0 else float("inf")
-        if ratio < 1.5:
+        if ratio < 1.2:
             verdict = "parity"
-        elif ratio < 5.0:
-            verdict = "expected onefile bootloader cost"
+        elif ratio < 1.5:
+            verdict = "marginal -- inspect if persistent"
         else:
-            verdict = "release MUCH slower - investigate"
+            verdict = "release slower -- investigate"
         print(
             f"{label:<{name_width}}  {dev_ms:>10.1f}  {rel_ms:>14.1f}  "
             f"{ratio:>7.2f}x  {verdict}"

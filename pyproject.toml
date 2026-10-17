@@ -1,40 +1,66 @@
 [project]
 name = "craftgraph"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "CraftGraph - A Node based Editor for CustomCraft3 (and CustomBatteries)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "click==8.3.3",
+    "click==8.4.1",
     "msgpack>=1.0",
     "msgspec>=0.21.1",
     "networkx>=3.0",
     "platformdirs==4.9.6",
     "psutil>=7.2.2",
-    "pyvis>=0.3",
-    "rich>=15.0.0",
+    "pyside6==6.11.1",
     "watchdog>=4.0",
 ]
+# Note on duplicates: ``hypothesis`` is intentionally dev-only; it is a
+# property-testing library used by ``tests/test_parser_roundtrip_property.py``
+# and nothing in the runtime tree imports it. ``pyside6`` is a hard runtime
+# dep above, so the ``[qt]`` extra below only declares ``nodegraphqt`` (no
+# need to redeclare pyside6). ``pyvis`` / ``rich`` are runtime-optional via
+# the ``[visualizer]`` and ``[pretty]`` extras and additionally pinned in
+# ``dev`` so a developer ``uv sync`` always installs them.
 
 [project.optional-dependencies]
 qt = [
     "nodegraphqt>=0.6.44",
-    "pyside6>=6.11.0",
+]
+# Pulls pyvis in for the CLI ``view`` / ``watch`` commands. Bundled GUI
+# binary never invokes these so it does not need pyvis. Install with
+# ``pip install "craftgraph[visualizer]"``.
+visualizer = [
+    "pyvis>=0.3",
+]
+# Pulls rich in for prettier console logs + tracebacks. Optional so a
+# minimal release install (`uv sync --no-dev`) still ships without it;
+# ``log_setup`` falls back to stdlib ``StreamHandler`` when rich is
+# missing.
+pretty = [
+    "rich>=15.0.0",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
-    "ruff>=0.15.12",
-    "mypy>=1.20.2",
-    "types-networkx>=3.6.1.20260408",
+    # Type checkers + linters
+    "mypy>=2.1.0",
+    "ruff>=0.15.14",
+    "types-networkx>=3.6.1.20260518",
+    # Optional UX deps used at runtime when present; kept in dev so the
+    # dev experience stays unchanged. Release builds get them via the
+    # ``visualizer`` / ``pretty`` optional-dep groups instead.
+    "pyvis>=0.3",
+    "rich>=15.0.0",
+    # Build / packaging
     "pyinstaller>=6.20.0",
+    # Test suite + plugins
+    "pytest>=9.0.3",
     "pytest-sugar>=1.1.1",
     "pytest-clarity>=1.0.1",
     "pytest-qt>=4.5.0",
-    "hypothesis>=6.152.9",
     "pytest-benchmark>=5.2.3",
     "pytest-cov>=7.1.0",
+    "hypothesis>=6.152.9",
 ]
 
 [project.scripts]
