@@ -5,6 +5,12 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+
+pytest.importorskip(
+    "NodeGraphQt",
+    reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
+)
+
 from PySide6.QtGui import QColor
 
 from craftgraph.qt_variable_nodes import ColorVarNode
