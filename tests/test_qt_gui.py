@@ -8,6 +8,7 @@ Run:  uv run --extra qt pytest tests/test_qt_gui.py -v
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -25,6 +26,11 @@ from PySide6 import QtCore, QtWidgets
 
 from tests.conftest import make_test_window
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from craftgraph.qt_gui import CraftGraphWindow
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -34,7 +40,6 @@ from tests.conftest import make_test_window
 def window(qapp, qtbot, monkeypatch, tmp_path):
     """Fresh CraftGraphWindow for each test, isolated from real settings."""
     from craftgraph import app_dirs
-
     from tests.conftest import make_test_window
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -57,9 +62,7 @@ def _add_tab(window, pf):
 
 
 class TestWatcherRebuildFallback:
-    def test_diff_exception_falls_back_to_load_recipes(
-        self, window, monkeypatch, caplog
-    ):
+    def test_diff_exception_falls_back_to_load_recipes(self, window, monkeypatch, caplog):
         """When the diff path raises, log a WARNING and call load_recipes."""
         import logging
         from pathlib import Path
@@ -88,9 +91,7 @@ class TestWatcherRebuildFallback:
             window._on_watcher_rebuild([])
 
         assert called["load"] == 1
-        assert any(
-            "incremental rebuild failed" in rec.message for rec in caplog.records
-        )
+        assert any("incremental rebuild failed" in rec.message for rec in caplog.records)
 
 
 class TestFileTabParsedFile:
@@ -304,7 +305,8 @@ class TestMenuBar:
         dialog = _AboutDialog(version="9.9.9")
         assert dialog._libs_browser.openExternalLinks() is True
         body_labels = [
-            lbl for lbl in dialog.findChildren(QtWidgets.QLabel)
+            lbl
+            for lbl in dialog.findChildren(QtWidgets.QLabel)
             if _AboutDialog.GITHUB_URL in lbl.text()
         ]
         assert body_labels
@@ -851,8 +853,7 @@ class TestGoToDefinition:
         window.load_recipes(tmp_path)
 
         crafted_idx = next(
-            i for i in range(window._tab_bar.count())
-            if window._tab_bar.tabText(i) == "crafted"
+            i for i in range(window._tab_bar.count()) if window._tab_bar.tabText(i) == "crafted"
         )
         window._tab_bar.setCurrentIndex(crafted_idx)
         crafted_tab = window._file_tabs[crafted_idx]
@@ -864,10 +865,7 @@ class TestGoToDefinition:
         new_idx = window._tab_bar.currentIndex()
         assert window._tab_bar.tabText(new_idx) == "raw"
         selected = window._file_tabs[new_idx].graph.selected_nodes()
-        assert any(
-            getattr(n.model_ref, "item_id", None) == "Gold"
-            for n in selected
-        )
+        assert any(getattr(n.model_ref, "item_id", None) == "Gold" for n in selected)
 
     def test_double_click_recipe_in_own_tab_is_noop(self, window, tmp_path):
         """Double-clicking a recipe defined in the current tab does not switch tabs."""
@@ -928,7 +926,8 @@ class TestHoverTooltips:
         window.load_recipes(recipe_file)
 
         node = next(
-            n for n in window._active_tab.model_to_node.values()
+            n
+            for n in window._active_tab.model_to_node.values()
             if getattr(n.model_ref, "item_id", "") == "SuperKnife"
         )
         tooltip = node.view.toolTip()
@@ -1199,7 +1198,7 @@ class TestUserPositionPreservation:
         window._apply_code_editor_text_for(tab)
 
         node = window.graph.all_nodes()[0]
-        x, y = node.pos()
+        x, _y = node.pos()
         # Single type -> column 0 at _LAYOUT_X_TAB (-100.0)
         assert abs(x - (-100.0)) < 1.0
 
@@ -1504,7 +1503,7 @@ class TestCycleStatusBar:
 # ---------------------------------------------------------------------------
 
 
-def _create_test_png(path: "Path") -> None:
+def _create_test_png(path: Path) -> None:
     """Write a minimal valid PNG to *path* using QImage."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QImage
@@ -2106,7 +2105,7 @@ class TestCopyPasteDuplicate:
         window._duplicate_selected_nodes()
 
         # Find the duplicate (node whose model has item_id "Iron" but is not orig)
-        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+        duped = next(n for n in window.graph.all_nodes() if n is not orig)
 
         # Simulate user changing ItemID on the duplicate
         duped.set_property("item_id", "Steel")
@@ -2134,7 +2133,7 @@ class TestCopyPasteDuplicate:
         orig.set_selected(True)
         window._duplicate_selected_nodes()
 
-        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+        duped = next(n for n in window.graph.all_nodes() if n is not orig)
 
         # Change ItemID to something unique and re-validate
         duped.set_property("item_id", "Steel")
@@ -2156,7 +2155,7 @@ class TestCopyPasteDuplicate:
         orig.set_selected(True)
         window._duplicate_selected_nodes()
 
-        duped = [n for n in window.graph.all_nodes() if n is not orig][0]
+        duped = next(n for n in window.graph.all_nodes() if n is not orig)
         # NodeGraphQt appends a suffix like " 1" to the title.
         # The display_name on the model should carry the same suffix.
         suffix = duped.name()[len("MyAlias") :]
@@ -2492,7 +2491,8 @@ class TestNodeAutocomplete:
         )
         window.load_recipes(recipe_file)
         return next(
-            n for n in window.graph.all_nodes()
+            n
+            for n in window.graph.all_nodes()
             if hasattr(n, "FIELD_REGISTRY") and n.get_property("item_id") == "SuperAlloy"
         )
 
@@ -2513,9 +2513,8 @@ class TestNodeAutocomplete:
     def _summon_field(self, window, node, field_name, current_value=""):
         """Trigger the painted-node summon path for *field_name* on *node*."""
         from PySide6.QtCore import QRect
-        window._on_field_edit_requested(
-            node, field_name, QRect(0, 0, 100, 22), current_value
-        )
+
+        window._on_field_edit_requested(node, field_name, QRect(0, 0, 100, 22), current_value)
 
     def test_item_id_summon_attaches_id_words_completer(self, window, tmp_path):
         node = self._load_added_recipe(window, tmp_path)
@@ -2595,6 +2594,7 @@ class TestNodeAutocomplete:
         # If it's a painted node (it shouldn't be), summon. Otherwise skip the test
         # because the legacy widget mechanism is what serves it.
         from craftgraph.qt_nodes import PaintedFieldsNodeItem
+
         if not isinstance(node.view, PaintedFieldsNodeItem):
             pytest.skip("MovedRecipeNode is not a painted node; legacy path covers this.")
         self._summon_field(window, node, "old_path", "Fabricator/Resources")
@@ -3249,7 +3249,8 @@ class TestEasyMarkupKeywordAutocomplete:
         from craftgraph.qt_gui import _GroupedCompleterDelegate
 
         completer = window._make_completer(
-            ["Titanium"], keywords=["ItemID", "Path"],
+            ["Titanium"],
+            keywords=["ItemID", "Path"],
         )
         delegate = completer.popup().itemDelegate()
         assert isinstance(delegate, _GroupedCompleterDelegate)
@@ -3314,7 +3315,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_new_item_entry_appears_as_last(self, popup_env):
         """Typing text that partially matches shows 'New item: ...' as the last entry."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("tit")
         items = self._items(popup)
         assert len(items) >= 2  # at least one real match + new item entry
@@ -3322,7 +3323,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_new_item_entry_with_zero_matches(self, popup_env):
         """Typing text with no word-list matches still shows the new item entry."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("zzzzunknown")
         assert popup.isVisible()
         items = self._items(popup)
@@ -3331,7 +3332,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_new_item_entry_updates_on_each_keystroke(self, popup_env):
         """The new item entry text updates as the user types more characters."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("te")
         items_1 = self._items(popup)
         assert items_1[-1] == "New item: te"
@@ -3346,7 +3347,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_accepting_new_item_keeps_typed_text(self, popup_env):
         """Selecting the 'New item' entry writes only the raw text, not the prefix."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("myCustomItem")
         # Navigate to last item (the new item entry)
         popup._list.setCurrentRow(popup._list.count() - 1)
@@ -3355,7 +3356,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_clicking_new_item_keeps_typed_text(self, popup_env):
         """Clicking the 'New item' entry writes the raw typed text."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("myMod")
         last_item = popup._list.item(popup._list.count() - 1)
         popup._on_item_clicked(last_item)
@@ -3363,7 +3364,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_empty_text_hides_popup_no_new_item(self, popup_env):
         """Empty input hides the popup entirely -- no 'New item' entry for blank."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("tit")
         assert popup.isVisible()
         le.textEdited.emit("")
@@ -3371,7 +3372,7 @@ class TestNewItemAutocompleteEntry:
 
     def test_new_item_present_alongside_real_matches(self, popup_env):
         """Even with real matches, the 'New item' entry is always the last item."""
-        popup, le, words = popup_env
+        popup, le, _words = popup_env
         le.textEdited.emit("Gold")
         items = self._items(popup)
         # Should have real matches (Gold, GoldIngot) plus the new item entry
@@ -3791,20 +3792,23 @@ class TestEnterToAccept:
     """Browse buttons in input dialogs do not steal Enter from the Ok button."""
 
     def test_new_project_browse_not_autodefault(
-        self, window: CraftGraphWindow, tmp_path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path,
     ) -> None:
         from craftgraph.qt_gui import NewProjectDialog
 
         dialog = NewProjectDialog(parent=window, default_dir=tmp_path)
         browse_buttons = [
-            b for b in dialog.findChildren(QtWidgets.QPushButton)
-            if b.text() == "Browse..."
+            b for b in dialog.findChildren(QtWidgets.QPushButton) if b.text() == "Browse..."
         ]
         assert browse_buttons, "expected a Browse... button"
         assert all(not b.autoDefault() for b in browse_buttons)
 
     def test_new_project_ok_is_default(
-        self, window: CraftGraphWindow, tmp_path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path,
     ) -> None:
         from craftgraph.qt_gui import NewProjectDialog
 
@@ -3814,20 +3818,23 @@ class TestEnterToAccept:
         assert ok.isDefault()
 
     def test_new_file_browse_not_autodefault(
-        self, window: CraftGraphWindow, tmp_path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path,
     ) -> None:
         from craftgraph.qt_gui import NewFileDialog
 
         dialog = NewFileDialog(parent=window, default_dir=tmp_path)
         browse_buttons = [
-            b for b in dialog.findChildren(QtWidgets.QPushButton)
-            if b.text() == "Browse..."
+            b for b in dialog.findChildren(QtWidgets.QPushButton) if b.text() == "Browse..."
         ]
         assert browse_buttons
         assert all(not b.autoDefault() for b in browse_buttons)
 
     def test_new_file_ok_is_default(
-        self, window: CraftGraphWindow, tmp_path,
+        self,
+        window: CraftGraphWindow,
+        tmp_path,
     ) -> None:
         from craftgraph.qt_gui import NewFileDialog
 
@@ -3848,7 +3855,8 @@ class TestMenuSpawnPosCapture:
         assert y == 456.0
 
     def test_menu_spawn_falls_back_when_no_capture(
-        self, window: CraftGraphWindow,
+        self,
+        window: CraftGraphWindow,
     ) -> None:
         viewer = window._active_tab.graph.viewer()
         window._menu_invoke_scene_pos = None
@@ -3977,9 +3985,7 @@ class TestWelcomeButtonIntegration:
 
         recipe_dir = tmp_path / "recipes"
         recipe_dir.mkdir()
-        (recipe_dir / "ModifiedRecipes.txt").write_text(
-            "ModifiedRecipes:\n", encoding="utf-8"
-        )
+        (recipe_dir / "ModifiedRecipes.txt").write_text("ModifiedRecipes:\n", encoding="utf-8")
         assert window._main_stack.currentIndex() == 0
         with patch(
             "PySide6.QtWidgets.QFileDialog.getExistingDirectory",
@@ -4004,9 +4010,7 @@ class TestWelcomeButtonIntegration:
 
         assert window._main_stack.currentIndex() == 0
         mock_dialog = Mock()
-        mock_dialog.return_value.exec.return_value = (
-            QtWidgets.QDialog.DialogCode.Rejected
-        )
+        mock_dialog.return_value.exec.return_value = QtWidgets.QDialog.DialogCode.Rejected
         with patch("craftgraph.qt_gui.NewProjectDialog", mock_dialog):
             window._on_new_project()
         assert window._main_stack.currentIndex() == 0
@@ -4016,9 +4020,7 @@ class TestWelcomeButtonIntegration:
     ) -> None:
         recipe_dir = tmp_path / "recipes"
         recipe_dir.mkdir()
-        (recipe_dir / "ModifiedRecipes.txt").write_text(
-            "ModifiedRecipes:\n", encoding="utf-8"
-        )
+        (recipe_dir / "ModifiedRecipes.txt").write_text("ModifiedRecipes:\n", encoding="utf-8")
         assert window._main_stack.currentIndex() == 0
         window._welcome_open_recent(str(recipe_dir), "folder")
         assert window._main_stack.currentIndex() == 1
@@ -4258,9 +4260,7 @@ class TestSettingsPersistenceRoundTrip:
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(_SettingsDialog, "exec", lambda self: None)
         window._on_settings()
-        data = __import__("json").loads(
-            (tmp_path / "settings.json").read_text(encoding="utf-8")
-        )
+        data = __import__("json").loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
         expected_keys = {
             "backup_on_save",
             "auto_save_enabled",
@@ -4287,9 +4287,18 @@ class TestAppearanceNodeSwatches:
 
         dialog = _SettingsDialog()
         expected_fields = {
-            "modified_recipe", "added_recipe", "alias_recipe", "custom_food",
-            "fabricator", "crafting_tab", "custom_size", "moved_recipe",
-            "custom_bio_fuel", "custom_fragment_count", "orphan_ingredient", "sprite",
+            "modified_recipe",
+            "added_recipe",
+            "alias_recipe",
+            "custom_food",
+            "fabricator",
+            "crafting_tab",
+            "custom_size",
+            "moved_recipe",
+            "custom_bio_fuel",
+            "custom_fragment_count",
+            "orphan_ingredient",
+            "sprite",
         }
         assert set(dialog._node_swatches.keys()) == expected_fields
 
@@ -4320,7 +4329,11 @@ class TestAppearanceSyntaxSwatches:
 
         dialog = _SettingsDialog()
         expected_fields = {
-            "block_type", "field_key", "string", "comment", "error_underline",
+            "block_type",
+            "field_key",
+            "string",
+            "comment",
+            "error_underline",
         }
         assert set(dialog._syntax_swatches.keys()) == expected_fields
 
@@ -4480,7 +4493,7 @@ class TestThemePersistence:
         custom = ThemeColors(node=NodeColors(sprite=(11, 22, 33)))
         settings_data = {"version": 1, "theme": theme_to_dict(custom)}
         (tmp_path / "settings.json").write_text(json.dumps(settings_data), encoding="utf-8")
-        win = make_test_window(qtbot)
+        make_test_window(qtbot)
         assert active_theme().node.sprite == (11, 22, 33)
 
 
@@ -4879,7 +4892,9 @@ class TestGridSettings:
         from craftgraph.qt_gui import _SettingsDialog
         from craftgraph.theme import NodeEditorSettings
 
-        ne = NodeEditorSettings(show_grid=False, grid_size=80, grid_style="dots", snap_to_grid=True)
+        ne = NodeEditorSettings(
+            show_grid=False, grid_size=80, grid_style="dots", snap_to_grid=True
+        )
         dialog = _SettingsDialog(node_editor=ne)
         assert dialog._show_grid_cb.isChecked() is False
         assert dialog._grid_size_spin.value() == 80
@@ -4902,7 +4917,10 @@ class TestNodeEditorSettingsPersistence:
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         custom = NodeEditorSettings(
-            zoom_speed=2.0, invert_zoom=True, grid_size=30, grid_style="dots",
+            zoom_speed=2.0,
+            invert_zoom=True,
+            grid_size=30,
+            grid_style="dots",
         )
         CraftGraphWindow._save_node_editor_settings(custom)
         loaded = CraftGraphWindow._load_node_editor_settings()
@@ -5208,15 +5226,20 @@ class TestCodeEditorSettingsPersistence:
         from craftgraph.theme import CodeEditorSettings
 
         settings_file = tmp_path / "settings.json"
-        settings_file.write_text(json.dumps({
-            "version": 1,
-            "code_editor": {
-                "font_family": "Courier New",
-                "font_size": 16,
-                "tab_width": 8,
-                "parse_debounce_ms": 1000,
-            },
-        }), encoding="utf-8")
+        settings_file.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "code_editor": {
+                        "font_family": "Courier New",
+                        "font_size": 16,
+                        "tab_width": 8,
+                        "parse_debounce_ms": 1000,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
         monkeypatch.setattr(app_dirs, "settings_path", lambda: settings_file)
 
         loaded = window._load_code_editor_settings()
@@ -5448,13 +5471,17 @@ class TestCustomIdScope:
         dialog = _SettingsDialog(project_custom_ids=None)
         assert dialog._ac_scope_label.text() == "Editing: Global"
 
-    def test_scope_label_shows_project_when_project_ids_given(self, qapp: QtWidgets.QApplication) -> None:
+    def test_scope_label_shows_project_when_project_ids_given(
+        self, qapp: QtWidgets.QApplication
+    ) -> None:
         from craftgraph.qt_gui import _SettingsDialog
 
         dialog = _SettingsDialog(project_custom_ids=["MyMod"])
         assert dialog._ac_scope_label.text() == "Editing: Project"
 
-    def test_custom_list_shows_project_ids_when_project_loaded(self, qapp: QtWidgets.QApplication) -> None:
+    def test_custom_list_shows_project_ids_when_project_loaded(
+        self, qapp: QtWidgets.QApplication
+    ) -> None:
         from craftgraph.qt_gui import _SettingsDialog
         from craftgraph.theme import AutocompleteSettings
 
@@ -5462,10 +5489,14 @@ class TestCustomIdScope:
             autocomplete=AutocompleteSettings(custom_ids=["GlobalId"]),
             project_custom_ids=["ProjectId"],
         )
-        items = [dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())]
+        items = [
+            dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())
+        ]
         assert items == ["ProjectId"]
 
-    def test_custom_list_shows_global_ids_when_no_project(self, qapp: QtWidgets.QApplication) -> None:
+    def test_custom_list_shows_global_ids_when_no_project(
+        self, qapp: QtWidgets.QApplication
+    ) -> None:
         from craftgraph.qt_gui import _SettingsDialog
         from craftgraph.theme import AutocompleteSettings
 
@@ -5473,16 +5504,22 @@ class TestCustomIdScope:
             autocomplete=AutocompleteSettings(custom_ids=["GlobalId"]),
             project_custom_ids=None,
         )
-        items = [dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())]
+        items = [
+            dialog._ac_custom_list.item(i).text() for i in range(dialog._ac_custom_list.count())
+        ]
         assert items == ["GlobalId"]
 
-    def test_project_custom_ids_property_returns_list_when_project(self, qapp: QtWidgets.QApplication) -> None:
+    def test_project_custom_ids_property_returns_list_when_project(
+        self, qapp: QtWidgets.QApplication
+    ) -> None:
         from craftgraph.qt_gui import _SettingsDialog
 
         dialog = _SettingsDialog(project_custom_ids=["A", "B"])
         assert dialog.project_custom_ids == ["A", "B"]
 
-    def test_project_custom_ids_property_returns_none_when_global(self, qapp: QtWidgets.QApplication) -> None:
+    def test_project_custom_ids_property_returns_none_when_global(
+        self, qapp: QtWidgets.QApplication
+    ) -> None:
         from craftgraph.qt_gui import _SettingsDialog
 
         dialog = _SettingsDialog(project_custom_ids=None)
@@ -5496,14 +5533,22 @@ class TestProjectCustomIdPersistence:
         from craftgraph.project import ProjectFile
 
         window._project = ProjectFile(
-            version=1, name="t", description="", cc3_path="",
-            project_path="", open_files=[], active_tab="",
-            node_positions={}, editor_state={}, settings_overrides={},
+            version=1,
+            name="t",
+            description="",
+            cc3_path="",
+            project_path="",
+            open_files=[],
+            active_tab="",
+            node_positions={},
+            editor_state={},
+            settings_overrides={},
         )
         window.close()  # would raise PermissionError before the guard
 
     def test_effective_custom_ids_returns_global_when_no_project(
-        self, window: CraftGraphWindow,
+        self,
+        window: CraftGraphWindow,
     ) -> None:
         from craftgraph.theme import AutocompleteSettings
 
@@ -5512,43 +5557,64 @@ class TestProjectCustomIdPersistence:
         assert window._effective_custom_ids() == ["GlobalId"]
 
     def test_effective_custom_ids_returns_project_when_project_loaded(
-        self, window: CraftGraphWindow,
+        self,
+        window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
         from craftgraph.theme import AutocompleteSettings
 
         window._project = ProjectFile(
-            version=1, name="test", description="", cc3_path="",
-            project_path="", open_files=[], active_tab="",
-            node_positions={}, editor_state={},
+            version=1,
+            name="test",
+            description="",
+            cc3_path="",
+            project_path="",
+            open_files=[],
+            active_tab="",
+            node_positions={},
+            editor_state={},
             settings_overrides={"custom_ids": ["ProjectId"]},
         )
         window._ac_settings = AutocompleteSettings(custom_ids=["GlobalId"])
         assert window._effective_custom_ids() == ["ProjectId"]
 
     def test_effective_custom_ids_returns_empty_when_project_has_no_key(
-        self, window: CraftGraphWindow,
+        self,
+        window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
 
         window._project = ProjectFile(
-            version=1, name="test", description="", cc3_path="",
-            project_path="", open_files=[], active_tab="",
-            node_positions={}, editor_state={},
+            version=1,
+            name="test",
+            description="",
+            cc3_path="",
+            project_path="",
+            open_files=[],
+            active_tab="",
+            node_positions={},
+            editor_state={},
             settings_overrides={},
         )
         assert window._effective_custom_ids() == []
 
     def test_update_project_state_syncs_custom_ids(
-        self, window: CraftGraphWindow,
+        self,
+        window: CraftGraphWindow,
     ) -> None:
         from craftgraph.project import ProjectFile
         from craftgraph.theme import AutocompleteSettings
 
         window._project = ProjectFile(
-            version=1, name="test", description="", cc3_path="/tmp",
-            project_path="/tmp/test.craftgraph", open_files=[], active_tab="",
-            node_positions={}, editor_state={},
+            version=1,
+            name="test",
+            description="",
+            cc3_path="/tmp",
+            project_path="/tmp/test.craftgraph",
+            open_files=[],
+            active_tab="",
+            node_positions={},
+            editor_state={},
             settings_overrides={},
         )
         window._ac_settings = AutocompleteSettings(custom_ids=["Ignored"])
@@ -5591,8 +5657,7 @@ class TestSettingsDialogWidgetHeights:
                 # for the rendered value.
                 h = sb.sizeHint().height()
                 assert 20 <= h <= checkbox_h + 4, (
-                    f"{type(sb).__name__} sizeHint height {h} not in "
-                    f"[20, {checkbox_h + 4}]"
+                    f"{type(sb).__name__} sizeHint height {h} not in [20, {checkbox_h + 4}]"
                 )
         finally:
             dialog.close()
@@ -5612,8 +5677,7 @@ class TestSettingsDialogWidgetHeights:
             for cb in combos:
                 h = cb.sizeHint().height()
                 assert 18 <= h <= checkbox_h + 4, (
-                    f"QComboBox sizeHint height {h} not in "
-                    f"[18, {checkbox_h + 4}]"
+                    f"QComboBox sizeHint height {h} not in [18, {checkbox_h + 4}]"
                 )
         finally:
             dialog.close()
@@ -5676,9 +5740,7 @@ class TestSettingsDialogWidgetHeights:
             for i in range(outer.count()):
                 page = outer.widget(i)
                 scrolls = page.findChildren(QtWidgets.QScrollArea)
-                assert scrolls, (
-                    f"tab {outer.tabText(i)!r} has no QScrollArea wrapper"
-                )
+                assert scrolls, f"tab {outer.tabText(i)!r} has no QScrollArea wrapper"
         finally:
             dialog.close()
 
@@ -5759,16 +5821,17 @@ class TestSearchAndSelectCentering:
         bar._edit.setText("Copper")
         qapp.processEvents()
         window._update_search_matches()
-        copper_node = next(
-            n for n in window.graph.all_nodes() if n.name() == "Copper"
-        )
+        copper_node = next(n for n in window.graph.all_nodes() if n.name() == "Copper")
         target = copper_node.view.sceneBoundingRect().center()
         new_center = viewer._scene_range.center()
         assert abs(new_center.x() - target.x()) < 1.0
         assert abs(new_center.y() - target.y()) < 1.0
 
     def test_multi_line_selection_selects_all_referenced_nodes(
-        self, window, tmp_path, qapp,
+        self,
+        window,
+        tmp_path,
+        qapp,
     ):
         from PySide6.QtGui import QTextCursor
 
@@ -5796,7 +5859,10 @@ class TestSearchAndSelectCentering:
         assert "Copper" in selected_names
 
     def test_single_line_selection_does_not_trigger_sync(
-        self, window, tmp_path, qapp,
+        self,
+        window,
+        tmp_path,
+        qapp,
     ):
         from PySide6.QtGui import QTextCursor
 
@@ -5817,7 +5883,10 @@ class TestSearchAndSelectCentering:
         assert tab.graph.selected_nodes() == []
 
     def test_editor_selection_skipped_during_sync_guard(
-        self, window, tmp_path, qapp,
+        self,
+        window,
+        tmp_path,
+        qapp,
     ):
         """Programmatic selection from graph->editor must not bounce back."""
         from PySide6.QtGui import QTextCursor
@@ -6006,6 +6075,7 @@ class TestLauncherInstallsLogger:
         monkeypatch.setattr(QtWidgets.QApplication, "exec", lambda self: 0)
 
         from craftgraph.qt_gui import launch_qt_gui
+
         launch_qt_gui(None)
 
         assert captured.get("threshold") == 20
@@ -6050,9 +6120,7 @@ class TestFrameTimeOverlay:
         labels = [a.text().replace("&", "") for a in view_menu.actions()]
         assert any("Show Frame Time" in t for t in labels)
 
-    def test_frame_tick_reports_frame_to_perf_diag(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_frame_tick_reports_frame_to_perf_diag(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs, perf_diag
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -6104,9 +6172,7 @@ class TestFrameTimeOverlay:
         assert fps > 0
         assert p99_ms >= last_ms - 0.01
 
-    def test_frame_tick_skips_overlay_when_hidden(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_frame_tick_skips_overlay_when_hidden(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -6188,9 +6254,7 @@ class TestPerfMeasureWiring:
 
         assert "open_settings" in actions
 
-    def test_apply_code_editor_text_emits_perf_measure(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_apply_code_editor_text_emits_perf_measure(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -6212,9 +6276,7 @@ class TestPerfMeasureWiring:
 class TestBulkLoadSignalBlocker:
     """_create_file_tab blocks NodeGraph signals during bulk node creation."""
 
-    def test_node_created_does_not_fire_during_bulk_load(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_node_created_does_not_fire_during_bulk_load(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
         from craftgraph.qt_gui import CraftGraphWindow
 
@@ -6227,15 +6289,12 @@ class TestBulkLoadSignalBlocker:
         # signal-blocker check; we just need at least one create_node call.
         recipe = tmp_path / "r.txt"
         recipe.write_text(
-            "ModifiedRecipes:\n"
-            "(\n    ItemID: Titanium;\n);\n"
-            "(\n    ItemID: Copper;\n);\n",
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n(\n    ItemID: Copper;\n);\n",
             encoding="utf-8",
         )
 
         # Counter listener registered AFTER the connect() in _create_file_tab.
         # It catches any node_created signal that fires during bulk load.
-        emitted: list[object] = []
 
         original_create = CraftGraphWindow._create_file_tab
 
@@ -6337,9 +6396,7 @@ class TestLayoutCacheReadThrough:
 
         win = make_test_window(qtbot)
         recipe = tmp_path / "r.txt"
-        recipe.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8"
-        )
+        recipe.write_text("ModifiedRecipes:\n(\n    ItemID: Titanium;\n);\n", encoding="utf-8")
         win.load_recipes(recipe)
 
         # load_layout must precede the first compute_hierarchy_layout call.
@@ -6356,9 +6413,7 @@ class TestLayoutCacheReadThrough:
 class TestProcStatsWidget:
     """Status bar shows live CPU% / RSS readout updated on a timer."""
 
-    def test_proc_stats_widget_present_in_status_bar(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_proc_stats_widget_present_in_status_bar(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -6368,16 +6423,15 @@ class TestProcStatsWidget:
         assert win._proc_stats_widget is not None
         assert win._proc_stats_widget.parent() is not None
 
-    def test_proc_stats_tick_pushes_metrics_into_widget(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_proc_stats_tick_pushes_metrics_into_widget(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs, proc_diag
         from craftgraph.proc_diag import ProcSnapshot
 
         monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
         monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
         monkeypatch.setattr(
-            proc_diag, "sample",
+            proc_diag,
+            "sample",
             lambda: ProcSnapshot(cpu_percent=42.5, rss_bytes=123_456_789),
         )
 
@@ -6389,7 +6443,11 @@ class TestProcStatsWidget:
         assert "117" in text or "118" in text  # 123_456_789 / (1024*1024) ~= 117.7
 
     def test_diagnostic_widgets_hidden_when_perf_diagnostics_off(
-        self, qapp, qtbot, monkeypatch, tmp_path,
+        self,
+        qapp,
+        qtbot,
+        monkeypatch,
+        tmp_path,
     ):
         """Release builds with the toggle off must hide diagnostic widgets.
 
@@ -6416,14 +6474,21 @@ class TestProcStatsWidget:
         assert win._hwnd_counter_timer.isActive() is False
         # Diagnostic menu actions must also be hidden.
         for action in (
-            win._hwnd_counter_action, win._frame_overlay_action,
-            win._profile_panzoom_action, win._dump_hwnd_action,
-            win._dump_memory_action, win._perf_log_action,
+            win._hwnd_counter_action,
+            win._frame_overlay_action,
+            win._profile_panzoom_action,
+            win._dump_hwnd_action,
+            win._dump_memory_action,
+            win._perf_log_action,
         ):
             assert action.isVisible() is False, action.text()
 
     def test_live_toggle_shows_diagnostic_widgets(
-        self, qapp, qtbot, monkeypatch, tmp_path,
+        self,
+        qapp,
+        qtbot,
+        monkeypatch,
+        tmp_path,
     ):
         """Flipping perf_diagnostics on at runtime reveals the diagnostic UI.
 
@@ -6450,9 +6515,12 @@ class TestProcStatsWidget:
         assert win._proc_stats_timer.isActive() is True
         assert win._hwnd_counter_timer.isActive() is True
         for action in (
-            win._hwnd_counter_action, win._frame_overlay_action,
-            win._profile_panzoom_action, win._dump_hwnd_action,
-            win._dump_memory_action, win._perf_log_action,
+            win._hwnd_counter_action,
+            win._frame_overlay_action,
+            win._profile_panzoom_action,
+            win._dump_hwnd_action,
+            win._dump_memory_action,
+            win._perf_log_action,
         ):
             assert action.isVisible() is True, action.text()
 
@@ -6471,11 +6539,7 @@ class TestLoadRecipesTimeSlicing:
         from craftgraph.parser import parse_text
         from craftgraph.sync import populate_graph
 
-        text = (
-            "ModifiedRecipes:\n"
-            "(\n    ItemID: A;\n),\n"
-            "(\n    ItemID: B;\n);\n"
-        )
+        text = "ModifiedRecipes:\n(\n    ItemID: A;\n),\n(\n    ItemID: B;\n);\n"
         pf = parse_text(text, source_path=tmp_path / "r.txt")
 
         graph = MagicMock()
@@ -6506,9 +6570,7 @@ class TestPerfLogDialog:
         labels = [a.text().replace("&", "") for a in help_menu.actions()]
         assert any("Perf Log" in t for t in labels)
 
-    def test_perf_log_dialog_loads_file_content(
-        self, qapp, qtbot, monkeypatch, tmp_path
-    ):
+    def test_perf_log_dialog_loads_file_content(self, qapp, qtbot, monkeypatch, tmp_path):
         from craftgraph import app_dirs
         from craftgraph.qt_gui import _PerfLogDialog
 
@@ -6634,11 +6696,7 @@ class TestWatcherThreadHygiene:
     def test_no_watchdog_threads_leaked_from_window_fixture(self, window):
         import threading
 
-        leaked = [
-            t
-            for t in threading.enumerate()
-            if type(t).__module__.startswith("watchdog")
-        ]
+        leaked = [t for t in threading.enumerate() if type(t).__module__.startswith("watchdog")]
         assert not leaked, (
             f"{len(leaked)} Watchdog observer thread(s) still alive -- a "
             f"window fixture failed to stop its file watcher on teardown"
@@ -6665,9 +6723,7 @@ class TestCloseConfirmer:
         """A confirmer returning DISCARD lets closeEvent accept without modal."""
         from craftgraph.qt_gui import CloseDecision, CraftGraphWindow
 
-        monkeypatch.setattr(
-            CraftGraphWindow, "_has_unsaved_changes", lambda self: True
-        )
+        monkeypatch.setattr(CraftGraphWindow, "_has_unsaved_changes", lambda self: True)
 
         confirmer_calls: list[CraftGraphWindow] = []
 
@@ -6740,9 +6796,7 @@ class TestFloatingEditorCommit:
         )
         window.load_recipes(recipe_file)
         node = next(
-            n
-            for n in window.graph.all_nodes()
-            if getattr(n, "model_ref", None) is not None
+            n for n in window.graph.all_nodes() if getattr(n, "model_ref", None) is not None
         )
 
         # The real load path wires a node for field edits more than once;
@@ -6820,11 +6874,11 @@ class TestCrossFilePathTargets:
             "CustomFabricators:\n"
             "(\n"
             "    ItemID: MyFab;\n"
-            "    DisplayName: \"My Fab\";\n"
+            '    DisplayName: "My Fab";\n'
             "    CustomCraftingTabs:\n"
             "    (\n"
             "        TabID: Tools;\n"
-            "        DisplayName: \"Tools\";\n"
+            '        DisplayName: "Tools";\n'
             "        ParentTabPath: MyFab;\n"
             "    );\n"
             ")\n",
@@ -6847,9 +6901,7 @@ class TestCrossFilePathTargets:
         tab = window._tab_for_source_path(recipe_file)
         assert tab is not None
         issues = window._collect_validation_issues(tab)
-        assert not any(
-            "does not match any known fabricator" in issue for issue in issues
-        )
+        assert not any("does not match any known fabricator" in issue for issue in issues)
 
 
 class TestPathAutocompleteTabIDs:
@@ -6868,11 +6920,11 @@ class TestPathAutocompleteTabIDs:
             "CustomFabricators:\n"
             "(\n"
             "    ItemID: SampleFab;\n"
-            "    DisplayName: \"Sample\";\n"
+            '    DisplayName: "Sample";\n'
             "    CustomCraftingTabs:\n"
             "    (\n"
             "        TabID: ScienceTab;\n"
-            "        DisplayName: \"Science\";\n"
+            '        DisplayName: "Science";\n'
             "        ParentTabPath: SampleFab;\n"
             "    );\n"
             ")\n",
@@ -6889,7 +6941,7 @@ class TestPathAutocompleteTabIDs:
             "CustomCraftingTabs:\n"
             "(\n"
             "    TabID: Tools;\n"
-            "    DisplayName: \"Tools\";\n"
+            '    DisplayName: "Tools";\n'
             "    ParentTabPath: Fabricator;\n"
             ")\n",
             encoding="utf-8",
@@ -6912,7 +6964,7 @@ class TestProjectIssuesWindow:
         action = window._project_issues_action
         assert action is not None
         # Action lives on the Edit menu, sibling of Find Node...
-        edit_menu = window.menuBar().findChild(QtWidgets.QMenu, "edit_menu")
+        window.menuBar().findChild(QtWidgets.QMenu, "edit_menu")
         # _edit_menu may not have an objectName; fall back to scanning actions.
         actions_text = [a.text() for a in window.menuBar().actions()]
         assert any("Edit" in t for t in actions_text)
@@ -6960,7 +7012,8 @@ class TestProjectIssuesWindow:
         """A defined-but-unreferenced recipe shows up in the Orphans section."""
         recipe_file = tmp_path / "orphan.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         window._project_issues_action.trigger()
@@ -6990,7 +7043,8 @@ class TestProjectIssuesWindow:
         win = window._project_issues_window
         tree = win.findChild(QtWidgets.QTreeWidget)
         cycle_section = next(
-            tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+            tree.topLevelItem(i)
+            for i in range(tree.topLevelItemCount())
             if tree.topLevelItem(i).text(0).startswith("Cycles")
         )
         assert "(1)" in cycle_section.text(0)
@@ -7012,7 +7066,8 @@ class TestProjectIssuesWindow:
         win = window._project_issues_window
         tree = win.findChild(QtWidgets.QTreeWidget)
         section = next(
-            tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+            tree.topLevelItem(i)
+            for i in range(tree.topLevelItemCount())
             if tree.topLevelItem(i).text(0).startswith("Unresolved")
         )
         rows = [section.child(j).text(0) for j in range(section.childCount())]
@@ -7022,7 +7077,8 @@ class TestProjectIssuesWindow:
         """Closing the window does not affect the loaded recipes."""
         recipe_file = tmp_path / "t.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: Titanium;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         before_tab_count = window._tab_bar.count()
@@ -7072,7 +7128,8 @@ class TestProjectIssuesWindow:
         """Activating an orphan row selects that node in its tab."""
         recipe_file = tmp_path / "orphan.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: LonelyItem;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         window._project_issues_action.trigger()
@@ -7162,7 +7219,8 @@ class TestProjectIssuesWindow:
         """A model change while the dialog is open arms the debounce timer."""
         recipe_file = tmp_path / "x.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         window._project_issues_action.trigger()
@@ -7182,7 +7240,8 @@ class TestProjectIssuesWindow:
         """
         recipe_file = tmp_path / "x.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: A;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: A;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         viewer = window.graph.viewer()
@@ -7207,7 +7266,8 @@ class TestProjectIssuesWindow:
         """
         recipe_file = tmp_path / "x.txt"
         recipe_file.write_text(
-            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n", encoding="utf-8",
+            "ModifiedRecipes:\n(\n    ItemID: Lonely;\n)\n",
+            encoding="utf-8",
         )
         window.load_recipes(recipe_file)
         window._project_issues_action.trigger()

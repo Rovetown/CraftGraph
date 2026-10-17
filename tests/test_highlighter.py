@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_highlighter.py -v
 
 from __future__ import annotations
 
-
 import pytest
 
 pytest.importorskip(
@@ -532,7 +531,11 @@ class TestMissingSemicolon:
         errors = _error_ranges(doc)
         value_start = len("    ItemID: ")
         value_len = len("Titanium")
-        e1_errors = [(s, l) for s, l in errors if s == value_start and l == value_len]
+        e1_errors = [
+            (start, length)
+            for start, length in errors
+            if start == value_start and length == value_len
+        ]
         assert e1_errors == []
 
     def test_structural_key_standalone_no_error(self, doc_and_hl):
@@ -658,7 +661,11 @@ class TestColonAsTerminator:
         doc, hl = doc_and_hl
         _highlight(doc, hl, "    Required: 3:")
         errors = _error_ranges(doc)
-        colon_errors = [(s, l) for s, l in errors if "    Required: 3:"[s:s + l] == ":"]
+        colon_errors = [
+            (start, length)
+            for start, length in errors
+            if "    Required: 3:"[start : start + length] == ":"
+        ]
         assert len(colon_errors) >= 1
 
     def test_valid_key_colon_no_error(self, doc_and_hl):
@@ -695,7 +702,7 @@ class TestUnquotedDisplayNameTooltip:
         _highlight(doc, hl, text)
         errors = _error_ranges(doc)
         start, length = errors[0]
-        assert text[start:start + length] == "My Custom Item"
+        assert text[start : start + length] == "My Custom Item"
 
     def test_quoted_display_name_no_error(self, doc_and_hl):
         doc, hl = doc_and_hl
@@ -743,7 +750,7 @@ class TestUnexpectedSpaceInIdPath:
         _highlight(doc, hl, text)
         errors = _error_ranges(doc)
         start, length = errors[0]
-        assert text[start:start + length] == "My Item"
+        assert text[start : start + length] == "My Item"
 
     def test_valid_item_id_no_error(self, doc_and_hl):
         doc, hl = doc_and_hl

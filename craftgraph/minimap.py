@@ -166,10 +166,7 @@ class MinimapWidget(QtWidgets.QWidget):
             if not hasattr(item, "boundingRect"):
                 continue
             item_rect = item.sceneBoundingRect()
-            if (
-                item_rect.width() < _MIN_SCENE_ITEM_PX
-                or item_rect.height() < _MIN_SCENE_ITEM_PX
-            ):
+            if item_rect.width() < _MIN_SCENE_ITEM_PX or item_rect.height() < _MIN_SCENE_ITEM_PX:
                 continue
 
             node_color = _node_color_for(item)
@@ -189,8 +186,7 @@ class MinimapWidget(QtWidgets.QWidget):
         now_ms = QtCore.QDateTime.currentMSecsSinceEpoch()
         cache_stale = (
             self._content_pixmap is None
-            or now_ms - self._last_content_rebuild_ms
-            >= self._content_rebuild_interval_ms
+            or now_ms - self._last_content_rebuild_ms >= self._content_rebuild_interval_ms
         )
         if cache_stale:
             self._render_content_pixmap()

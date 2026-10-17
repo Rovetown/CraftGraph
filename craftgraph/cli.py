@@ -8,8 +8,10 @@ bundle size reduction plan (see TODO).
 """
 
 import atexit
+import contextlib
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import click
@@ -26,32 +28,38 @@ def _install_modules_dump() -> None:
         return
 
     def _dump() -> None:
-        try:
+        with contextlib.suppress(OSError):
             Path("modules-cli.txt").write_text(
-                "\n".join(sorted(sys.modules)), encoding="utf-8",
+                "\n".join(sorted(sys.modules)),
+                encoding="utf-8",
             )
-        except OSError:
-            pass
 
     atexit.register(_dump)
 
 
 _install_modules_dump()
 
-from craftgraph import __version__
-from craftgraph.graph import NodeType, build_graph, classify_nodes, find_cycles
-from craftgraph.models import ParsedFile
-from craftgraph.parser import (
+# Imports below the dump hook on purpose: the hook has to be registered before
+# any craftgraph module lands in sys.modules, or the dump misses them.
+from craftgraph import __version__  # noqa: E402
+from craftgraph.graph import (  # noqa: E402
+    NodeType,
+    build_graph,
+    classify_nodes,
+    find_cycles,
+)
+from craftgraph.models import ParsedFile  # noqa: E402
+from craftgraph.parser import (  # noqa: E402
     MappingError,
     ParseError,
     parse_directory,
     parse_file,
     validate_parsed_file,
 )
-from craftgraph.serializer import serialize_file
+from craftgraph.serializer import serialize_file  # noqa: E402
 
 
-def _load_generate_html():
+def _load_generate_html() -> Callable[..., Path]:
     """Import ``generate_html`` lazily so ``pyvis`` isn't required at CLI start.
 
     Returns ``generate_html`` on success. On failure prints an install hint
@@ -65,11 +73,11 @@ def _load_generate_html():
     """
     try:
         import pyvis  # noqa: F401  -- existence check only
+
         from craftgraph.visualizer import generate_html
     except ImportError as exc:
         click.echo(
-            f"Error: {exc}\n"
-            'Install with: pip install "craftgraph[visualizer]"',
+            f'Error: {exc}\nInstall with: pip install "craftgraph[visualizer]"',
             err=True,
         )
         raise SystemExit(1) from exc
@@ -91,11 +99,7 @@ def main(log_level: str | None) -> None:
     from craftgraph import app_dirs
     from craftgraph.log_setup import configure_logging
 
-    name = (
-        log_level.upper()
-        if log_level
-        else str(app_dirs.load_setting("log_level", "INFO"))
-    )
+    name = log_level.upper() if log_level else str(app_dirs.load_setting("log_level", "INFO"))
     configure_logging(level=logging.getLevelNamesMapping().get(name, logging.INFO))
 
 

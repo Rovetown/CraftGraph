@@ -13,6 +13,7 @@ Node classification:
 """
 
 from enum import Enum
+from typing import cast
 
 import networkx as nx
 
@@ -87,7 +88,8 @@ def build_graph(parsed_files: list[ParsedFile]) -> nx.DiGraph[str]:
                 if ing_id not in graph:
                     graph.add_node(ing_id, is_crafted=False)
                 graph.add_edge(
-                    item_id, ing_id,
+                    item_id,
+                    ing_id,
                     required=ingredient.required,
                     edge_kind="ingredient",
                 )
@@ -148,7 +150,7 @@ def find_cycles(graph: nx.DiGraph[str]) -> list[list[str]]:
     key = (graph.number_of_nodes(), graph.number_of_edges())
     cached = graph.graph.get(_CYCLE_CACHE_KEY)
     if cached is not None and cached[0] == key:
-        return cached[1]
+        return cast("list[list[str]]", cached[1])
     ingredient_graph: nx.DiGraph[str] = nx.DiGraph()
     ingredient_graph.add_nodes_from(graph.nodes(data=True))
     for u, v, data in graph.edges(data=True):

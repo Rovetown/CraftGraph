@@ -90,8 +90,7 @@ class _ImageLightbox(QtWidgets.QDialog):
         super().__init__(parent)
         self.setModal(True)
         self.setWindowFlags(
-            QtCore.Qt.WindowType.Dialog
-            | QtCore.Qt.WindowType.FramelessWindowHint,
+            QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.FramelessWindowHint,
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -107,8 +106,10 @@ class _ImageLightbox(QtWidgets.QDialog):
 
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(
-            self._OUTER_MARGIN, self._OUTER_MARGIN,
-            self._OUTER_MARGIN, self._OUTER_MARGIN,
+            self._OUTER_MARGIN,
+            self._OUTER_MARGIN,
+            self._OUTER_MARGIN,
+            self._OUTER_MARGIN,
         )
 
         panel = QtWidgets.QFrame(self)
@@ -131,8 +132,10 @@ class _ImageLightbox(QtWidgets.QDialog):
 
         panel_layout = QtWidgets.QVBoxLayout(panel)
         panel_layout.setContentsMargins(
-            self._INNER_PAD, self._INNER_PAD,
-            self._INNER_PAD, self._INNER_PAD,
+            self._INNER_PAD,
+            self._INNER_PAD,
+            self._INNER_PAD,
+            self._INNER_PAD,
         )
         self._image_label = QtWidgets.QLabel(panel)
         self._image_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -141,7 +144,8 @@ class _ImageLightbox(QtWidgets.QDialog):
 
         # Esc closes -- standard modal dismissal.
         esc = QtGui.QShortcut(
-            QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self,
+            QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape),
+            self,
         )
         esc.activated.connect(self.accept)
 
@@ -281,8 +285,7 @@ class CarouselDialog(QtWidgets.QDialog):
         # no title bar there is nothing to drag, which gives the
         # "fixed-in-the-middle-of-the-app" feel the user wanted.
         self.setWindowFlags(
-            QtCore.Qt.WindowType.Dialog
-            | QtCore.Qt.WindowType.FramelessWindowHint,
+            QtCore.Qt.WindowType.Dialog | QtCore.Qt.WindowType.FramelessWindowHint,
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(self._DEFAULT_SIZE)
@@ -291,8 +294,10 @@ class CarouselDialog(QtWidgets.QDialog):
         # shadow to render into.
         outer = QtWidgets.QHBoxLayout(self)
         outer.setContentsMargins(
-            self._SHADOW_MARGIN, self._SHADOW_MARGIN,
-            self._SHADOW_MARGIN, self._SHADOW_MARGIN,
+            self._SHADOW_MARGIN,
+            self._SHADOW_MARGIN,
+            self._SHADOW_MARGIN,
+            self._SHADOW_MARGIN,
         )
 
         # Inner panel: the rounded "card" everyone sees. Object name lets
@@ -367,9 +372,7 @@ class CarouselDialog(QtWidgets.QDialog):
         self._image_label = _ClickableImageLabel(panel)
         self._image_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self._image_label.setFixedHeight(510)
-        self._image_label.setStyleSheet(
-            "background: rgb(28, 28, 32); border-radius: 10px;"
-        )
+        self._image_label.setStyleSheet("background: rgb(28, 28, 32); border-radius: 10px;")
         self._image_label.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Fixed,
             QtWidgets.QSizePolicy.Policy.Fixed,
@@ -389,16 +392,15 @@ class CarouselDialog(QtWidgets.QDialog):
         # Persistent hint so the click-to-enlarge affordance is visible
         # without relying on the tooltip (which only appears on hover).
         self._image_hint_label = QtWidgets.QLabel(
-            "Click the image to view it full size", panel,
+            "Click the image to view it full size",
+            panel,
         )
         self._image_hint_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         hint_font = self._image_hint_label.font()
         hint_font.setPointSize(9)
         hint_font.setItalic(True)
         self._image_hint_label.setFont(hint_font)
-        self._image_hint_label.setStyleSheet(
-            "color: rgb(150, 150, 160); background: transparent;"
-        )
+        self._image_hint_label.setStyleSheet("color: rgb(150, 150, 160); background: transparent;")
         inner.addWidget(self._image_hint_label)
 
         # Body / caption
@@ -443,14 +445,16 @@ class CarouselDialog(QtWidgets.QDialog):
 
         # Esc key closes -- standard dialog dismissal.
         esc = QtGui.QShortcut(
-            QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape), self,
+            QtGui.QKeySequence(QtCore.Qt.Key.Key_Escape),
+            self,
         )
         esc.activated.connect(self.accept)
         # Arrow-key navigation between slides for keyboard users.
         left = QtGui.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key.Key_Left), self)
         left.activated.connect(self._on_prev)
         right = QtGui.QShortcut(
-            QtGui.QKeySequence(QtCore.Qt.Key.Key_Right), self,
+            QtGui.QKeySequence(QtCore.Qt.Key.Key_Right),
+            self,
         )
         right.activated.connect(self._on_next)
 
@@ -540,9 +544,7 @@ class CarouselDialog(QtWidgets.QDialog):
         """Return the max pixmap rect the lightbox will render into."""
         screen = QtGui.QGuiApplication.primaryScreen()
         avail = (
-            screen.availableGeometry()
-            if screen is not None
-            else QtCore.QRect(0, 0, 1920, 1080)
+            screen.availableGeometry() if screen is not None else QtCore.QRect(0, 0, 1920, 1080)
         )
         chrome = (_ImageLightbox._OUTER_MARGIN + _ImageLightbox._INNER_PAD) * 2
         return QtCore.QSize(

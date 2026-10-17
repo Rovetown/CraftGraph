@@ -19,10 +19,11 @@ from typing import TYPE_CHECKING
 from craftgraph.config import get_config
 
 if TYPE_CHECKING:
+    import networkx as nx
     from NodeGraphQt import BaseNode, NodeGraph
 
     from craftgraph.commands import EditHistory
-    from craftgraph.models import ParsedFile
+    from craftgraph.models import CraftingTab, ParsedFile
     from craftgraph.qt_nodes import CraftGraphBaseNode
 
 # Model objects are mutable dataclasses (unhashable), so we key by id().
@@ -395,6 +396,7 @@ def _node_step(model_id: int, model_to_node: ModelNodeMap) -> float:
             return height + _NODE_V_PAD
     return _LAYOUT_Y_STEP
 
+
 # Processing order for non-fabricator block types.  Each type with entries
 # gets its own column, arranged left-to-right in this order.
 _TOPLEVEL_COLUMN_ORDER: list[str] = [
@@ -597,10 +599,7 @@ def compute_hierarchy_layout(
         max_col_y = y
 
         for attr in _TOPLEVEL_COLUMN_ORDER:
-            items = [
-                item for item in getattr(pf, attr)
-                if id(item) in model_to_node
-            ]
+            items = [item for item in getattr(pf, attr) if id(item) in model_to_node]
             if not items:
                 continue
 
@@ -1194,8 +1193,7 @@ def connect_ingredients(
                 ing_ports = [
                     p
                     for p in node.input_ports()
-                    if p.name().startswith("ingredient_")
-                    and not p.connected_ports()
+                    if p.name().startswith("ingredient_") and not p.connected_ports()
                 ]
                 if not ing_ports:
                     continue
@@ -1225,8 +1223,7 @@ def connect_ingredients(
             ing_ports = [
                 p
                 for p in consumer_node.input_ports()
-                if p.name().startswith("ingredient_")
-                and not p.connected_ports()
+                if p.name().startswith("ingredient_") and not p.connected_ports()
             ]
             if not ing_ports:
                 continue
@@ -1254,8 +1251,6 @@ def validate_parsed_files(
     - Recipe ``path`` pointing to a non-existent tab
     """
     from craftgraph.models import (
-        AddedRecipe,
-        CustomFabricator,
         ModifiedRecipe,
     )
 
@@ -1309,10 +1304,7 @@ def validate_parsed_files(
                 if not tab.parent_tab_path:
                     continue
                 last_seg = tab.parent_tab_path.rsplit("/", 1)[-1]
-                if (
-                    last_seg.lower() != fab.item_id.lower()
-                    and last_seg.lower() not in tab_ids
-                ):
+                if last_seg.lower() != fab.item_id.lower() and last_seg.lower() not in tab_ids:
                     issues.append(
                         f"Tab '{tab.tab_id}' references missing parent "
                         f"'{tab.parent_tab_path}' ({pf.source_path.name})"
@@ -1324,10 +1316,7 @@ def validate_parsed_files(
                     if not path:
                         continue
                     last_seg = path.rsplit("/", 1)[-1]
-                    if (
-                        last_seg.lower() != fab.item_id.lower()
-                        and last_seg.lower() not in tab_ids
-                    ):
+                    if last_seg.lower() != fab.item_id.lower() and last_seg.lower() not in tab_ids:
                         issues.append(
                             f"Recipe '{recipe.item_id}' path references "
                             f"missing tab '{last_seg}' ({pf.source_path.name})"
@@ -1366,8 +1355,8 @@ class UIToModelHandler:
         guard: SyncGuard,
         parsed_files: list[ParsedFile],
         model_to_node: ModelNodeMap | None = None,
-        on_cycle_rejected: "Callable[[str, str, list[str]], None] | None" = None,
-        on_reassignment_warning: "Callable[[str, str], None] | None" = None,
+        on_cycle_rejected: Callable[[str, str, list[str]], None] | None = None,
+        on_reassignment_warning: Callable[[str, str], None] | None = None,
     ) -> None:
         self._graph = graph
         self._history = history
@@ -1380,7 +1369,7 @@ class UIToModelHandler:
         # up models after nodes have been deleted from the graph.
         self._node_id_to_model: dict[str, object] = {}
         if model_to_node is not None:
-            for model_id, node in model_to_node.items():
+            for _model_id, node in model_to_node.items():
                 self._node_id_to_model[node.id] = node.model_ref
         self._connect_signals()
 
@@ -1473,7 +1462,6 @@ class UIToModelHandler:
             AliasRecipe,
             CraftingTab,
             CustomBioFuel,
-            CustomFabricator,
             CustomFood,
             CustomFragmentCount,
             CustomSize,
@@ -1483,7 +1471,7 @@ class UIToModelHandler:
 
         for pf in self._parsed_files:
             # Check top-level lists
-            for attr, cls in [
+            for attr, _cls in [
                 ("modified_recipes", ModifiedRecipe),
                 ("added_recipes", AddedRecipe),
                 ("alias_recipes", AliasRecipe),
@@ -1504,7 +1492,13 @@ class UIToModelHandler:
                 if fab is model:
                     pf.custom_fabricators.remove(fab)
                     return
-                for attr in ("tabs", "added_recipes", "alias_recipes", "moved_recipes", "custom_foods"):
+                for attr in (
+                    "tabs",
+                    "added_recipes",
+                    "alias_recipes",
+                    "moved_recipes",
+                    "custom_foods",
+                ):
                     entries = getattr(fab, attr)
                     if model in entries:
                         entries.remove(model)
@@ -1512,7 +1506,7 @@ class UIToModelHandler:
 
     # -- Cycle detection ------------------------------------------------------
 
-    def _build_ingredient_graph(self) -> "nx.DiGraph[str]":
+    def _build_ingredient_graph(self) -> nx.DiGraph[str]:
         """Build a NetworkX DiGraph of ingredient edges from the current model.
 
         Nodes are item IDs. An edge ``(A, B)`` means recipe A requires
@@ -1665,13 +1659,8 @@ class UIToModelHandler:
                 tab=child_model,
             )
         elif isinstance(child_model, AddedRecipe):
-            if (
-                child_model.path
-                and self._on_reassignment_warning is not None
-            ):
-                self._on_reassignment_warning(
-                    child_model.item_id, child_model.path
-                )
+            if child_model.path and self._on_reassignment_warning is not None:
+                self._on_reassignment_warning(child_model.item_id, child_model.path)
             cmd = NestRecipeInFabricatorCommand(
                 parsed_file=pf,
                 fabricator=parent_model,
@@ -1686,13 +1675,12 @@ class UIToModelHandler:
 
     def _handle_tab_to_tab_connected(
         self,
-        child: "CraftingTab",
-        parent: "CraftingTab",
+        child: CraftingTab,
+        parent: CraftingTab,
         in_port: object,
         out_port: object,
     ) -> None:
         """Handle connecting a tab under another tab's children port."""
-        from craftgraph.models import CraftingTab
 
         if self.warn_before_cycles and self._would_create_tab_cycle(child, parent):
             cycle_path = [child.tab_id, parent.tab_id, child.tab_id]
@@ -1707,11 +1695,10 @@ class UIToModelHandler:
 
     def _would_create_tab_cycle(
         self,
-        child: "CraftingTab",
-        proposed_parent: "CraftingTab",
+        child: CraftingTab,
+        proposed_parent: CraftingTab,
     ) -> bool:
         """Check if setting child's parent to proposed_parent creates a cycle."""
-        from craftgraph.models import CraftingTab
 
         # Build a tab_id -> CraftingTab lookup from all known tabs.
         # Include both fabricator-nested tabs AND top-level crafting_tabs,

@@ -20,9 +20,7 @@ def test_perf_snapshot_records_perf_counter_ns() -> None:
 
 def test_perf_snapshot_delta_ms_returns_float_milliseconds() -> None:
     a = perf_diag.PerfSnapshot.now(action="x")
-    b = perf_diag.PerfSnapshot(
-        action="x", perf_counter_ns=a.perf_counter_ns + 5_000_000
-    )
+    b = perf_diag.PerfSnapshot(action="x", perf_counter_ns=a.perf_counter_ns + 5_000_000)
     assert b.delta_ms_since(a) == pytest.approx(5.0, rel=0.01)
 
 
@@ -111,9 +109,7 @@ class TestInstallLogger:
             perf_diag.logger.removeHandler(h)
         perf_diag._installed_handlers.clear()
 
-    def test_install_logger_creates_file_handler_writing_action_lines(
-        self, tmp_path
-    ) -> None:
+    def test_install_logger_creates_file_handler_writing_action_lines(self, tmp_path) -> None:
         log_path = tmp_path / "diag" / "perf.log"
         perf_diag.install_logger(log_path=log_path)
 
@@ -239,16 +235,13 @@ class TestInstallLoggerUnified:
             perf_diag.install_logger(log_path=tmp_path / "perf.log")
             # FileHandler subclasses StreamHandler, so check the exact type.
             bare_streams = [
-                h for h in perf_diag.logger.handlers
-                if type(h) is logging.StreamHandler
+                h for h in perf_diag.logger.handlers if type(h) is logging.StreamHandler
             ]
             assert bare_streams == []
         finally:
             self._reset()
 
-    def test_perf_log_file_still_receives_records(
-        self, tmp_path, restore_frame_budget_logging
-    ):
+    def test_perf_log_file_still_receives_records(self, tmp_path, restore_frame_budget_logging):
         from craftgraph import perf_diag
 
         log_path = tmp_path / "perf.log"

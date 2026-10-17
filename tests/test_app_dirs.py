@@ -256,7 +256,9 @@ class TestPerfDiagnosticsEnabled:
         monkeypatch.setattr(app_dirs, "is_dev", lambda: True)
         # Even with the setting absent, dev short-circuits.
         monkeypatch.setattr(
-            app_dirs, "load_setting", lambda _key, _default: False,
+            app_dirs,
+            "load_setting",
+            lambda _key, _default: False,
         )
         assert app_dirs.perf_diagnostics_enabled() is True
 
@@ -264,15 +266,17 @@ class TestPerfDiagnosticsEnabled:
         """Fresh release install: setting is unset, helper returns False."""
         monkeypatch.setattr(app_dirs, "is_dev", lambda: False)
         monkeypatch.setattr(
-            app_dirs, "load_setting",
-            lambda key, default: default if key == "perf_diagnostics_enabled" else default,
+            app_dirs,
+            "load_setting",
+            lambda key, default: default,
         )
         assert app_dirs.perf_diagnostics_enabled() is False
 
     def test_release_build_with_toggle_on(self, monkeypatch) -> None:
         monkeypatch.setattr(app_dirs, "is_dev", lambda: False)
         monkeypatch.setattr(
-            app_dirs, "load_setting",
+            app_dirs,
+            "load_setting",
             lambda key, default: True if key == "perf_diagnostics_enabled" else default,
         )
         assert app_dirs.perf_diagnostics_enabled() is True

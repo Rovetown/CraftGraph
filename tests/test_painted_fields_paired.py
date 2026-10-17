@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import pytest
 from PySide6.QtCore import QRectF
 
@@ -68,6 +67,7 @@ class TestPaintedFieldsPairedBorder:
 class TestValidatePairedFieldsPaintedPath:
     def _make_added_recipe_node(self, graph):
         from craftgraph.qt_nodes import IDENTIFIER
+
         node = graph.create_node(f"{IDENTIFIER}.AddedRecipeNode")
         node._maybe_build_widgets()
         return node

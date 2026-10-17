@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import pytest
 from rich.logging import RichHandler
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -181,9 +185,9 @@ def test_fallback_when_rich_is_missing(tmp_path, monkeypatch):
     # A bare StreamHandler is the fallback; FileHandler is a subclass of
     # StreamHandler so filter it out before asserting.
     stream_handlers = [
-        h for h in pkg.handlers
-        if isinstance(h, logging.StreamHandler)
-        and not isinstance(h, logging.FileHandler)
+        h
+        for h in pkg.handlers
+        if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
     ]
     assert len(stream_handlers) == 1
     assert stream_handlers[0].level == logging.INFO

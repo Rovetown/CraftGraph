@@ -16,10 +16,14 @@ from __future__ import annotations
 
 import uuid
 from enum import Enum
+from typing import TYPE_CHECKING, ClassVar
 
 from craftgraph.config import get_config
 from craftgraph.pin_registry import FieldPin, OutputPin, PinType
 from craftgraph.qt_nodes import CraftGraphBaseNode
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QColor
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -65,10 +69,10 @@ class StringVarNode(VariableNode):
 
     NODE_NAME = "String Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.STRING, label="Value", default=""),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="String", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -78,10 +82,10 @@ class IntVarNode(VariableNode):
 
     NODE_NAME = "Int Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.INT, label="Value", default=0, min_val=-9999, max_val=9999),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Int", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -91,7 +95,7 @@ class FloatVarNode(VariableNode):
 
     NODE_NAME = "Float Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin(
             "value",
             PinType.FLOAT,
@@ -102,7 +106,7 @@ class FloatVarNode(VariableNode):
             step=0.1,
         ),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Float", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -112,10 +116,10 @@ class BoolVarNode(VariableNode):
 
     NODE_NAME = "Bool Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.BOOL, label="Value", default=False),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Bool", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -125,10 +129,10 @@ class CSVListVarNode(VariableNode):
 
     NODE_NAME = "CSV List Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.CSV, label="Value", default=""),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="CSV", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -142,10 +146,10 @@ class EnumVarNode(VariableNode):
 
     NODE_NAME = "Enum Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.ENUM, label="Value", enum_items=[]),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Enum", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -161,10 +165,10 @@ class PathVarNode(VariableNode):
 
     NODE_NAME = "Path Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.STRING, label="Path", default=""),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Path", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -174,7 +178,7 @@ class ColorVarNode(VariableNode):
 
     NODE_NAME = "Color Variable"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin(
             "value",
             PinType.CSV,
@@ -183,7 +187,7 @@ class ColorVarNode(VariableNode):
             render_as="swatch",
         ),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Color", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -202,7 +206,7 @@ class ColorVarNode(VariableNode):
         self.set_property("value", formatted)
         self._cg_field_values["value"] = formatted
 
-    def _parse_current_color(self):
+    def _parse_current_color(self) -> QColor:
         from PySide6.QtGui import QColor
 
         parts = [p.strip() for p in self._cg_field_values.get("value", "").split(",")]
@@ -226,10 +230,10 @@ class GetFabricatorNode(VariableNode):
 
     NODE_NAME = "Get Fabricator"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.STRING, label="Fabricator", default="", widget_override="combo"),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Path", pin_color=PORT_COLOR_VAR_OUT),
     ]
 
@@ -250,10 +254,10 @@ class GetTabNode(VariableNode):
 
     NODE_NAME = "Get Tab"
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("value", PinType.STRING, label="Tab", default="", widget_override="combo"),
     ]
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("value_out", label="Path", pin_color=PORT_COLOR_VAR_OUT),
     ]
 

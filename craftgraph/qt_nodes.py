@@ -18,7 +18,7 @@ import functools
 import uuid
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from NodeGraphQt import BaseNode
 from NodeGraphQt.constants import Z_VAL_NODE_WIDGET, PortTypeEnum
@@ -274,7 +274,10 @@ def _install_deserialize_eager_build() -> None:
         NodeFactory.create_node_instance = eager_create  # type: ignore[method-assign]
         try:
             return original_deserialize(
-                self, data, relative_pos=relative_pos, pos=pos,
+                self,
+                data,
+                relative_pos=relative_pos,
+                pos=pos,
                 adjust_graph_style=adjust_graph_style,
             )
         finally:
@@ -376,7 +379,7 @@ NodeBaseWidget.set_custom_widget = _patched_set_custom_widget  # type: ignore[as
 #
 # Fix: bail out early when viewer() is None.
 
-from NodeGraphQt.qgraphics.node_base import NodeItem as _NodeItem
+from NodeGraphQt.qgraphics.node_base import NodeItem as _NodeItem  # noqa: E402
 
 _original_auto_switch_mode = _NodeItem.auto_switch_mode
 
@@ -574,7 +577,7 @@ class PaintedFieldsNodeItem(_NodeItem):
         a = comps[3] if len(comps) == 4 else 1.0
         return QColor.fromRgbF(r, g, b, a)
 
-    def mousePressEvent(self, event: Any) -> None:  # noqa: N802
+    def mousePressEvent(self, event: Any) -> None:
         """Single left-click on a value rect opens the floating editor."""
         if event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
@@ -612,7 +615,10 @@ class PaintedFieldsNodeItem(_NodeItem):
             current = node.get_property(rect.name)
         signals = node._ensure_signals()
         signals.field_edit_requested.emit(
-            node, rect.name, view_rect, "" if current is None else str(current),
+            node,
+            rect.name,
+            view_rect,
+            "" if current is None else str(current),
         )
         event.accept()
 
@@ -867,16 +873,16 @@ class CraftGraphBaseNode(BaseNode):
     __identifier__ = IDENTIFIER
     NODE_NAME = "CraftGraphBase"
     NODE_COLOR: tuple[int, int, int] = (60, 60, 60)
-    FIELD_REGISTRY: list[FieldPin] = []
-    OUTPUT_PINS: list[OutputPin] = []
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = []
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = []
     SPLIT_OUTPUTS: bool = False
     HAS_SPRITE_PORT: bool = False
     IS_VARIABLE: bool = False
     USE_PAINTED_FIELDS: bool = True
     # Pairs of boolean fields where at most one can be True.
-    MUTUAL_EXCLUSIONS: list[tuple[str, str]] = []
+    MUTUAL_EXCLUSIONS: ClassVar[list[tuple[str, str]]] = []
     # Pairs of optional fields that should both be set or both be empty.
-    PAIRED_FIELDS: list[tuple[str, str]] = []
+    PAIRED_FIELDS: ClassVar[list[tuple[str, str]]] = []
 
     def __init__(self, qgraphics_item: type | None = None) -> None:
         if qgraphics_item is None and self.USE_PAINTED_FIELDS:
@@ -1015,8 +1021,9 @@ class CraftGraphBaseNode(BaseNode):
 
     def _build_painted_registry(self) -> None:
         """Painted-fields variant: register hidden properties, no widgets."""
-        from craftgraph.painted_fields import FieldState
         from NodeGraphQt.constants import NodePropWidgetEnum
+
+        from craftgraph.painted_fields import FieldState
 
         self._cg_field_values: dict[str, str] = {}
         self._cg_field_states: dict[str, FieldState] = {}
@@ -1174,7 +1181,7 @@ class CraftGraphBaseNode(BaseNode):
         if hasattr(self, "view"):
             self.view.update()
 
-    def get_field_state(self, name: str) -> "FieldState | None":
+    def get_field_state(self, name: str) -> FieldState | None:
         """Return the FieldState for a painted field, or None if unknown."""
         if not hasattr(self, "_cg_field_states"):
             return None
@@ -1453,18 +1460,42 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
     NODE_NAME = "Modified Recipe"
     NODE_COLOR = NODE_COLOR_MODIFIED_RECIPE
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID (case-insensitive)"),
-        FieldPin("amount_crafted", PinType.INT, label="Amount", default=1, min_val=0, max_val=99,
-                 help_text="Number produced per craft"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        FieldPin(
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID (case-insensitive)",
+        ),
+        FieldPin(
+            "amount_crafted",
+            PinType.INT,
+            label="Amount",
+            default=1,
+            min_val=0,
+            max_val=99,
+            help_text="Number produced per craft",
+        ),
         FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
-        FieldPin("linked_item_ids", PinType.CSV, label="Linked IDs",
-                 help_text="TechType IDs to link with (comma-separated)"),
-        FieldPin("unlocks", PinType.CSV, label="Unlocks",
-                 help_text="Crafting this unlocks ALL listed TechType IDs"),
-        FieldPin("unlocked_by", PinType.CSV, label="Unlocked By",
-                 help_text="Unlocks when ANY ONE of these is scanned"),
+        FieldPin(
+            "linked_item_ids",
+            PinType.CSV,
+            label="Linked IDs",
+            help_text="TechType IDs to link with (comma-separated)",
+        ),
+        FieldPin(
+            "unlocks",
+            PinType.CSV,
+            label="Unlocks",
+            help_text="Crafting this unlocks ALL listed TechType IDs",
+        ),
+        FieldPin(
+            "unlocked_by",
+            PinType.CSV,
+            label="Unlocked By",
+            help_text="Unlocks when ANY ONE of these is scanned",
+        ),
         FieldPin(
             "force_unlock_at_start",
             PinType.ENUM,
@@ -1475,7 +1506,7 @@ class ModifiedRecipeNode(CraftGraphBaseNode):
         ),
     ]
 
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("output", label="ItemID", multi=True, pin_color=PORT_COLOR_OUTPUT),
     ]
 
@@ -1548,9 +1579,14 @@ class AddedRecipeNode(ModifiedRecipeNode):
     NODE_NAME = "Added Recipe"
     NODE_COLOR = NODE_COLOR_ADDED_RECIPE
 
-    FIELD_REGISTRY = ModifiedRecipeNode.FIELD_REGISTRY + [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        *ModifiedRecipeNode.FIELD_REGISTRY,
         FieldPin(
-            "path", PinType.STRING, label="Path", required=True, preferred_var_kind="PathVar",
+            "path",
+            PinType.STRING,
+            label="Path",
+            required=True,
+            preferred_var_kind="PathVar",
             help_text="Crafting tree path (e.g. Fabricator/Resources)",
         ),
         FieldPin(
@@ -1570,7 +1606,7 @@ class AddedRecipeNode(ModifiedRecipeNode):
             enum_items=["", *TECH_CATEGORIES],
         ),
     ]
-    PAIRED_FIELDS = [("pda_group", "pda_category")]
+    PAIRED_FIELDS: ClassVar[list[tuple[str, str]]] = [("pda_group", "pda_category")]
 
 
 class AliasRecipeNode(AddedRecipeNode):
@@ -1580,15 +1616,34 @@ class AliasRecipeNode(AddedRecipeNode):
     NODE_COLOR = NODE_COLOR_ALIAS_RECIPE
     HAS_SPRITE_PORT = True
 
-    FIELD_REGISTRY = AddedRecipeNode.FIELD_REGISTRY + [
-        FieldPin("display_name", PinType.STRING, label="Display Name",
-                 help_text="In-game display name (quoted in .txt)"),
-        FieldPin("tooltip", PinType.STRING, label="Tooltip",
-                 help_text="In-game item description (quoted in .txt)"),
-        FieldPin("functional_id", PinType.STRING, label="Functional ID", nullable=True,
-                 help_text="Existing TechType to clone behavior from"),
-        FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True,
-                 help_text="Existing TechType for inventory icon"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        *AddedRecipeNode.FIELD_REGISTRY,
+        FieldPin(
+            "display_name",
+            PinType.STRING,
+            label="Display Name",
+            help_text="In-game display name (quoted in .txt)",
+        ),
+        FieldPin(
+            "tooltip",
+            PinType.STRING,
+            label="Tooltip",
+            help_text="In-game item description (quoted in .txt)",
+        ),
+        FieldPin(
+            "functional_id",
+            PinType.STRING,
+            label="Functional ID",
+            nullable=True,
+            help_text="Existing TechType to clone behavior from",
+        ),
+        FieldPin(
+            "sprite_item_id",
+            PinType.STRING,
+            label="Sprite ID",
+            nullable=True,
+            help_text="Existing TechType for inventory icon",
+        ),
     ]
 
 
@@ -1598,15 +1653,44 @@ class CustomFoodNode(AliasRecipeNode):
     NODE_NAME = "Custom Food"
     NODE_COLOR = NODE_COLOR_CUSTOM_FOOD
 
-    FIELD_REGISTRY = AliasRecipeNode.FIELD_REGISTRY + [
-        FieldPin("food_value", PinType.INT, label="Food", default=0, min_val=-200, max_val=200,
-                 help_text="Nutrition value (-200 to +200)"),
-        FieldPin("water_value", PinType.INT, label="Water", default=0, min_val=-200, max_val=200,
-                 help_text="Hydration value (-200 to +200)"),
-        FieldPin("oxygen_value", PinType.INT, label="Oxygen", default=0, min_val=-200, max_val=200,
-                 help_text="Oxygen restoration (-200 to +200)"),
-        FieldPin("health_value", PinType.INT, label="Health", default=0, min_val=-200, max_val=200,
-                 help_text="Health restoration (-200 to +200)"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        *AliasRecipeNode.FIELD_REGISTRY,
+        FieldPin(
+            "food_value",
+            PinType.INT,
+            label="Food",
+            default=0,
+            min_val=-200,
+            max_val=200,
+            help_text="Nutrition value (-200 to +200)",
+        ),
+        FieldPin(
+            "water_value",
+            PinType.INT,
+            label="Water",
+            default=0,
+            min_val=-200,
+            max_val=200,
+            help_text="Hydration value (-200 to +200)",
+        ),
+        FieldPin(
+            "oxygen_value",
+            PinType.INT,
+            label="Oxygen",
+            default=0,
+            min_val=-200,
+            max_val=200,
+            help_text="Oxygen restoration (-200 to +200)",
+        ),
+        FieldPin(
+            "health_value",
+            PinType.INT,
+            label="Health",
+            default=0,
+            min_val=-200,
+            max_val=200,
+            help_text="Health restoration (-200 to +200)",
+        ),
         FieldPin(
             "decay_rate_mod",
             PinType.FLOAT,
@@ -1648,13 +1732,26 @@ class FabricatorNode(CraftGraphBaseNode):
     NODE_COLOR = NODE_COLOR_FABRICATOR
     SPLIT_OUTPUTS = True
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID (case-insensitive)"),
-        FieldPin("display_name", PinType.STRING, label="Display Name",
-                 help_text="In-game display name (quoted in .txt)"),
-        FieldPin("tooltip", PinType.STRING, label="Tooltip",
-                 help_text="In-game item description (quoted in .txt)"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        FieldPin(
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID (case-insensitive)",
+        ),
+        FieldPin(
+            "display_name",
+            PinType.STRING,
+            label="Display Name",
+            help_text="In-game display name (quoted in .txt)",
+        ),
+        FieldPin(
+            "tooltip",
+            PinType.STRING,
+            label="Tooltip",
+            help_text="In-game item description (quoted in .txt)",
+        ),
         FieldPin(
             "model",
             PinType.ENUM,
@@ -1662,12 +1759,27 @@ class FabricatorNode(CraftGraphBaseNode):
             enum_items=list(FABRICATOR_MODELS),
             help_text="Fabricator visual model (MoonPool is SN1 only)",
         ),
-        FieldPin("color_tint", PinType.CSV, label="Color Tint", preferred_var_kind="ColorVar",
-                 help_text="RGB(A) color tint, each 0.0-1.0"),
-        FieldPin("allowed_in_base", PinType.BOOL, label="In Base", default=True,
-                 help_text="Can be built in base"),
-        FieldPin("allowed_in_cyclops", PinType.BOOL, label="In Cyclops", default=True,
-                 help_text="Can be built in Cyclops"),
+        FieldPin(
+            "color_tint",
+            PinType.CSV,
+            label="Color Tint",
+            preferred_var_kind="ColorVar",
+            help_text="RGB(A) color tint, each 0.0-1.0",
+        ),
+        FieldPin(
+            "allowed_in_base",
+            PinType.BOOL,
+            label="In Base",
+            default=True,
+            help_text="Can be built in base",
+        ),
+        FieldPin(
+            "allowed_in_cyclops",
+            PinType.BOOL,
+            label="In Cyclops",
+            default=True,
+            help_text="Can be built in Cyclops",
+        ),
         FieldPin(
             "pda_group",
             PinType.ENUM,
@@ -1692,13 +1804,17 @@ class FabricatorNode(CraftGraphBaseNode):
             enum_items=["auto", "YES", "NO"],
             help_text="Make available without scanning",
         ),
-        FieldPin("unlocked_by", PinType.CSV, label="Unlocked By",
-                 help_text="Unlocks when ANY ONE of these is scanned"),
+        FieldPin(
+            "unlocked_by",
+            PinType.CSV,
+            label="Unlocked By",
+            help_text="Unlocks when ANY ONE of these is scanned",
+        ),
         FieldPin("ingredients", PinType.INGREDIENT_LIST, label="Ingredients"),
     ]
-    PAIRED_FIELDS = [("pda_group", "pda_category")]
+    PAIRED_FIELDS: ClassVar[list[tuple[str, str]]] = [("pda_group", "pda_category")]
 
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("tabs_out", label="Tabs", pin_color=PORT_COLOR_CHILDREN),
         OutputPin("added_out", label="Added", pin_color=PORT_COLOR_CHILDREN),
         OutputPin("alias_out", label="Alias", pin_color=PORT_COLOR_CHILDREN),
@@ -1811,20 +1927,37 @@ class CraftingTabNode(CraftGraphBaseNode):
     NODE_COLOR = NODE_COLOR_CRAFTING_TAB
     HAS_SPRITE_PORT = True
 
-    FIELD_REGISTRY = [
-        FieldPin("tab_id", PinType.STRING, label="TabID", required=True,
-                 help_text="Unique tab identifier within fabricator"),
-        FieldPin("display_name", PinType.STRING, label="Display Name",
-                 help_text="Tab display name in crafting menu"),
-        FieldPin("sprite_item_id", PinType.STRING, label="Sprite ID", nullable=True,
-                 help_text="Existing TechType for tab icon"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin(
-            "parent_tab_path", PinType.STRING, label="Parent Path", preferred_var_kind="PathVar",
+            "tab_id",
+            PinType.STRING,
+            label="TabID",
+            required=True,
+            help_text="Unique tab identifier within fabricator",
+        ),
+        FieldPin(
+            "display_name",
+            PinType.STRING,
+            label="Display Name",
+            help_text="Tab display name in crafting menu",
+        ),
+        FieldPin(
+            "sprite_item_id",
+            PinType.STRING,
+            label="Sprite ID",
+            nullable=True,
+            help_text="Existing TechType for tab icon",
+        ),
+        FieldPin(
+            "parent_tab_path",
+            PinType.STRING,
+            label="Parent Path",
+            preferred_var_kind="PathVar",
             help_text="Parent tab path in fabricator tree",
         ),
     ]
 
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("children", label="Children", pin_color=PORT_COLOR_CHILDREN),
     ]
 
@@ -1840,9 +1973,14 @@ class CustomSizeNode(CraftGraphBaseNode):
     NODE_NAME = "Custom Size"
     NODE_COLOR = NODE_COLOR_CUSTOM_SIZE
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID (case-insensitive)"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        FieldPin(
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID (case-insensitive)",
+        ),
         FieldPin(
             "size_width",
             PinType.INT,
@@ -1872,9 +2010,14 @@ class MovedRecipeNode(CraftGraphBaseNode):
     NODE_NAME = "Moved Recipe"
     NODE_COLOR = NODE_COLOR_MOVED_RECIPE
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID of recipe to move"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        FieldPin(
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID of recipe to move",
+        ),
         FieldPin(
             "old_path",
             PinType.STRING,
@@ -1891,12 +2034,22 @@ class MovedRecipeNode(CraftGraphBaseNode):
             preferred_var_kind="PathVar",
             help_text="Destination crafting tree path",
         ),
-        FieldPin("copied", PinType.BOOL, label="Copied", default=False,
-                 help_text="Copy instead of move (keeps original)"),
-        FieldPin("hidden", PinType.BOOL, label="Hidden", default=False,
-                 help_text="Hide recipe from crafting menu"),
+        FieldPin(
+            "copied",
+            PinType.BOOL,
+            label="Copied",
+            default=False,
+            help_text="Copy instead of move (keeps original)",
+        ),
+        FieldPin(
+            "hidden",
+            PinType.BOOL,
+            label="Hidden",
+            default=False,
+            help_text="Hide recipe from crafting menu",
+        ),
     ]
-    MUTUAL_EXCLUSIONS = [("copied", "hidden")]
+    MUTUAL_EXCLUSIONS: ClassVar[list[tuple[str, str]]] = [("copied", "hidden")]
 
 
 class CustomBioFuelNode(CraftGraphBaseNode):
@@ -1905,9 +2058,14 @@ class CustomBioFuelNode(CraftGraphBaseNode):
     NODE_NAME = "Custom BioFuel"
     NODE_COLOR = NODE_COLOR_CUSTOM_BIO_FUEL
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID (case-insensitive)"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
+        FieldPin(
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID (case-insensitive)",
+        ),
         FieldPin(
             "energy",
             PinType.FLOAT,
@@ -1927,11 +2085,21 @@ class CustomFragmentCountNode(CraftGraphBaseNode):
     NODE_NAME = "Custom Fragment Count"
     NODE_COLOR = NODE_COLOR_CUSTOM_FRAGMENT_COUNT
 
-    FIELD_REGISTRY = [
-        FieldPin("item_id", PinType.STRING, label="ItemID", required=True,
-                 help_text="TechType ID (case-insensitive)"),
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin(
-            "fragments_to_scan", PinType.INT, label="Fragments", default=1, min_val=1, max_val=30,
+            "item_id",
+            PinType.STRING,
+            label="ItemID",
+            required=True,
+            help_text="TechType ID (case-insensitive)",
+        ),
+        FieldPin(
+            "fragments_to_scan",
+            PinType.INT,
+            label="Fragments",
+            default=1,
+            min_val=1,
+            max_val=30,
             help_text="Number of fragments needed to unlock",
         ),
     ]
@@ -1949,11 +2117,11 @@ class OrphanIngredientNode(CraftGraphBaseNode):
     NODE_COLOR = NODE_COLOR_ORPHAN_INGREDIENT
     IS_ORPHAN: bool = True
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("item_id", PinType.STRING, label="ItemID"),
     ]
 
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("output", multi=True, pin_color=PORT_COLOR_OUTPUT),
     ]
 
@@ -2019,11 +2187,11 @@ class SpriteNode(CraftGraphBaseNode):
     NODE_COLOR = NODE_COLOR_SPRITE
     USE_PAINTED_FIELDS = False
 
-    FIELD_REGISTRY = [
+    FIELD_REGISTRY: ClassVar[list[FieldPin]] = [
         FieldPin("file_path", PinType.STRING, label="File"),
     ]
 
-    OUTPUT_PINS = [
+    OUTPUT_PINS: ClassVar[list[OutputPin]] = [
         OutputPin("sprite_out", multi=True, pin_color=PORT_COLOR_SPRITE),
     ]
 

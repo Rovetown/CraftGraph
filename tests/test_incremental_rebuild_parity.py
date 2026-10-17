@@ -92,14 +92,11 @@ def _snapshot_window(window) -> dict:
 def _make_window(qapp, qtbot, monkeypatch, tmp_path):
     """Construct a CraftGraphWindow isolated from real settings."""
     from craftgraph import app_dirs
-
     from tests.conftest import make_test_window
 
     settings_dir = tmp_path / "settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(
-        app_dirs, "settings_path", lambda: settings_dir / "settings.json"
-    )
+    monkeypatch.setattr(app_dirs, "settings_path", lambda: settings_dir / "settings.json")
     return make_test_window(qtbot)
 
 
@@ -153,25 +150,25 @@ def test_unchanged_file_skipped(qapp, qtbot, monkeypatch, baseline_copy, tmp_pat
     win_a.load_recipes(baseline_copy)
 
     nodes_before = sum(len(t.model_to_node) for t in win_a._file_tabs)
-    pre_node_ids = [
-        {n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs
-    ]
+    pre_node_ids = [{n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs]
 
     target_file.write_bytes(target_file.read_bytes())
     win_a._on_watcher_rebuild([])
 
     nodes_after = sum(len(t.model_to_node) for t in win_a._file_tabs)
     assert nodes_after == nodes_before
-    post_node_ids = [
-        {n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs
-    ]
+    post_node_ids = [{n.id for n in t.graph.all_nodes()} for t in win_a._file_tabs]
     assert pre_node_ids == post_node_ids
 
 
 def test_cross_file_fab_rename_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
     """Rename a CustomFabricator ItemID. Cross-file Path strings still resolve."""
     fab_file = next(
-        (p for p in baseline_copy.glob("*.txt") if "CustomFabricators:" in p.read_text(encoding="utf-8")),
+        (
+            p
+            for p in baseline_copy.glob("*.txt")
+            if "CustomFabricators:" in p.read_text(encoding="utf-8")
+        ),
         None,
     )
     if fab_file is None:
@@ -201,12 +198,7 @@ def test_added_file_parity(qapp, qtbot, monkeypatch, baseline_copy, tmp_path):
 
     new_file = baseline_copy / "ParityAdded_Sizes.txt"
     new_file.write_text(
-        "CustomSizes:\n"
-        "(\n"
-        "    ItemID: ParitySizeTest;\n"
-        "    Width: 2;\n"
-        "    Height: 2;\n"
-        ");\n",
+        "CustomSizes:\n(\n    ItemID: ParitySizeTest;\n    Width: 2;\n    Height: 2;\n);\n",
         encoding="utf-8",
     )
     win_a._on_watcher_rebuild([])

@@ -52,8 +52,8 @@ class UnresolvedRefIssue:
     ``"linked_item_ids"``.
     """
 
-    item_id: str       # the recipe whose field contains the unresolved ref
-    target: str        # the ID that couldn't be resolved
+    item_id: str  # the recipe whose field contains the unresolved ref
+    target: str  # the ID that couldn't be resolved
     ref_type: str
     source_file: str
 

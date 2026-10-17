@@ -185,9 +185,7 @@ class WelcomeWidget(QtWidgets.QWidget):
         except Exception:
             ver = "dev"
         version_label = QtWidgets.QLabel(f"v{ver}")
-        version_label.setStyleSheet(
-            f"font-size: {scaled_pt(10)}pt; color: rgb(140, 140, 140);"
-        )
+        version_label.setStyleSheet(f"font-size: {scaled_pt(10)}pt; color: rgb(140, 140, 140);")
         version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version_label)
 
@@ -302,8 +300,7 @@ class _RecentEntryItem(QtWidgets.QFrame):
         path_style = f"font-size: {path_pt}pt; color: rgb(120, 120, 120);"
         if self._stale:
             path_style = (
-                f"font-size: {path_pt}pt; color: rgb(80, 80, 80);"
-                " text-decoration: line-through;"
+                f"font-size: {path_pt}pt; color: rgb(80, 80, 80); text-decoration: line-through;"
             )
         path_label.setStyleSheet(path_style)
         path_label.setWordWrap(True)
@@ -321,9 +318,7 @@ def _bundled_icon() -> Path | None:
 
 
 GITHUB_URL = "https://github.com/Rovetown/CraftGraph"
-CC3_WIKI_URL = (
-    "https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3"
-)
+CC3_WIKI_URL = "https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3"
 _LINKS: list[tuple[str, str]] = [
     ("GitHub", GITHUB_URL),
     ("CC3 Wiki", CC3_WIKI_URL),

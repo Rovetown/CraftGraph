@@ -11,7 +11,6 @@ Run:  uv run --extra qt pytest tests/test_minimap.py -v
 
 from __future__ import annotations
 
-
 import pytest
 
 pytest.importorskip(

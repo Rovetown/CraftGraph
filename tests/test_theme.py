@@ -223,9 +223,18 @@ class TestColorblindPalettes:
     def test_palettes_have_all_fields(self) -> None:
         for mode, palette in COLORBLIND_PALETTES.items():
             for f in (
-                "modified_recipe", "added_recipe", "alias_recipe", "custom_food",
-                "fabricator", "crafting_tab", "custom_size", "moved_recipe",
-                "custom_bio_fuel", "custom_fragment_count", "orphan_ingredient", "sprite",
+                "modified_recipe",
+                "added_recipe",
+                "alias_recipe",
+                "custom_food",
+                "fabricator",
+                "crafting_tab",
+                "custom_size",
+                "moved_recipe",
+                "custom_bio_fuel",
+                "custom_fragment_count",
+                "orphan_ingredient",
+                "sprite",
             ):
                 val = getattr(palette, f)
                 assert isinstance(val, tuple), f"{mode}.{f} not a tuple"
@@ -420,17 +429,19 @@ class TestNodeEditorSettings:
         assert rebuilt.grid_style == defaults.grid_style
 
     def test_from_dict_invalid_values_fall_back(self) -> None:
-        rebuilt = node_editor_settings_from_dict({
-            "zoom_speed": 99.0,
-            "grid_size": 5,
-            "grid_style": "hexagonal",
-            "invert_zoom": "yes",
-            "thumbnail_size": 999,
-            "pipe_style": "zigzag",
-            "pipe_width": 0.1,
-            "show_thumbnails": "maybe",
-            "animate_pipes": 42,
-        })
+        rebuilt = node_editor_settings_from_dict(
+            {
+                "zoom_speed": 99.0,
+                "grid_size": 5,
+                "grid_style": "hexagonal",
+                "invert_zoom": "yes",
+                "thumbnail_size": 999,
+                "pipe_style": "zigzag",
+                "pipe_width": 0.1,
+                "show_thumbnails": "maybe",
+                "animate_pipes": 42,
+            }
+        )
         defaults = NodeEditorSettings()
         assert rebuilt.zoom_speed == defaults.zoom_speed
         assert rebuilt.grid_size == defaults.grid_size
@@ -502,14 +513,16 @@ class TestCodeEditorSettingsRoundTrip:
         assert rebuilt == CodeEditorSettings()
 
     def test_invalid_values_fall_back_to_defaults(self) -> None:
-        rebuilt = code_editor_settings_from_dict({
-            "font_family": "",
-            "font_size": 99,
-            "tab_width": 0,
-            "parse_debounce_ms": 50,
-            "show_line_numbers": "yes",
-            "auto_indent": 1,
-        })
+        rebuilt = code_editor_settings_from_dict(
+            {
+                "font_family": "",
+                "font_size": 99,
+                "tab_width": 0,
+                "parse_debounce_ms": 50,
+                "show_line_numbers": "yes",
+                "auto_indent": 1,
+            }
+        )
         defaults = CodeEditorSettings()
         assert rebuilt.font_family == defaults.font_family
         assert rebuilt.font_size == defaults.font_size
@@ -521,10 +534,17 @@ class TestCodeEditorSettingsRoundTrip:
     def test_to_dict_keys(self) -> None:
         d = code_editor_settings_to_dict(CodeEditorSettings())
         expected_keys = {
-            "font_family", "font_size", "show_line_numbers",
-            "highlight_current_line", "word_wrap", "tab_width",
-            "auto_indent", "auto_close_brackets", "strip_trailing_whitespace",
-            "parse_debounce_enabled", "parse_debounce_ms",
+            "font_family",
+            "font_size",
+            "show_line_numbers",
+            "highlight_current_line",
+            "word_wrap",
+            "tab_width",
+            "auto_indent",
+            "auto_close_brackets",
+            "strip_trailing_whitespace",
+            "parse_debounce_enabled",
+            "parse_debounce_ms",
             "show_parse_errors_inline",
         }
         assert set(d.keys()) == expected_keys
@@ -585,11 +605,13 @@ class TestFileWatchingSettingsRoundTrip:
     def test_invalid_notification_values_fall_back(self) -> None:
         from craftgraph.theme import FileWatchingSettings, file_watching_settings_from_dict
 
-        rebuilt = file_watching_settings_from_dict({
-            "notify_status_bar": "yes",
-            "notify_flash_tab": 1,
-            "notify_sound_on_cycle": "true",
-        })
+        rebuilt = file_watching_settings_from_dict(
+            {
+                "notify_status_bar": "yes",
+                "notify_flash_tab": 1,
+                "notify_sound_on_cycle": "true",
+            }
+        )
         defaults = FileWatchingSettings()
         assert rebuilt.notify_status_bar is defaults.notify_status_bar
         assert rebuilt.notify_flash_tab is defaults.notify_flash_tab

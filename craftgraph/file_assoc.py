@@ -193,9 +193,7 @@ def _notify_shell_windows() -> None:
 
         SHCNE_ASSOCCHANGED = 0x08000000
         SHCNF_IDLIST = 0x0000
-        ctypes.windll.shell32.SHChangeNotify(
-            SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None
-        )
+        ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
     except Exception:
         logger.debug("SHChangeNotify failed; Explorer may need a manual refresh.")
 

@@ -50,7 +50,8 @@ def test_mark_shown_persists_version(monkeypatch, tmp_path) -> None:
 
 
 def test_mark_shown_one_version_does_not_silence_another(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ) -> None:
     """Marking 0.1.0-alpha.1 as seen does not affect a hypothetical 0.2.0."""
     from craftgraph import app_dirs

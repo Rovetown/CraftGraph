@@ -67,9 +67,19 @@ def _ensure_binary(build: bool) -> None:
         raise SystemExit(2)
     sys.stderr.write(f"Building release binary at {BINARY}...\n")
     build_cmd = [
-        "uv", "run", "pyinstaller", "--onedir", "--name", "craftgraph",
-        "--collect-data", "pyvis", "--collect-data", "craftgraph",
-        "--optimize", "2", "--noconfirm",
+        "uv",
+        "run",
+        "pyinstaller",
+        "--onedir",
+        "--name",
+        "craftgraph",
+        "--collect-data",
+        "pyvis",
+        "--collect-data",
+        "craftgraph",
+        "--optimize",
+        "2",
+        "--noconfirm",
         str(REPO_ROOT / "craftgraph" / "cli.py"),
     ]
     subprocess.run(build_cmd, cwd=REPO_ROOT, check=True)
@@ -99,8 +109,7 @@ def _print_table(rows: list[tuple[str, float, float]]) -> None:
         else:
             verdict = "release slower -- investigate"
         print(
-            f"{label:<{name_width}}  {dev_ms:>10.1f}  {rel_ms:>14.1f}  "
-            f"{ratio:>7.2f}x  {verdict}"
+            f"{label:<{name_width}}  {dev_ms:>10.1f}  {rel_ms:>14.1f}  {ratio:>7.2f}x  {verdict}"
         )
 
 
@@ -108,7 +117,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--build", action="store_true", help="Build the binary if missing.")
     parser.add_argument(
-        "--runs", type=int, default=5, help="Invocations per scenario (default 5).",
+        "--runs",
+        type=int,
+        default=5,
+        help="Invocations per scenario (default 5).",
     )
     args = parser.parse_args(argv)
 

@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import sys
 from collections import Counter
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterator, Optional
 
 _GR_GDIOBJECTS = 0
 _GR_USEROBJECTS = 1
@@ -41,7 +41,7 @@ def _windows_handle_count(flag: int) -> int:
         user32.GetGuiResources.restype = wintypes.DWORD
         handle = kernel32.GetCurrentProcess()
         return int(user32.GetGuiResources(handle, flag))
-    except (OSError, AttributeError):
+    except OSError, AttributeError:
         return 0
 
 
@@ -122,13 +122,13 @@ class Measurement:
 
 
 _threshold: int = 20
-_on_threshold_exceeded: Optional[Callable[[str, int], None]] = None
+_on_threshold_exceeded: Callable[[str, int], None] | None = None
 
 
 def install_logger(
     *,
     threshold: int = 20,
-    on_threshold_exceeded: Optional[Callable[[str, int], None]] = None,
+    on_threshold_exceeded: Callable[[str, int], None] | None = None,
 ) -> None:
     """Configure how measure() reports large deltas.
 
@@ -172,10 +172,7 @@ def measure(action: str, *, log: bool = True) -> Iterator[Measurement]:
                 f"delta={delta.gui_objects:+d} "
                 f"widgets={delta.widget_count:+d}",
             )
-        if (
-            _on_threshold_exceeded is not None
-            and delta.gui_objects > _threshold
-        ):
+        if _on_threshold_exceeded is not None and delta.gui_objects > _threshold:
             _on_threshold_exceeded(action, delta.gui_objects)
 
 

@@ -394,9 +394,7 @@ class TestIntegration:
 class TestStatFastPath:
     """When mtime+size+inode are unchanged, skip the parser entirely."""
 
-    def test_unchanged_stat_skips_reparse(
-        self, tmp_path: Path, monkeypatch
-    ) -> None:
+    def test_unchanged_stat_skips_reparse(self, tmp_path: Path, monkeypatch) -> None:
         from craftgraph import watcher as watcher_mod
 
         recipe_file = tmp_path / "r.txt"

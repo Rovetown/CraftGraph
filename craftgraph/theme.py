@@ -13,6 +13,7 @@ used from CLI or headless contexts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from craftgraph.config import get_config
 
@@ -497,7 +498,8 @@ def code_editor_settings_from_dict(data: dict[str, object]) -> CodeEditorSetting
         auto_close_brackets = defaults.auto_close_brackets
 
     strip_trailing_whitespace = data.get(
-        "strip_trailing_whitespace", defaults.strip_trailing_whitespace,
+        "strip_trailing_whitespace",
+        defaults.strip_trailing_whitespace,
     )
     if not isinstance(strip_trailing_whitespace, bool):
         strip_trailing_whitespace = defaults.strip_trailing_whitespace
@@ -511,7 +513,8 @@ def code_editor_settings_from_dict(data: dict[str, object]) -> CodeEditorSetting
         parse_debounce_ms = defaults.parse_debounce_ms
 
     show_parse_errors_inline = data.get(
-        "show_parse_errors_inline", defaults.show_parse_errors_inline,
+        "show_parse_errors_inline",
+        defaults.show_parse_errors_inline,
     )
     if not isinstance(show_parse_errors_inline, bool):
         show_parse_errors_inline = defaults.show_parse_errors_inline
@@ -845,9 +848,18 @@ def theme_from_dict(data: dict[str, object]) -> ThemeColors:
     node_kwargs: dict[str, Color3] = {}
     if isinstance(node_data, dict):
         for field_name in (
-            "modified_recipe", "added_recipe", "alias_recipe", "custom_food",
-            "fabricator", "crafting_tab", "custom_size", "moved_recipe",
-            "custom_bio_fuel", "custom_fragment_count", "orphan_ingredient", "sprite",
+            "modified_recipe",
+            "added_recipe",
+            "alias_recipe",
+            "custom_food",
+            "fabricator",
+            "crafting_tab",
+            "custom_size",
+            "moved_recipe",
+            "custom_bio_fuel",
+            "custom_fragment_count",
+            "orphan_ingredient",
+            "sprite",
         ):
             rgb = _to_rgb3(node_data.get(field_name))
             if rgb is not None:
@@ -855,7 +867,7 @@ def theme_from_dict(data: dict[str, object]) -> ThemeColors:
 
     # -- Highlight colors --
     hl_data = data.get("highlight", {})
-    hl_kwargs: dict[str, object] = {}
+    hl_kwargs: dict[str, Any] = {}
     if isinstance(hl_data, dict):
         ce = _to_rgba4(hl_data.get("cycle_edge"))
         if ce is not None:

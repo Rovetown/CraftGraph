@@ -13,6 +13,7 @@ from craftgraph.qt_variable_nodes import ColorVarNode
 @pytest.fixture
 def graph(qapp, qtbot):
     from NodeGraphQt import NodeGraph
+
     from craftgraph.qt_nodes import all_node_classes
     from craftgraph.qt_variable_nodes import all_variable_node_classes
 

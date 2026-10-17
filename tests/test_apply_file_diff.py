@@ -15,8 +15,9 @@ from craftgraph.models import Ingredient, ModifiedRecipe, ParsedFile
 
 @pytest.fixture
 def graph(qapp, qtbot):
-    from craftgraph.qt_nodes import all_node_classes
     from NodeGraphQt import NodeGraph
+
+    from craftgraph.qt_nodes import all_node_classes
 
     g = NodeGraph()
     g.set_acyclic(False)

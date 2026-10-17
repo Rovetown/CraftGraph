@@ -24,6 +24,7 @@ class PyvisNotInstalledError(ImportError):
     only want to skip the visualizer cleanly can ``except ImportError``.
     """
 
+
 # -- Node styling constants ----------------------------------------------------
 
 _NODE_COLORS: dict[NodeType, str] = {
@@ -47,7 +48,7 @@ _CYCLE_EDGE_WIDTH = _VIS_CFG.cycle_edge_width
 # Unlock-edge palette. Public so tests can assert against the same values.
 # Distinct from the cycle red and from the muted ingredient gray. Solid line
 # for ``unlocks`` (ALL-of semantics); dashed for ``unlocked_by`` (any-of).
-UNLOCKS_EDGE_COLOR = "#27ae60"      # green
+UNLOCKS_EDGE_COLOR = "#27ae60"  # green
 UNLOCKED_BY_EDGE_COLOR = "#e67e22"  # orange
 
 

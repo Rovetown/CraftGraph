@@ -7,13 +7,11 @@ alignment to port rows).
 
 from __future__ import annotations
 
-
 import pytest
-
-from tests.conftest import make_scene_mouse_event
 
 from craftgraph.painted_fields import FieldRect, FieldState
 from craftgraph.pin_registry import PinType
+from tests.conftest import make_scene_mouse_event
 
 
 class TestFieldRectDefaults:
@@ -104,7 +102,7 @@ class TestPaintedFieldsAlignToPortRows:
                     port_item.boundingRect().height(),
                     text_item.boundingRect().height(),
                 )
-                port_rows_by_field[name[len("field_"):]] = (port_item.y(), row_h)
+                port_rows_by_field[name[len("field_") :]] = (port_item.y(), row_h)
         rects_by_name = {r.name: r for r in node.view._cg_field_rects}
         for field_name, (port_y, row_h) in port_rows_by_field.items():
             rect = rects_by_name.get(field_name)
@@ -122,7 +120,7 @@ class TestPaintedFieldsAlignToPortRows:
             name = port_item.name
             if not name.startswith("field_"):
                 continue
-            field_name = name[len("field_"):]
+            field_name = name[len("field_") :]
             rect = rects_by_name.get(field_name)
             assert rect is not None
             assert rect.value_rect is not None
@@ -204,6 +202,7 @@ class TestRenderAsDispatch:
     def test_swatch_field_fills_value_rect(self, qapp, graph):
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QColor, QPainter, QPixmap
+
         from craftgraph.painted_fields import FieldRect, FieldState
         from craftgraph.pin_registry import PinType
 
@@ -238,6 +237,7 @@ class TestRenderAsDispatch:
         floating editor overlays them seamlessly."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QColor, QPainter, QPixmap
+
         from craftgraph.painted_fields import FIELD_FILL_RGB, FieldRect, FieldState
         from craftgraph.pin_registry import PinType
 

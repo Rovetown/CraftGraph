@@ -2501,8 +2501,16 @@ class TestExtractIds:
         )
         result = extract_ids([pf])
         expected = {
-            "MyFab", "Titanium", "Builder", "InnerTab", "Beacon",
-            "InnerRecipe", "InnerAlias", "Knife", "InnerMoved", "InnerFood",
+            "MyFab",
+            "Titanium",
+            "Builder",
+            "InnerTab",
+            "Beacon",
+            "InnerRecipe",
+            "InnerAlias",
+            "Knife",
+            "InnerMoved",
+            "InnerFood",
         }
         assert result == expected
 
@@ -2627,7 +2635,7 @@ def test_collect_defined_ids_includes_fabricator_nested_recipes() -> None:
         "CustomFabricators:\n"
         "(\n"
         "    ItemID: MyFab;\n"
-        "    DisplayName: \"My Fabricator\";\n"
+        '    DisplayName: "My Fabricator";\n'
         "    AddedRecipes:\n"
         "    (\n"
         "        ItemID: FabItem;\n"

@@ -112,8 +112,8 @@ from craftgraph.sync import (
     _LAYOUT_X_RECIPE,
     _LAYOUT_X_TAB,
     _LAYOUT_Y_GROUP_GAP,
-    _node_step,
     UIToModelHandler,
+    _node_step,
     apply_layout,
     compute_hierarchy_layout,
     connect_hierarchy,
@@ -500,7 +500,6 @@ class TestConnectIngredients:
         result = connect_ingredients(graph, [pf], m2n)
 
         assert result.count == 1
-
 
     def test_fabricator_ingredient_wired_not_orphaned(self, graph):
         """Fabricator with ingredients should wire them, not create orphans."""
@@ -996,9 +995,7 @@ class TestPlaceOrphanNodes:
         """Orphan with no connections keeps its current position."""
         from craftgraph.qt_nodes import IDENTIFIER
 
-        orphan = graph.create_node(
-            f"{IDENTIFIER}.OrphanIngredientNode", name="Ghost"
-        )
+        orphan = graph.create_node(f"{IDENTIFIER}.OrphanIngredientNode", name="Ghost")
         orphan.set_pos(50.0, 50.0)
 
         place_orphan_nodes(graph)
@@ -1266,9 +1263,7 @@ class TestOrphanIngredientInteraction:
 
         with guard():
             m2n = populate_graph(graph, [pf])
-            orphan = graph.create_node(
-                f"{IDENTIFIER}.OrphanIngredientNode", name="Copper"
-            )
+            orphan = graph.create_node(f"{IDENTIFIER}.OrphanIngredientNode", name="Copper")
             orphan.set_property("item_id", "Copper")
 
         handler = UIToModelHandler(
@@ -1302,9 +1297,7 @@ class TestOrphanIngredientInteraction:
 
         with guard():
             m2n = populate_graph(graph, [pf])
-            orphan = graph.create_node(
-                f"{IDENTIFIER}.OrphanIngredientNode", name="Copper"
-            )
+            orphan = graph.create_node(f"{IDENTIFIER}.OrphanIngredientNode", name="Copper")
             orphan.set_property("item_id", "Copper")
             orphan_out = orphan.get_output("output")
             ing_in = m2n[id(consumer)].get_input("ingredient_0")
@@ -1343,9 +1336,7 @@ class TestOrphanIngredientInteraction:
             source_out = m2n[id(source)].get_output("output")
             ing_in = m2n[id(consumer)].get_input("ingredient_0")
             source_out.connect_to(ing_in)
-            orphan = graph.create_node(
-                f"{IDENTIFIER}.OrphanIngredientNode", name="OrphanItem"
-            )
+            orphan = graph.create_node(f"{IDENTIFIER}.OrphanIngredientNode", name="OrphanItem")
             orphan.set_property("item_id", "OrphanItem")
 
         handler = UIToModelHandler(
@@ -1451,7 +1442,7 @@ class TestCycleDetection:
         history = EditHistory()
 
         with guard():
-            m2n = populate_graph(graph, [pf])
+            populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
             graph=graph,
@@ -1485,7 +1476,7 @@ class TestCycleDetection:
         history = EditHistory()
 
         with guard():
-            m2n = populate_graph(graph, [pf])
+            populate_graph(graph, [pf])
 
         handler = UIToModelHandler(
             graph=graph,
@@ -1532,7 +1523,7 @@ class TestCycleDetection:
         )
 
         # Try to connect Beta -> Alpha (would create Alpha -> Beta -> Alpha)
-        beta_out = m2n[id(recipe_b)].get_output("output")
+        m2n[id(recipe_b)].get_output("output")
         alpha_ing = [
             p
             for p in m2n[id(recipe_b)].input_ports()
@@ -1816,10 +1807,7 @@ class TestCycleEdgeHighlighting:
 
         # Find the orphan pipe (connects to the Copper orphan)
         orphan_node_id = result.orphan_nodes["copper"].id
-        orphan_pipes = [
-            p for p in ingredient_pipes
-            if p.output_port.node.id == orphan_node_id
-        ]
+        orphan_pipes = [p for p in ingredient_pipes if p.output_port.node.id == orphan_node_id]
         assert len(orphan_pipes) > 0
         for p in orphan_pipes:
             assert p.color == _DEFAULT_PIPE_COLOR
@@ -1845,7 +1833,10 @@ class TestNodeIssueOverlays:
             m2n = populate_graph(graph, [pf])
             connect_ingredients(graph, [pf], m2n)
             errors, warnings = update_node_issue_overlays(
-                graph, [pf], m2n, frozenset({"a", "b"}),
+                graph,
+                [pf],
+                m2n,
+                frozenset({"a", "b"}),
             )
 
         assert errors == 0
@@ -1872,7 +1863,10 @@ class TestNodeIssueOverlays:
             m2n = populate_graph(graph, [pf])
             connect_ingredients(graph, [pf], m2n)
             errors, _ = update_node_issue_overlays(
-                graph, [pf], m2n, frozenset({"cyca", "cycb"}),
+                graph,
+                [pf],
+                m2n,
+                frozenset({"cyca", "cycb"}),
             )
 
         assert errors >= 2
@@ -1894,7 +1888,10 @@ class TestNodeIssueOverlays:
             m2n = populate_graph(graph, [pf])
             connect_ingredients(graph, [pf], m2n)
             errors, warnings = update_node_issue_overlays(
-                graph, [pf], m2n, frozenset({"widgetcraft"}),
+                graph,
+                [pf],
+                m2n,
+                frozenset({"widgetcraft"}),
             )
 
         assert errors == 0
@@ -1916,10 +1913,16 @@ class TestNodeIssueOverlays:
             m2n = populate_graph(graph, [pf])
             connect_ingredients(graph, [pf], m2n)
             update_node_issue_overlays(
-                graph, [pf], m2n, frozenset({"widgetcraft"}),
+                graph,
+                [pf],
+                m2n,
+                frozenset({"widgetcraft"}),
             )
             update_node_issue_overlays(
-                graph, [pf], m2n, frozenset({"widgetcraft", "alloy"}),
+                graph,
+                [pf],
+                m2n,
+                frozenset({"widgetcraft", "alloy"}),
             )
 
         node = m2n[id(recipe)]
@@ -2053,9 +2056,7 @@ class TestRecipeReassignmentWarning:
             history=history,
             guard=guard,
             parsed_files=[pf],
-            on_reassignment_warning=lambda item_id, old_path: captured.append(
-                (item_id, old_path)
-            ),
+            on_reassignment_warning=lambda item_id, old_path: captured.append((item_id, old_path)),
         )
 
         fab_out = m2n[id(fab)].get_output("added_out")
@@ -2088,9 +2089,7 @@ class TestRecipeReassignmentWarning:
             history=history,
             guard=guard,
             parsed_files=[pf],
-            on_reassignment_warning=lambda item_id, old_path: captured.append(
-                (item_id, old_path)
-            ),
+            on_reassignment_warning=lambda item_id, old_path: captured.append((item_id, old_path)),
         )
 
         fab_out = m2n[id(fab)].get_output("added_out")
@@ -2291,7 +2290,9 @@ class TestValidateBeforeSave:
         tab = CraftingTab(tab_id="Resources", parent_tab_path="Fab")
         recipe = AddedRecipe(item_id="potion", path="Fab/Resources")
         fab = CustomFabricator(
-            item_id="Fab", tabs=[tab], added_recipes=[recipe],
+            item_id="Fab",
+            tabs=[tab],
+            added_recipes=[recipe],
         )
         pf = _make_parsed_file(custom_fabricators=[fab])
 

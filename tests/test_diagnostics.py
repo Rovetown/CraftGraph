@@ -72,7 +72,8 @@ class TestOrphans:
         recipes = [
             ModifiedRecipe(item_id="Titanium"),
             ModifiedRecipe(
-                item_id="Bar", ingredients=[Ingredient("Titanium", 1)],
+                item_id="Bar",
+                ingredients=[Ingredient("Titanium", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)])
@@ -124,7 +125,8 @@ class TestCycles:
     def test_no_cycle_returns_empty(self) -> None:
         recipes = [
             ModifiedRecipe(
-                item_id="Bar", ingredients=[Ingredient("Titanium", 1)],
+                item_id="Bar",
+                ingredients=[Ingredient("Titanium", 1)],
             ),
         ]
         assert find_project_issues([_pf(recipes)]).cycles == []
@@ -132,10 +134,12 @@ class TestCycles:
     def test_simple_two_node_cycle_detected(self) -> None:
         recipes = [
             ModifiedRecipe(
-                item_id="A", ingredients=[Ingredient("B", 1)],
+                item_id="A",
+                ingredients=[Ingredient("B", 1)],
             ),
             ModifiedRecipe(
-                item_id="B", ingredients=[Ingredient("A", 1)],
+                item_id="B",
+                ingredients=[Ingredient("A", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)])
@@ -185,7 +189,8 @@ class TestUnresolvedRefs:
     def test_unknown_ingredient_flagged(self) -> None:
         recipes = [
             ModifiedRecipe(
-                item_id="Widget", ingredients=[Ingredient("NotAThing", 1)],
+                item_id="Widget",
+                ingredients=[Ingredient("NotAThing", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)], known_extra_ids=self.KNOWN)
@@ -196,7 +201,8 @@ class TestUnresolvedRefs:
         """An ingredient that matches a known ID is not flagged."""
         recipes = [
             ModifiedRecipe(
-                item_id="Widget", ingredients=[Ingredient("Titanium", 1)],
+                item_id="Widget",
+                ingredients=[Ingredient("Titanium", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)], known_extra_ids=self.KNOWN)
@@ -207,7 +213,8 @@ class TestUnresolvedRefs:
         recipes = [
             ModifiedRecipe(item_id="MyAlloy"),
             ModifiedRecipe(
-                item_id="Widget", ingredients=[Ingredient("MyAlloy", 1)],
+                item_id="Widget",
+                ingredients=[Ingredient("MyAlloy", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)], known_extra_ids=self.KNOWN)
@@ -241,7 +248,8 @@ class TestUnresolvedRefs:
         """Known IDs match case-insensitively (CC3 itself is case-insensitive)."""
         recipes = [
             ModifiedRecipe(
-                item_id="Widget", ingredients=[Ingredient("TITANIUM", 1)],
+                item_id="Widget",
+                ingredients=[Ingredient("TITANIUM", 1)],
             ),
         ]
         result = find_project_issues([_pf(recipes)], known_extra_ids=self.KNOWN)
@@ -250,11 +258,13 @@ class TestUnresolvedRefs:
     def test_unresolved_ref_carries_owner_and_source(self) -> None:
         recipes = [
             ModifiedRecipe(
-                item_id="Widget", ingredients=[Ingredient("Bogus", 1)],
+                item_id="Widget",
+                ingredients=[Ingredient("Bogus", 1)],
             ),
         ]
         result = find_project_issues(
-            [_pf(recipes, name="mod.txt")], known_extra_ids=self.KNOWN,
+            [_pf(recipes, name="mod.txt")],
+            known_extra_ids=self.KNOWN,
         )
         issue = result.unresolved_refs[0]
         assert isinstance(issue, UnresolvedRefIssue)

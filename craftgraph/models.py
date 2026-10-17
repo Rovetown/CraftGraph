@@ -64,7 +64,10 @@ CRAFT_TREE_TYPES: tuple[CraftTreeEntry, ...] = (
     CraftTreeEntry("MapRoom", "Scanner Room", "MapRoomFunctionality"),
     CraftTreeEntry("Rocket", "Neptune Launch Platform", "Rocket"),
     CraftTreeEntry(
-        "Centrifuge", "Centrifuge", "Centrifuge", below_zero_only=True,
+        "Centrifuge",
+        "Centrifuge",
+        "Centrifuge",
+        below_zero_only=True,
     ),
 )
 

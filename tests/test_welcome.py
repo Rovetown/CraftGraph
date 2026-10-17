@@ -6,7 +6,6 @@ Run: uv run --extra qt pytest tests/test_welcome.py -v
 
 from __future__ import annotations
 
-
 import pytest
 
 pytest.importorskip(
@@ -106,9 +105,7 @@ class TestUIScalePropagation:
             set_active_theme(ThemeColors(ui_scale=200))
             widget = _make_widget(qapp)
             titles = [
-                lbl
-                for lbl in widget.findChildren(QtWidgets.QLabel)
-                if lbl.text() == "CraftGraph"
+                lbl for lbl in widget.findChildren(QtWidgets.QLabel) if lbl.text() == "CraftGraph"
             ]
             assert titles, "expected a CraftGraph title label"
             # Base 20pt at 200% should produce a stylesheet referencing 40pt.
@@ -158,25 +155,33 @@ class TestCallbacks:
     def test_new_project_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
         fired: list[str] = []
         widget = _make_widget(qapp, on_new_project=lambda: fired.append("new"))
-        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "New Project"][0]
+        btn = next(
+            b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "New Project"
+        )
         btn.click()
         assert fired == ["new"]
 
     def test_open_folder_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
         fired: list[str] = []
         widget = _make_widget(qapp, on_open_folder=lambda: fired.append("folder"))
-        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Folder"][0]
+        btn = next(
+            b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Folder"
+        )
         btn.click()
         assert fired == ["folder"]
 
     def test_open_project_button_fires_callback(self, qapp: QtWidgets.QApplication) -> None:
         fired: list[str] = []
         widget = _make_widget(qapp, on_open_project=lambda: fired.append("proj"))
-        btn = [b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Project"][0]
+        btn = next(
+            b for b in widget.findChildren(QtWidgets.QPushButton) if b.text() == "Open Project"
+        )
         btn.click()
         assert fired == ["proj"]
 
-    def test_recent_entry_click_fires_callback(self, qapp: QtWidgets.QApplication, qtbot, tmp_path: object) -> None:
+    def test_recent_entry_click_fires_callback(
+        self, qapp: QtWidgets.QApplication, qtbot, tmp_path: object
+    ) -> None:
         d = tmp_path / "TestMod"
         d.mkdir()
         fired: list[tuple[str, str]] = []
@@ -212,19 +217,23 @@ class TestClearRecent:
     """The welcome screen exposes a one-click 'Clear' for the recent list."""
 
     def test_clear_button_present_when_entries_exist(
-        self, qapp: QtWidgets.QApplication, tmp_path: object,
+        self,
+        qapp: QtWidgets.QApplication,
+        tmp_path: object,
     ) -> None:
         d = tmp_path / "ModA"
         d.mkdir()
         widget = _make_widget(
-            qapp, recent_entries=_make_entries((str(d), "folder")),
+            qapp,
+            recent_entries=_make_entries((str(d), "folder")),
         )
         btn = _clear_button(widget)
         assert btn is not None
         assert btn.isVisible() or btn.isEnabled()
 
     def test_clear_button_absent_or_disabled_when_no_entries(
-        self, qapp: QtWidgets.QApplication,
+        self,
+        qapp: QtWidgets.QApplication,
     ) -> None:
         widget = _make_widget(qapp, recent_entries=[])
         btn = _clear_button(widget)
@@ -232,7 +241,9 @@ class TestClearRecent:
         assert btn is None or not btn.isEnabled()
 
     def test_clear_button_fires_callback(
-        self, qapp: QtWidgets.QApplication, tmp_path: object,
+        self,
+        qapp: QtWidgets.QApplication,
+        tmp_path: object,
     ) -> None:
         d = tmp_path / "ModB"
         d.mkdir()
@@ -248,13 +259,16 @@ class TestClearRecent:
         assert fired == [True]
 
     def test_clear_rebuilds_recents_to_empty_state(
-        self, qapp: QtWidgets.QApplication, tmp_path: object,
+        self,
+        qapp: QtWidgets.QApplication,
+        tmp_path: object,
     ) -> None:
         """After Clear, the recent list re-renders as the empty-state message."""
         d = tmp_path / "ModC"
         d.mkdir()
         widget = _make_widget(
-            qapp, recent_entries=_make_entries((str(d), "folder")),
+            qapp,
+            recent_entries=_make_entries((str(d), "folder")),
         )
         btn = _clear_button(widget)
         assert btn is not None
@@ -269,10 +283,7 @@ class TestExternalLinks:
 
     def _link_labels(self, widget: QtWidgets.QWidget) -> list[QtWidgets.QLabel]:
         """Return only the QLabels that carry an ``<a href="...">`` body."""
-        return [
-            lb for lb in widget.findChildren(QtWidgets.QLabel)
-            if "<a href=" in lb.text()
-        ]
+        return [lb for lb in widget.findChildren(QtWidgets.QLabel) if "<a href=" in lb.text()]
 
     def test_each_link_opens_externally(self, qapp: QtWidgets.QApplication) -> None:
         widget = _make_widget(qapp)
@@ -292,7 +303,8 @@ class TestExternalLinks:
             assert 'href="https://' in html, html
 
     def test_link_set_matches_module_constants(
-        self, qapp: QtWidgets.QApplication,
+        self,
+        qapp: QtWidgets.QApplication,
     ) -> None:
         """Each declared (label, url) pair from ``_LINKS`` is rendered exactly once."""
         from craftgraph.welcome import _LINKS

@@ -174,9 +174,7 @@ class CodeEditor(QPlainTextEdit):
         """Toggle case-insensitive matching on the attached completer."""
         if self._completer is not None:
             sensitivity = (
-                Qt.CaseSensitivity.CaseInsensitive
-                if enabled
-                else Qt.CaseSensitivity.CaseSensitive
+                Qt.CaseSensitivity.CaseInsensitive if enabled else Qt.CaseSensitivity.CaseSensitive
             )
             self._completer.setCaseSensitivity(sensitivity)
 
@@ -209,18 +207,19 @@ class CodeEditor(QPlainTextEdit):
         block = self.document().findBlockByNumber(line)
         if not block.isValid():
             return
-        selection = QTextEdit.ExtraSelection()  # type: ignore[call-arg]
+        selection = QTextEdit.ExtraSelection()
         fmt = QTextCharFormat()
         fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
         fmt.setUnderlineColor(QColor("#FF4444"))
         fmt.setToolTip(message)
         fmt.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
-        selection.format = fmt  # type: ignore[assignment]
+        selection.format = fmt
         cursor = QTextCursor(block)
         cursor.movePosition(
-            QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor,
+            QTextCursor.MoveOperation.EndOfBlock,
+            QTextCursor.MoveMode.KeepAnchor,
         )
-        selection.cursor = cursor  # type: ignore[assignment]
+        selection.cursor = cursor
         self._parse_error_selections = [selection]
         self._refresh_extra_selections()
 
@@ -233,13 +232,13 @@ class CodeEditor(QPlainTextEdit):
         """Combine current-line highlight and parse error selections."""
         selections: list[QTextEdit.ExtraSelection] = []
         if self._highlight_current_line:
-            sel = QTextEdit.ExtraSelection()  # type: ignore[call-arg]
+            sel = QTextEdit.ExtraSelection()
             fmt = QTextCharFormat()
             fmt.setBackground(self._current_line_color)
             fmt.setProperty(QTextCharFormat.Property.FullWidthSelection, True)
-            sel.format = fmt  # type: ignore[assignment]
-            sel.cursor = self.textCursor()  # type: ignore[assignment]
-            sel.cursor.clearSelection()  # type: ignore[union-attr]
+            sel.format = fmt
+            sel.cursor = self.textCursor()
+            sel.cursor.clearSelection()
             selections.append(sel)
         selections.extend(getattr(self, "_parse_error_selections", []))
         self.setExtraSelections(selections)
@@ -354,9 +353,10 @@ class CodeEditor(QPlainTextEdit):
         and swaps the completer's model accordingly.
         """
         c = self._completer
+        popup = c.popup() if c is not None else None
         if (
-            c is not None
-            and c.popup().isVisible()
+            popup is not None
+            and popup.isVisible()
             and event.key()
             in (
                 Qt.Key.Key_Enter,
@@ -421,7 +421,8 @@ class CodeEditor(QPlainTextEdit):
             col = cursor.positionInBlock()
             if col < len(line_text) and line_text[col] == text:
                 cursor.movePosition(
-                    QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.MoveAnchor,
+                    QTextCursor.MoveOperation.Right,
+                    QTextCursor.MoveMode.MoveAnchor,
                 )
                 self.setTextCursor(cursor)
                 event.accept()
@@ -448,18 +449,20 @@ class CodeEditor(QPlainTextEdit):
                 c.setModel(self._item_model)
             prefix = self.text_under_cursor()
 
+        popup = c.popup()
+        if popup is None:
+            return
+
         if len(prefix) < self._min_prefix_length:
-            c.popup().hide()
+            popup.hide()
             return
 
         if prefix != c.completionPrefix():
             c.setCompletionPrefix(prefix)
-            c.popup().setCurrentIndex(c.completionModel().index(0, 0))
+            popup.setCurrentIndex(c.completionModel().index(0, 0))
 
         cr = self.cursorRect()
-        cr.setWidth(
-            c.popup().sizeHintForColumn(0) + c.popup().verticalScrollBar().sizeHint().width()
-        )
+        cr.setWidth(popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width())
         c.complete(cr)
 
     # -- Line number area ------------------------------------------------------

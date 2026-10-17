@@ -12,8 +12,8 @@ from craftgraph.models import (
     AddedRecipe,
     AliasRecipe,
     BlockType,
-    CraftTreeEntry,
     CraftingTab,
+    CraftTreeEntry,
     CustomBioFuel,
     CustomFabricator,
     CustomFood,
@@ -295,11 +295,18 @@ class TestCraftTreeTypes:
 
     def test_sn1_roots_include_all_non_bz_types(self) -> None:
         expected = {ct.tree_root for ct in CRAFT_TREE_TYPES if not ct.below_zero_only}
-        assert SN1_CRAFT_TREE_PATH_ROOTS == expected
+        assert expected == SN1_CRAFT_TREE_PATH_ROOTS
 
     def test_sn1_roots_contain_known_stations(self) -> None:
-        for root in ("Fabricator", "Workbench", "CyclopsFabricator",
-                     "SeamothUpgrades", "MapRoomFunctionality", "Constructor", "Rocket"):
+        for root in (
+            "Fabricator",
+            "Workbench",
+            "CyclopsFabricator",
+            "SeamothUpgrades",
+            "MapRoomFunctionality",
+            "Constructor",
+            "Rocket",
+        ):
             assert root in SN1_CRAFT_TREE_PATH_ROOTS
 
     def test_craft_tree_entry_frozen(self) -> None:

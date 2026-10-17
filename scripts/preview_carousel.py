@@ -20,7 +20,6 @@ from PySide6 import QtCore, QtWidgets
 
 from craftgraph.carousel import CarouselDialog, CarouselSlide
 
-
 _WHATS_NEW_SLIDES = [
     CarouselSlide(
         title="What's New in 0.1.0-alpha.1",

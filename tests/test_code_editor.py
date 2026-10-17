@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_code_editor.py -v
 
 from __future__ import annotations
 
-
 import pytest
 
 pytest.importorskip(

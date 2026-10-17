@@ -20,6 +20,7 @@ Usage with plain Qt widgets::
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from html import escape
 
 from PySide6.QtWidgets import QMenu
@@ -29,6 +30,7 @@ from craftgraph.theme import scaled_pt
 # ---------------------------------------------------------------------------
 # Qt menu tooltip helpers
 # ---------------------------------------------------------------------------
+
 
 def enable_menu_tooltips(menu: QMenu) -> None:
     """Enable tooltip visibility on *menu* and all nested submenus.
@@ -121,21 +123,22 @@ def _row(label: str, value: str) -> str:
 def _mono(text: str) -> str:
     """Render *text* in a monospace span (for IDs, paths, ingredient names)."""
     return (
-        f'<span style="font-family:Consolas,monospace;'
-        f'color:{_VALUE_COLOR};">{escape(text)}</span>'
+        f'<span style="font-family:Consolas,monospace;color:{_VALUE_COLOR};">{escape(text)}</span>'
     )
 
 
 def _ingredient_html(ingredients: object) -> str:
     """Render a list of Ingredient dataclasses as an HTML list."""
-    if not ingredients:
+    if not ingredients or not isinstance(ingredients, Iterable):
         return f'<i style="color:{_MUTED_COLOR};">none</i>'
     parts: list[str] = []
     for ing in ingredients:
         item_id = getattr(ing, "item_id", "?")
         required = getattr(ing, "required", 1)
-        parts.append(f"{_mono(str(item_id))}<span style=\"color:{_MUTED_COLOR};\"> "
-                     f"x{escape(str(required))}</span>")
+        parts.append(
+            f'{_mono(str(item_id))}<span style="color:{_MUTED_COLOR};"> '
+            f"x{escape(str(required))}</span>"
+        )
     return "<br>".join(parts)
 
 
@@ -145,8 +148,10 @@ def _csv_html(values: object) -> str:
         return f'<i style="color:{_MUTED_COLOR};">none</i>'
     if isinstance(values, str):
         items = [v.strip() for v in values.split(",") if v.strip()]
-    else:
+    elif isinstance(values, Iterable):
         items = [str(v) for v in values if str(v).strip()]
+    else:
+        items = [str(values)]
     if not items:
         return f'<i style="color:{_MUTED_COLOR};">none</i>'
     return ", ".join(_mono(v) for v in items)
@@ -294,8 +299,7 @@ def format_node_details_tooltip(
             0,
             _row(
                 "Source",
-                f'<span style="color:{_MUTED_COLOR};">'
-                f"{escape(source_file)}</span>",
+                f'<span style="color:{_MUTED_COLOR};">{escape(source_file)}</span>',
             ),
         )
 

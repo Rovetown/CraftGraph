@@ -37,7 +37,10 @@ def _row(
     height: float = 22.0,
 ) -> PortRowGeometry:
     return PortRowGeometry(
-        y=y, height=height, label_left=label_left, label_right=label_right,
+        y=y,
+        height=height,
+        label_left=label_left,
+        label_right=label_right,
     )
 
 

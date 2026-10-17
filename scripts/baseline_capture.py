@@ -41,8 +41,14 @@ def main() -> None:
     snap_path = hwnd_diag.snapshot_to_file(out_dir / "hwnd_post_load.txt")
 
     print(f"Tier A load: {delta_ms:.1f} ms")
-    print(f"HWND before: gui={before.gui_objects} gdi={before.gdi_objects} widgets={before.widget_count}")
-    print(f"HWND after:  gui={after.gui_objects} gdi={after.gdi_objects} widgets={after.widget_count}")
+    print(
+        f"HWND before: gui={before.gui_objects} gdi={before.gdi_objects} "
+        f"widgets={before.widget_count}"
+    )
+    print(
+        f"HWND after:  gui={after.gui_objects} gdi={after.gdi_objects} "
+        f"widgets={after.widget_count}"
+    )
     print(f"Snapshot written: {snap_path}")
 
     win.close()

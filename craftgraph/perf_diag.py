@@ -11,10 +11,10 @@ import logging
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 logger = logging.getLogger(__name__)
 # Track installed handlers so install_logger() is idempotent across
@@ -77,10 +77,10 @@ class PerfSnapshot:
     perf_counter_ns: int
 
     @classmethod
-    def now(cls, *, action: str) -> "PerfSnapshot":
+    def now(cls, *, action: str) -> PerfSnapshot:
         return cls(action=action, perf_counter_ns=time.perf_counter_ns())
 
-    def delta_ms_since(self, other: "PerfSnapshot") -> float:
+    def delta_ms_since(self, other: PerfSnapshot) -> float:
         return (self.perf_counter_ns - other.perf_counter_ns) / 1_000_000.0
 
 

@@ -12,7 +12,7 @@ def test_snapshot_to_file_writes_top_allocations(tmp_path: Path) -> None:
     tracemalloc.start()
     try:
         # Allocate something so the snapshot has content.
-        _payload = ["x" * 1024 for _ in range(100)]  # noqa: F841
+        _payload = ["x" * 1024 for _ in range(100)]
         out = tmp_path / "mem.txt"
         mem_diag.snapshot_to_file(out, top_n=5)
         text = out.read_text(encoding="utf-8")

@@ -60,10 +60,13 @@ def _install_modules_dump() -> None:
 
     try:
         startup_path.write_text(
-            "\n".join(sorted(sys.modules)), encoding="utf-8",
+            "\n".join(sorted(sys.modules)),
+            encoding="utf-8",
         )
         logger.warning(
-            "startup snapshot: %s (%d modules)", startup_path, len(sys.modules),
+            "startup snapshot: %s (%d modules)",
+            startup_path,
+            len(sys.modules),
         )
     except OSError as exc:
         logger.warning("startup snapshot FAILED: %s", exc)
@@ -78,6 +81,7 @@ def main() -> None:
 
     # File-based logging still works in windowed mode (no console attached).
     from craftgraph.log_setup import configure_logging
+
     configure_logging(level=logging.INFO)
 
     # Module dump runs AFTER configure_logging so the logger handlers are
@@ -85,6 +89,7 @@ def main() -> None:
     _install_modules_dump()
 
     from craftgraph.qt_gui import launch_qt_gui
+
     launch_qt_gui(recipe_path)
 
 

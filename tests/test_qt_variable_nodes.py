@@ -8,7 +8,6 @@ Run:  uv run --extra qt pytest tests/test_qt_variable_nodes.py -v
 
 from __future__ import annotations
 
-
 import pytest
 
 pytest.importorskip(
@@ -17,7 +16,6 @@ pytest.importorskip(
 )
 
 from NodeGraphQt import NodeGraph
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -307,7 +305,7 @@ class TestCollectFabTabChoices:
 
         fab = CustomFabricator(item_id="MyFab")
         pf = ParsedFile(source_path=Path("fabs.txt"), custom_fabricators=[fab])
-        fab_choices, tab_choices = collect_fab_tab_choices([pf])
+        fab_choices, _tab_choices = collect_fab_tab_choices([pf])
         assert fab_choices == ["MyFab"]
 
     def test_tab_choices_resolved_path(self):
@@ -320,7 +318,7 @@ class TestCollectFabTabChoices:
         tab = CraftingTab(tab_id="SciTab")
         fab = CustomFabricator(item_id="MyFab", tabs=[tab])
         pf = ParsedFile(source_path=Path("fabs.txt"), custom_fabricators=[fab])
-        fab_choices, tab_choices = collect_fab_tab_choices([pf])
+        _fab_choices, tab_choices = collect_fab_tab_choices([pf])
         assert tab_choices == ["MyFab/SciTab"]
 
     def test_nested_tab_uses_parent_tab_path(self):
@@ -640,8 +638,8 @@ class TestVariableNodeGUIRegistration:
 
 class TestPromoteToVariable:
     def test_pintype_to_variable_kind_mapping(self):
-        from craftgraph.qt_variable_nodes import pintype_to_variable_kind, VariableNodeKind
         from craftgraph.pin_registry import PinType
+        from craftgraph.qt_variable_nodes import VariableNodeKind, pintype_to_variable_kind
 
         assert pintype_to_variable_kind(PinType.STRING) == VariableNodeKind.STRING_VAR
         assert pintype_to_variable_kind(PinType.INT) == VariableNodeKind.INT_VAR
@@ -651,8 +649,8 @@ class TestPromoteToVariable:
         assert pintype_to_variable_kind(PinType.ENUM) == VariableNodeKind.ENUM_VAR
 
     def test_pintype_to_variable_kind_with_override(self):
-        from craftgraph.qt_variable_nodes import pintype_to_variable_kind, VariableNodeKind
         from craftgraph.pin_registry import PinType
+        from craftgraph.qt_variable_nodes import VariableNodeKind, pintype_to_variable_kind
 
         assert pintype_to_variable_kind(PinType.STRING, "PathVar") == VariableNodeKind.PATH_VAR
         assert pintype_to_variable_kind(PinType.CSV, "ColorVar") == VariableNodeKind.COLOR_VAR

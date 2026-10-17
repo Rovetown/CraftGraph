@@ -46,9 +46,7 @@ def _model_key(entry: object) -> tuple[type, str]:
         return (cls, entry.item_id)
     if hasattr(entry, "tab_id"):
         return (cls, entry.tab_id)
-    raise TypeError(
-        f"unsupported entry type for diff: {cls.__name__}"
-    )
+    raise TypeError(f"unsupported entry type for diff: {cls.__name__}")
 
 
 def compute_diff(old: list[ParsedFile], new: list[ParsedFile]) -> ProjectDiff:

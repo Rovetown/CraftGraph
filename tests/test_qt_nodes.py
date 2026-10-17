@@ -18,7 +18,7 @@ qt = pytest.importorskip(
     reason="NodeGraphQt not installed (install with: uv sync --extra qt)",
 )
 
-from NodeGraphQt import NodeGraph  # noqa: E402
+from NodeGraphQt import NodeGraph
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1326,7 +1326,6 @@ class TestSpriteNodeBrowseButton:
         found = inner.findChild(QPushButton) if not isinstance(inner, QPushButton) else inner
         assert found is not None
 
-
     def test_browse_widget_can_access_parent_node(self, graph):
         """The browse widget's .node property returns the SpriteNode."""
         node = graph.create_node("com.craftgraph.SpriteNode", name="S1")
@@ -1570,8 +1569,7 @@ class TestLivePipeViewportUpdateMode:
         self._begin_drag(graph, viewer)
         try:
             assert (
-                viewer.viewportUpdateMode()
-                == QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+                viewer.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.FullViewportUpdate
             )
         finally:
             viewer.end_live_connection()
@@ -1584,8 +1582,7 @@ class TestLivePipeViewportUpdateMode:
         self._begin_drag(graph, viewer)
         viewer.end_live_connection()
         assert (
-            viewer.viewportUpdateMode()
-            == QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
+            viewer.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate
         )
 
     def test_handles_smart_update_mode(self, graph):
@@ -1596,10 +1593,7 @@ class TestLivePipeViewportUpdateMode:
         viewer.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
         self._begin_drag(graph, viewer)
         viewer.end_live_connection()
-        assert (
-            viewer.viewportUpdateMode()
-            == QGraphicsView.ViewportUpdateMode.SmartViewportUpdate
-        )
+        assert viewer.viewportUpdateMode() == QGraphicsView.ViewportUpdateMode.SmartViewportUpdate
 
     @staticmethod
     def _first_port(graph):
@@ -1611,7 +1605,6 @@ class TestLivePipeViewportUpdateMode:
         ports = node.output_ports() or node.input_ports()
         assert ports, "expected at least one port on a ModifiedRecipeNode"
         return ports[0].view
-
 
 
 # ---------------------------------------------------------------------------
@@ -1853,13 +1846,16 @@ class TestPortBoundingRectCache:
 class TestLazyWidgetBuild:
     def test_widgets_not_built_on_create(self, graph):
         from craftgraph.qt_nodes import IDENTIFIER
+
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         assert node._cg_widgets_pending is True
 
     def test_widgets_built_on_first_paint(self, qapp, graph):
         from PySide6.QtGui import QPainter
         from PySide6.QtWidgets import QStyleOptionGraphicsItem
+
         from craftgraph.qt_nodes import IDENTIFIER
+
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         opt = QStyleOptionGraphicsItem()
         # painting into a null QPainter does nothing, but the patch fires.
@@ -1868,6 +1864,7 @@ class TestLazyWidgetBuild:
 
     def test_paint_patch_is_class_level_idempotent(self, qapp, graph):
         from craftgraph.qt_nodes import IDENTIFIER
+
         # Two separate nodes share the same patched paint -- not per-instance.
         n1 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         n2 = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
@@ -1878,8 +1875,8 @@ class TestLazyWidgetBuild:
 
 class TestLazyPopulate:
     def test_populate_before_paint_defers(self, graph):
-        from craftgraph.qt_nodes import IDENTIFIER
         from craftgraph.models import ModifiedRecipe
+        from craftgraph.qt_nodes import IDENTIFIER
 
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
@@ -1891,8 +1888,9 @@ class TestLazyPopulate:
     def test_paint_replays_deferred_populate(self, qapp, graph):
         from PySide6.QtGui import QPainter
         from PySide6.QtWidgets import QStyleOptionGraphicsItem
-        from craftgraph.qt_nodes import IDENTIFIER
+
         from craftgraph.models import ModifiedRecipe
+        from craftgraph.qt_nodes import IDENTIFIER
 
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)
@@ -1908,8 +1906,8 @@ class TestLazyPopulate:
 
 class TestLazyPropertyAccess:
     def test_get_property_triggers_build(self, graph):
-        from craftgraph.qt_nodes import IDENTIFIER
         from craftgraph.models import ModifiedRecipe
+        from craftgraph.qt_nodes import IDENTIFIER
 
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=7)
@@ -1920,6 +1918,7 @@ class TestLazyPropertyAccess:
 
     def test_set_property_triggers_build(self, graph):
         from craftgraph.qt_nodes import IDENTIFIER
+
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         node.set_property("amount_crafted", "3")
         assert node._cg_widgets_pending is False
@@ -2004,29 +2003,91 @@ class TestModifiedRecipeNoWidgets:
     """Verify painted-field nodes build no QWidgets for their registry."""
 
     NODE_CLASSES = (
-        ("ModifiedRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
-                                "unlocks", "unlocked_by", "force_unlock_at_start")),
-        ("AddedRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
-                             "unlocks", "unlocked_by", "force_unlock_at_start",
-                             "path", "pda_group", "pda_category")),
-        ("AliasRecipeNode", ("item_id", "amount_crafted", "linked_item_ids",
-                             "unlocks", "unlocked_by", "force_unlock_at_start",
-                             "path", "pda_group", "pda_category",
-                             "display_name", "tooltip", "functional_id",
-                             "sprite_item_id")),
-        ("CustomFoodNode", ("item_id", "amount_crafted", "linked_item_ids",
-                            "unlocks", "unlocked_by", "force_unlock_at_start",
-                            "path", "pda_group", "pda_category",
-                            "display_name", "tooltip", "functional_id",
-                            "sprite_item_id",
-                            "food_value", "water_value", "oxygen_value",
-                            "health_value", "decay_rate_mod", "food_type",
-                            "use_drink_sound")),
+        (
+            "ModifiedRecipeNode",
+            (
+                "item_id",
+                "amount_crafted",
+                "linked_item_ids",
+                "unlocks",
+                "unlocked_by",
+                "force_unlock_at_start",
+            ),
+        ),
+        (
+            "AddedRecipeNode",
+            (
+                "item_id",
+                "amount_crafted",
+                "linked_item_ids",
+                "unlocks",
+                "unlocked_by",
+                "force_unlock_at_start",
+                "path",
+                "pda_group",
+                "pda_category",
+            ),
+        ),
+        (
+            "AliasRecipeNode",
+            (
+                "item_id",
+                "amount_crafted",
+                "linked_item_ids",
+                "unlocks",
+                "unlocked_by",
+                "force_unlock_at_start",
+                "path",
+                "pda_group",
+                "pda_category",
+                "display_name",
+                "tooltip",
+                "functional_id",
+                "sprite_item_id",
+            ),
+        ),
+        (
+            "CustomFoodNode",
+            (
+                "item_id",
+                "amount_crafted",
+                "linked_item_ids",
+                "unlocks",
+                "unlocked_by",
+                "force_unlock_at_start",
+                "path",
+                "pda_group",
+                "pda_category",
+                "display_name",
+                "tooltip",
+                "functional_id",
+                "sprite_item_id",
+                "food_value",
+                "water_value",
+                "oxygen_value",
+                "health_value",
+                "decay_rate_mod",
+                "food_type",
+                "use_drink_sound",
+            ),
+        ),
         # Structural nodes (no QWidget expected for any painted field)
-        ("FabricatorNode", ("item_id", "display_name", "tooltip", "model",
-                            "color_tint", "allowed_in_base", "allowed_in_cyclops",
-                            "pda_group", "pda_category", "force_unlock_at_start",
-                            "unlocked_by")),
+        (
+            "FabricatorNode",
+            (
+                "item_id",
+                "display_name",
+                "tooltip",
+                "model",
+                "color_tint",
+                "allowed_in_base",
+                "allowed_in_cyclops",
+                "pda_group",
+                "pda_category",
+                "force_unlock_at_start",
+                "unlocked_by",
+            ),
+        ),
         ("CraftingTabNode", ("tab_id", "display_name", "sprite_item_id", "parent_tab_path")),
         ("CustomSizeNode", ("item_id", "size_width", "size_height")),
         ("MovedRecipeNode", ("item_id", "old_path", "new_path", "copied", "hidden")),
@@ -2062,8 +2123,8 @@ class TestModifiedRecipeNoWidgets:
         assert len(names) > 0
 
     def test_get_property_still_works(self, graph):
-        from craftgraph.qt_nodes import IDENTIFIER
         from craftgraph.models import ModifiedRecipe
+        from craftgraph.qt_nodes import IDENTIFIER
 
         node = graph.create_node(f"{IDENTIFIER}.ModifiedRecipeNode")
         node.model_ref = ModifiedRecipe(item_id="Titanium", amount_crafted=5)

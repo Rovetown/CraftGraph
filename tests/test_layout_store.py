@@ -157,10 +157,10 @@ class TestMsgspecBackend:
     """layout_store uses msgspec for encode/decode (faster JSON)."""
 
     def test_save_layout_uses_msgspec(self, tmp_path: Path, monkeypatch) -> None:
-        from craftgraph import layout_store
-
         # Spy: count msgspec.json.encode calls during save_layout.
         import msgspec
+
+        from craftgraph import layout_store
 
         original_encode = msgspec.json.encode
         calls: list[object] = []

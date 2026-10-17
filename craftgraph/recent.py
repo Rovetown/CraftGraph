@@ -97,7 +97,7 @@ class RecentFiles:
                         timestamp=item["timestamp"],
                     )
                 )
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except json.JSONDecodeError, KeyError, TypeError:
             self._entries = []
 
     def _save(self) -> None:
@@ -113,6 +113,4 @@ class RecentFiles:
                 for e in self._entries
             ],
         }
-        self._path.write_text(
-            json.dumps(payload, indent=2) + "\n", encoding="utf-8"
-        )
+        self._path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

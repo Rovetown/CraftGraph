@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from craftgraph.save_utils import save_with_backup
 
 
@@ -60,7 +58,7 @@ class TestSaveWithBackup:
 
     def test_preserves_utf8_content_in_bak(self, tmp_path: Path) -> None:
         target = tmp_path / "recipes.txt"
-        original = "DisplayName: \"Messer des Todes\";\n"
+        original = 'DisplayName: "Messer des Todes";\n'
         target.write_text(original, encoding="utf-8")
 
         save_with_backup(target, "replaced", backup=True)

@@ -33,8 +33,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    import networkx
     from collections.abc import Iterator
+
+    import networkx
 
 from NodeGraphQt import NodeGraph
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -48,6 +49,7 @@ from craftgraph.diagnostics import (
     UnresolvedRefIssue,
     find_project_issues,
 )
+from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.highlighter import BLOCK_TYPES, FIELD_KEYS, EasyMarkupHighlighter
 from craftgraph.layout_store import layout_path_for, load_layout, save_layout
 from craftgraph.minimap import MinimapWidget
@@ -65,7 +67,6 @@ from craftgraph.project import (
     new_project,
     save_project,
 )
-from craftgraph.floating_editor import FloatingEditorHost
 from craftgraph.qt_nodes import (
     IDENTIFIER,
     NODE_COLOR_FIELD_FOR_CLASS,
@@ -249,7 +250,6 @@ def _indicator_qss(accent: str = "#8CB4FF", *, light: bool = False) -> str:
     )
 
 
-
 # Window / dialog dimensions (width, height) in pixels.
 _MAIN_WINDOW_DEFAULT_SIZE = (1400, 900)
 _SETTINGS_DIALOG_MIN_SIZE = (450, 350)
@@ -262,10 +262,10 @@ _VALIDATION_DIALOG_MIN_SIZE = (480, 300)
 _ID_PICKER_DIALOG_MIN_SIZE = (340, 420)
 
 # Timer intervals / durations in milliseconds.
-_PIPE_ANIM_TICK_MS = 50              # pipe dash-offset animation tick
-_TAB_FLASH_DURATION_MS = 400         # tab-bar highlight after watcher rebuild
-_STATUS_ERROR_DEFAULT_MS = 5000      # default auto-dismiss for status bar errors
-_DEFERRED_TICK_MS = 0                # "run after event loop drain" singleShot delay
+_PIPE_ANIM_TICK_MS = 50  # pipe dash-offset animation tick
+_TAB_FLASH_DURATION_MS = 400  # tab-bar highlight after watcher rebuild
+_STATUS_ERROR_DEFAULT_MS = 5000  # default auto-dismiss for status bar errors
+_DEFERRED_TICK_MS = 0  # "run after event loop drain" singleShot delay
 
 logger = logging.getLogger(__name__)
 
@@ -779,18 +779,12 @@ class _ProjectIssuesDialog(QtWidgets.QDialog):
         self._fill_section(
             self._cycle_section,
             self._SECTION_CYCLES,
-            [
-                (self._render_cycle(c), c.items[0] if c.items else "")
-                for c in issues.cycles
-            ],
+            [(self._render_cycle(c), c.items[0] if c.items else "") for c in issues.cycles],
         )
         self._fill_section(
             self._unresolved_section,
             self._SECTION_UNRESOLVED,
-            [
-                (self._render_unresolved(u), u.item_id)
-                for u in issues.unresolved_refs
-            ],
+            [(self._render_unresolved(u), u.item_id) for u in issues.unresolved_refs],
         )
         self._tree.expandAll()
 
@@ -844,9 +838,7 @@ class _ProjectIssuesDialog(QtWidgets.QDialog):
     @staticmethod
     def _render_unresolved(issue: UnresolvedRefIssue) -> str:
         name = Path(issue.source_file).name if issue.source_file else "?"
-        return (
-            f"{issue.item_id}.{issue.ref_type} -> {issue.target}  -  {name}"
-        )
+        return f"{issue.item_id}.{issue.ref_type} -> {issue.target}  -  {name}"
 
 
 class _AboutDialog(QtWidgets.QDialog):
@@ -897,7 +889,7 @@ class _AboutDialog(QtWidgets.QDialog):
             "<b>CustomCraft3</b> (Subnautica).</p>"
             "<p>Parses EasyMarkup recipe files, detects circular "
             "dependencies, and provides a visual node editor.</p>"
-            f'<p>License: MIT &middot; '
+            f"<p>License: MIT &middot; "
             f'<a href="{self.GITHUB_URL}">source on GitHub</a></p>'
         )
         layout.addWidget(body)
@@ -1535,9 +1527,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         d = self._fw
         return FileWatchingSettings(
             enabled=(
-                self._fw_enabled_cb.isChecked()
-                if self._fw_enabled_cb is not None
-                else d.enabled
+                self._fw_enabled_cb.isChecked() if self._fw_enabled_cb is not None else d.enabled
             ),
             debounce_enabled=(
                 self._fw_debounce_enabled_cb.isChecked()
@@ -2035,9 +2025,7 @@ class _SettingsDialog(QtWidgets.QDialog):
         )
         wl.addWidget(self._show_whats_new_cb)
 
-        self._show_gs_startup_cb = QtWidgets.QCheckBox(
-            "Show Getting Started on startup"
-        )
+        self._show_gs_startup_cb = QtWidgets.QCheckBox("Show Getting Started on startup")
         self._show_gs_startup_cb.setChecked(show_getting_started_on_startup)
         self._show_gs_startup_cb.setToolTip(
             "When on, the Getting Started tutorial pops on every launch "
@@ -2181,7 +2169,9 @@ class _SettingsDialog(QtWidgets.QDialog):
                 ACCENT_NAMES.index(accent_name_from_hex(defaults.accent))
             )
         if self._colorblind_combo is not None:
-            self._colorblind_combo.setCurrentIndex(COLORBLIND_MODES.index(defaults.colorblind_mode))
+            self._colorblind_combo.setCurrentIndex(
+                COLORBLIND_MODES.index(defaults.colorblind_mode)
+            )
         if self._ui_scale_combo is not None and defaults.ui_scale in UI_SCALE_OPTIONS:
             self._ui_scale_combo.setCurrentIndex(UI_SCALE_OPTIONS.index(defaults.ui_scale))
         if self._high_contrast_cb is not None:
@@ -3653,9 +3643,7 @@ class _PerfLogDialog(QtWidgets.QDialog):
         controls.addStretch(1)
         layout.addLayout(controls)
 
-        button_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Close
-        )
+        button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
@@ -3678,7 +3666,7 @@ class _PerfLogDialog(QtWidgets.QDialog):
         except OSError as exc:
             self._log_view.setPlainText(f"(could not read perf.log: {exc})")
             return
-        tail = lines[-self._LOG_TAIL_LINES:]
+        tail = lines[-self._LOG_TAIL_LINES :]
         self._log_view.setPlainText("\n".join(tail))
 
     def _load_paint_stats(self) -> None:
@@ -3800,9 +3788,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._project_issues_refresh_timer = QtCore.QTimer(self)
         self._project_issues_refresh_timer.setSingleShot(True)
         self._project_issues_refresh_timer.setInterval(300)
-        self._project_issues_refresh_timer.timeout.connect(
-            self._refresh_project_issues
-        )
+        self._project_issues_refresh_timer.timeout.connect(self._refresh_project_issues)
 
         # Scene position captured when any context menu was last opened.
         # Spawn-at-cursor callbacks use this instead of live QCursor.pos()
@@ -3837,7 +3823,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         app_dirs.migrate_legacy_config()
         recent_max = int(
             app_dirs.load_setting(
-                "recent_max_entries", config.get_config().limits.recent_files_default_max,
+                "recent_max_entries",
+                config.get_config().limits.recent_files_default_max,
             )
         )
         self._recent = RecentFiles(app_dirs.recent_files_path(), max_entries=recent_max)
@@ -4072,9 +4059,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         self._frame_overlay_action = QtGui.QAction("Show Frame &Time", self)
         self._frame_overlay_action.setCheckable(True)
-        frame_overlay_initial = bool(
-            app_dirs.load_setting("show_frame_time_overlay", False)
-        )
+        frame_overlay_initial = bool(app_dirs.load_setting("show_frame_time_overlay", False))
         self._frame_overlay_action.setChecked(frame_overlay_initial)
         self._frame_overlay_action.toggled.connect(self._toggle_frame_time_overlay)
         view_menu.addAction(self._frame_overlay_action)
@@ -4084,7 +4069,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._frame_overlay_initial = frame_overlay_initial
 
         self._profile_panzoom_action = QtGui.QAction(
-            "Profile &Pan/Zoom (10s)...", self,
+            "Profile &Pan/Zoom (10s)...",
+            self,
         )
         self._profile_panzoom_action.triggered.connect(self._on_profile_panzoom)
         view_menu.addAction(self._profile_panzoom_action)
@@ -4381,7 +4367,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _hwnd_threshold_warning(self, action: str, delta: int) -> None:
         """Surface a non-blocking warning on the status bar when HWND spikes."""
         self.statusBar().showMessage(
-            f"HWND spike: {action} +{delta} handles", 5000,
+            f"HWND spike: {action} +{delta} handles",
+            5000,
         )
 
     def _set_perf_diagnostics_active(self, enabled: bool) -> None:
@@ -4532,7 +4519,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         duration_ms = 10_000
         self._start_panzoom_profile(duration_ms=duration_ms)
         self.statusBar().showMessage(
-            f"Profiling pan/zoom for {duration_ms / 1000:.0f}s...", duration_ms,
+            f"Profiling pan/zoom for {duration_ms / 1000:.0f}s...",
+            duration_ms,
         )
 
     def _start_panzoom_profile(self, *, duration_ms: int) -> None:
@@ -4650,11 +4638,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._hwnd_last_count = count
 
         if count > 8000:
-            color = "#cc4444"   # red
+            color = "#cc4444"  # red
         elif count > 5000:
-            color = "#cc8844"   # amber
+            color = "#cc8844"  # amber
         else:
-            color = "#cccccc"   # neutral
+            color = "#cccccc"  # neutral
         self._hwnd_counter.setStyleSheet(f"color: {color};")
         self._hwnd_counter.setText(f"HWND: {count}{delta_str}")
 
@@ -5308,11 +5296,15 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 empty = value is None or (isinstance(value, str) and not value.strip())
                 if fp.required and empty:
                     issues.append(f"{node_label}: {fp.label} is required but empty")
-                if fp.name in self._PATH_WIDGET_NAMES and not empty and isinstance(value, str):
-                    if value.strip() not in valid_paths:
-                        issues.append(
-                            f"{node_label}: Path '{value}' does not match any known fabricator or tab"
-                        )
+                if (
+                    fp.name in self._PATH_WIDGET_NAMES
+                    and not empty
+                    and isinstance(value, str)
+                    and value.strip() not in valid_paths
+                ):
+                    issues.append(
+                        f"{node_label}: Path '{value}' does not match any known fabricator or tab"
+                    )
             for a, b in node.PAIRED_FIELDS:
                 va = node.get_property(a)
                 vb = node.get_property(b)
@@ -5488,7 +5480,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 # finish first.
                 dialog.deleteLater()
 
-    def _apply_settings_from_dialog(self, dialog: "_SettingsDialog") -> None:
+    def _apply_settings_from_dialog(self, dialog: _SettingsDialog) -> None:
         """Read current values from *dialog* and apply + persist them.
 
         Used by both the Apply button (live preview) and dialog close.
@@ -5543,7 +5535,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         app_dirs.save_setting("perf_diagnostics_enabled", dialog.perf_diagnostics_enabled)
         self._set_perf_diagnostics_active(dialog.perf_diagnostics_enabled)
         app_dirs.save_setting(
-            "show_whats_new_on_startup", dialog.show_whats_new_on_startup,
+            "show_whats_new_on_startup",
+            dialog.show_whats_new_on_startup,
         )
         app_dirs.save_setting(
             "show_getting_started_on_startup",
@@ -5563,9 +5556,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         # Re-apply logging with the chosen level so it takes effect live.
         from craftgraph.log_setup import configure_logging
 
-        configure_logging(
-            level=logging.getLevelNamesMapping().get(dialog.log_level, logging.INFO)
-        )
+        configure_logging(level=logging.getLevelNamesMapping().get(dialog.log_level, logging.INFO))
 
     def _apply_theme(self, theme: ThemeColors) -> None:
         """Apply visual theme changes: stylesheet, node borders, fill colors, UI scale."""
@@ -6122,9 +6113,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             return
 
         effective = (
-            self._fw_settings.debounce_ms / 1000.0
-            if self._fw_settings.debounce_enabled
-            else 0.0
+            self._fw_settings.debounce_ms / 1000.0 if self._fw_settings.debounce_enabled else 0.0
         )
 
         # RecipeWatcher.start() runs an initial_parse that fires on_rebuild
@@ -6152,7 +6141,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             )
 
         self._recipe_watcher = RecipeWatcher(
-            watch_dir, on_rebuild, debounce_seconds=effective,
+            watch_dir,
+            on_rebuild,
+            debounce_seconds=effective,
         )
         self._recipe_watcher.start()
 
@@ -6183,7 +6174,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
             try:
                 self._apply_watcher_diff()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("incremental rebuild failed; falling back: %s", exc)
                 self.load_recipes(self._source_path)
 
@@ -6215,9 +6206,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         else:
             new_files = parse_directory(self._source_path)
 
-        old_files = [
-            tab.parsed_file for tab in self._file_tabs if tab.parsed_file is not None
-        ]
+        old_files = [tab.parsed_file for tab in self._file_tabs if tab.parsed_file is not None]
         diff = compute_diff(old_files, new_files)
 
         for path in diff.removed_paths:
@@ -6264,7 +6253,8 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         original_style = bar.styleSheet()
         bar.setStyleSheet("QTabBar { background-color: #ffcc00; }")
         QtCore.QTimer.singleShot(
-            _TAB_FLASH_DURATION_MS, lambda: bar.setStyleSheet(original_style),
+            _TAB_FLASH_DURATION_MS,
+            lambda: bar.setStyleSheet(original_style),
         )
 
     def _stop_file_watcher(self) -> None:
@@ -6308,7 +6298,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw = data.get("file_watching")
             if isinstance(raw, dict):
                 return file_watching_settings_from_dict(raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return FileWatchingSettings()
 
@@ -6352,7 +6342,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             raw = data.get("keybindings")
             if isinstance(raw, dict):
                 return keybinding_settings_from_dict(raw)
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except json.JSONDecodeError, TypeError, ValueError:
             pass
         return KeybindingSettings()
 
@@ -6455,7 +6445,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self._on_show_getting_started()
 
     def _show_error_status(
-        self, message: str, duration_ms: int = _STATUS_ERROR_DEFAULT_MS,
+        self,
+        message: str,
+        duration_ms: int = _STATUS_ERROR_DEFAULT_MS,
     ) -> None:
         """Show *message* with a red background in the status bar."""
         bar = self.statusBar()
@@ -6630,9 +6622,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Re-scan the currently loaded files and refill the issues dialog."""
         if self._project_issues_window is None:
             return
-        parsed = [
-            ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None
-        ]
+        parsed = [ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None]
         issues = find_project_issues(parsed)
         self._project_issues_window.populate(issues)
 
@@ -6841,9 +6831,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
     def _on_search_prev(self) -> None:
         if not self._search_matches:
             return
-        self._search_index = (
-            self._search_index - 1
-        ) % len(self._search_matches)
+        self._search_index = (self._search_index - 1) % len(self._search_matches)
         self._select_current_search_match()
 
     def _node_lookup_id(self, node: object) -> str | None:
@@ -6860,7 +6848,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         for attr in ("item_id", "tab_id"):
             try:
                 value = node.get_property(attr)  # type: ignore[attr-defined]
-            except Exception:  # noqa: BLE001
+            except Exception:
                 value = None
             if isinstance(value, str) and value.strip():
                 return value.strip().lower()
@@ -7138,7 +7126,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     # Attribute name mapping: top-level ParsedFile attr -> CustomFabricator attr
     # for types that nest inside fabricators.
-    _FAB_NESTED_ATTR: dict[str, str] = {
+    _FAB_NESTED_ATTR: ClassVar[dict[str, str]] = {
         "crafting_tabs": "tabs",
         "added_recipes": "added_recipes",
         "alias_recipes": "alias_recipes",
@@ -7299,11 +7287,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             if not text.strip():
                 return
 
-            src = (
-                tab.parsed_file.source_path
-                if tab.parsed_file is not None
-                else self._source_path
-            )
+            src = tab.parsed_file.source_path if tab.parsed_file is not None else self._source_path
             try:
                 pf = parse_text(text, source_path=src)
             except (ParseError, MappingError) as exc:
@@ -8085,7 +8069,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             return list(parsed_files)
         try:
             return parse_directory(path.parent)
-        except (OSError, UnicodeDecodeError):
+        except OSError, UnicodeDecodeError:
             return list(parsed_files)
 
     def _get_id_words(self) -> list[str]:
@@ -8250,9 +8234,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """
         targets: set[str] = set(self._BUILTIN_PATH_ROOTS)
         # In-memory open tabs first (catches unsaved fabricator/tab edits)...
-        open_files = [
-            ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None
-        ]
+        open_files = [ft.parsed_file for ft in self._file_tabs if ft.parsed_file is not None]
         targets |= _path_targets_from_parsed_files(open_files)
         # ...then fabricators/tabs defined anywhere in the loaded mod folder.
         targets |= self._project_path_targets
@@ -8456,7 +8438,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     issues=list(node._issue_messages),
                     cycle_paths=list(node._cycle_paths),
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Tooltip composition must never break a redraw.
                 return f"<b>{type_name}</b>"
 
@@ -8481,7 +8463,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     @staticmethod
     @contextlib.contextmanager
-    def _suspend_graph_updates(graph: NodeGraph) -> "Iterator[None]":
+    def _suspend_graph_updates(graph: NodeGraph) -> Iterator[None]:
         """Suppress NodeGraphQt redraws, re-indexing, and signals during bulk load.
 
         Each ``setWidget()``, port-add, and property-change normally triggers
@@ -8585,9 +8567,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         timer = QtCore.QTimer(self)
         timer.setSingleShot(True)
         timer.setInterval(
-            self._ce_settings.parse_debounce_ms
-            if self._ce_settings.parse_debounce_enabled
-            else 0,
+            self._ce_settings.parse_debounce_ms if self._ce_settings.parse_debounce_enabled else 0,
         )
 
         tab = FileTab(
@@ -8695,9 +8675,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             self.statusBar().showMessage(f"Parsing {path}...")
 
             try:
-                parsed_files = (
-                    [parse_file(path)] if path.is_file() else parse_directory(path)
-                )
+                parsed_files = [parse_file(path)] if path.is_file() else parse_directory(path)
             except (
                 ParseError,
                 MappingError,
@@ -8722,9 +8700,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             from craftgraph.parser import collect_defined_ids
 
             scanned_project_files = self._scan_project_files(path, parsed_files)
-            self._project_defined_ids = frozenset(
-                collect_defined_ids(scanned_project_files)
-            )
+            self._project_defined_ids = frozenset(collect_defined_ids(scanned_project_files))
             self._project_path_targets = frozenset(
                 _path_targets_from_parsed_files(scanned_project_files)
             )
@@ -8848,6 +8824,7 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
     # reliable mechanism: it emits when the last window closes / Quit is
     # invoked, before the QApplication tears down.
     import os as _os
+
     if _os.environ.get("CRAFTGRAPH_DUMP_MODULES"):
         _exit_dump_path = app_dirs.log_dir() / "modules-gui.txt"
         _exit_dump_path.parent.mkdir(parents=True, exist_ok=True)
@@ -8855,11 +8832,13 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
         def _dump_modules_on_quit() -> None:
             try:
                 _exit_dump_path.write_text(
-                    "\n".join(sorted(sys.modules)), encoding="utf-8",
+                    "\n".join(sorted(sys.modules)),
+                    encoding="utf-8",
                 )
                 logger.warning(
                     "exit snapshot: %s (%d modules)",
-                    _exit_dump_path, len(sys.modules),
+                    _exit_dump_path,
+                    len(sys.modules),
                 )
             except OSError as exc:
                 logger.warning("exit snapshot FAILED: %s", exc)

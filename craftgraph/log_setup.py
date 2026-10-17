@@ -16,7 +16,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from craftgraph import app_dirs
 
@@ -29,9 +29,9 @@ _DEFAULT_LOG_RETENTION_DAYS = 7
 # user-dropped notes, screenshots) is left alone -- the cleanup only
 # touches files we know we create.
 _CLEANUP_PATTERNS: tuple[str, ...] = (
-    "*.log",                # craftgraph.log, hwnd.log
-    "modules-*.txt",        # CRAFTGRAPH_DUMP_MODULES diagnostic dumps
-    "diagnostics/*.log",    # perf.log under the diagnostics/ subdir
+    "*.log",  # craftgraph.log, hwnd.log
+    "modules-*.txt",  # CRAFTGRAPH_DUMP_MODULES diagnostic dumps
+    "diagnostics/*.log",  # perf.log under the diagnostics/ subdir
 )
 
 
@@ -73,7 +73,7 @@ def cleanup_old_logs(
     return removed
 
 
-def _import_rich() -> tuple[type[logging.Handler] | None, object | None, object | None]:
+def _import_rich() -> tuple[Any, Any, Any]:
     """Best-effort import of rich's logging+console+traceback symbols.
 
     Returns ``(RichHandler, Console, install_rich_traceback)`` when rich
@@ -167,9 +167,7 @@ def configure_logging(
 
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(
-            target_dir / _GENERAL_LOG_FILENAME, encoding="utf-8"
-        )
+        file_handler = logging.FileHandler(target_dir / _GENERAL_LOG_FILENAME, encoding="utf-8")
         file_handler.setLevel(logging.WARNING)
         file_handler.setFormatter(
             logging.Formatter(

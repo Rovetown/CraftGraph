@@ -110,13 +110,9 @@ _STRUCTURAL_KEYS: frozenset[str] = BLOCK_TYPES | frozenset(
 
 _QUOTING_FIELDS: frozenset[str] = frozenset({"DisplayName", "Tooltip"})
 
-_ID_FIELDS: frozenset[str] = frozenset(
-    {"ItemID", "TabID", "FunctionalID", "SpriteItemID"}
-)
+_ID_FIELDS: frozenset[str] = frozenset({"ItemID", "TabID", "FunctionalID", "SpriteItemID"})
 
-_PATH_FIELDS: frozenset[str] = frozenset(
-    {"Path", "OldPath", "NewPath", "ParentTabPath"}
-)
+_PATH_FIELDS: frozenset[str] = frozenset({"Path", "OldPath", "NewPath", "ParentTabPath"})
 
 _SPACE_CHECK_FIELDS: frozenset[str] = _ID_FIELDS | _PATH_FIELDS
 
@@ -269,9 +265,7 @@ class EasyMarkupHighlighter(QSyntaxHighlighter):
             ranges.append((m.start(), m.end()))
         return ranges
 
-    def _in_protected_range(
-        self, start: int, end: int, ranges: list[tuple[int, int]]
-    ) -> bool:
+    def _in_protected_range(self, start: int, end: int, ranges: list[tuple[int, int]]) -> bool:
         """Check if a span falls entirely within any comment/string range."""
         return any(rs <= start and end <= rend for rs, rend in ranges)
 

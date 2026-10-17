@@ -79,7 +79,6 @@ SAMPLE_FOLDER_B = _SAMPLE_FILES_DIR / "VModFabricator"
 @pytest.fixture
 def window(qapp, qtbot, monkeypatch, tmp_path):
     from craftgraph import app_dirs
-
     from tests.conftest import make_test_window
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
@@ -91,7 +90,8 @@ def _drain_deferred_delete():
     """Pump the deferred-delete queue so widget counts measure convergence."""
     QtWidgets.QApplication.processEvents()
     QtWidgets.QApplication.sendPostedEvents(
-        None, QtCore.QEvent.Type.DeferredDelete,
+        None,
+        QtCore.QEvent.Type.DeferredDelete,
     )
     QtWidgets.QApplication.processEvents()
 

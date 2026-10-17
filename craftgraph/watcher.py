@@ -180,7 +180,9 @@ class RecipeWatcher:
         debounce_seconds: float | None = None,
     ) -> None:
         self._handler = _RecipeEventHandler(
-            directory, on_rebuild, debounce_seconds=debounce_seconds,
+            directory,
+            on_rebuild,
+            debounce_seconds=debounce_seconds,
         )
         self._observer = Observer()
         self._observer.schedule(self._handler, str(directory), recursive=True)

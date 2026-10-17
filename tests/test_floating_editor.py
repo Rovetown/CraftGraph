@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import pytest
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QIntValidator

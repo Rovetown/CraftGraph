@@ -41,7 +41,6 @@ TIER_A = REPO_ROOT / "craftgraph" / "cc3_reference_files" / "real-mod-examples"
 @pytest.fixture
 def window(qapp, qtbot, tmp_path, monkeypatch):
     from craftgraph import app_dirs
-
     from tests.conftest import make_test_window
 
     monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
