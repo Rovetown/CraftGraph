@@ -28,6 +28,7 @@ class WelcomeWidget(QtWidgets.QWidget):
         on_open_folder: Callable[[], None],
         on_open_project: Callable[[], None],
         on_startup_toggle: Callable[[bool], None],
+        on_clear_recent: Callable[[], None] | None = None,
         show_on_startup: bool = True,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
@@ -37,7 +38,14 @@ class WelcomeWidget(QtWidgets.QWidget):
         self._on_open_folder = on_open_folder
         self._on_open_project = on_open_project
         self._on_startup_toggle = on_startup_toggle
+        # Callback invoked when the user clicks "Clear" on the recents
+        # header. Optional so existing tests / callers that do not need
+        # the clear feature stay source-compatible.
+        self._on_clear_recent = on_clear_recent
         self._recent_entries = recent_entries
+
+        self._body_layout: QtWidgets.QHBoxLayout | None = None
+        self._left_column: QtWidgets.QWidget | None = None
 
         self._setup_ui(show_on_startup)
 
@@ -48,7 +56,9 @@ class WelcomeWidget(QtWidgets.QWidget):
         # Two-column body
         body = QtWidgets.QHBoxLayout()
         body.setSpacing(40)
-        body.addWidget(self._build_left_column(), stretch=40)
+        self._body_layout = body
+        self._left_column = self._build_left_column()
+        body.addWidget(self._left_column, stretch=40)
         body.addWidget(self._build_right_column(), stretch=60)
         outer.addLayout(body, stretch=1)
 
@@ -65,11 +75,31 @@ class WelcomeWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
         header = QtWidgets.QLabel("Recent Projects")
         header.setStyleSheet(
             f"font-size: {scaled_pt(12)}pt; font-weight: bold; color: rgb(180, 200, 255);"
         )
-        layout.addWidget(header)
+        header_row.addWidget(header)
+        header_row.addStretch()
+        # "Clear" appears only when a callback is wired AND there is something
+        # to clear. Stays disabled (but visible) when the list is empty so the
+        # affordance is discoverable without being a no-op when clicked.
+        if self._on_clear_recent is not None:
+            clear_btn = QtWidgets.QPushButton("Clear")
+            clear_btn.setFlat(True)
+            clear_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            clear_btn.setEnabled(bool(self._recent_entries))
+            clear_btn.setStyleSheet(
+                f"QPushButton {{ color: rgb(150, 170, 210); "
+                f"font-size: {scaled_pt(9)}pt; padding: 2px 6px; }}"
+                "QPushButton:hover:enabled { color: rgb(200, 220, 255); }"
+                "QPushButton:disabled { color: rgb(90, 90, 90); }"
+            )
+            clear_btn.clicked.connect(self._handle_clear_clicked)
+            header_row.addWidget(clear_btn)
+        layout.addLayout(header_row)
 
         if not self._recent_entries:
             empty = QtWidgets.QLabel("(No recent projects)")
@@ -98,6 +128,24 @@ class WelcomeWidget(QtWidgets.QWidget):
             layout.addWidget(scroll, stretch=1)
 
         return container
+
+    def _handle_clear_clicked(self) -> None:
+        """Notify the host, then re-render the left column as the empty state."""
+        if self._on_clear_recent is not None:
+            self._on_clear_recent()
+        self.set_recent_entries([])
+
+    def set_recent_entries(self, entries: list[RecentEntry]) -> None:
+        """Replace the recents list and rebuild the left column in place."""
+        self._recent_entries = entries
+        if self._body_layout is None or self._left_column is None:
+            return
+        old = self._left_column
+        new_column = self._build_left_column()
+        self._body_layout.replaceWidget(old, new_column)
+        old.deleteLater()
+        self._body_layout.setStretchFactor(new_column, 40)
+        self._left_column = new_column
 
     # -- Right column: branding + actions + links -----------------------------
 
@@ -272,8 +320,11 @@ def _bundled_icon() -> Path | None:
     return path if path.exists() else None
 
 
+GITHUB_URL = "https://github.com/Rovetown/CraftGraph"
+CC3_WIKI_URL = (
+    "https://github.com/MrPurple6411/PrimeSonicSubnauticaMods/tree/master/CustomCraft3"
+)
 _LINKS: list[tuple[str, str]] = [
-    ("GitHub", "#"),
-    ("CC3 Wiki", "#"),
-    ("Modding Discord", "#"),
+    ("GitHub", GITHUB_URL),
+    ("CC3 Wiki", CC3_WIKI_URL),
 ]

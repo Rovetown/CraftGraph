@@ -262,19 +262,53 @@ class TestMenuBar:
         assert any("About" in t for t in action_texts)
 
     def test_about_dialog_shows(self, window, monkeypatch):
-        """Verify _on_about calls QMessageBox.about with version info."""
-        calls: list[tuple] = []
-        monkeypatch.setattr(
-            QtWidgets.QMessageBox,
-            "about",
-            staticmethod(lambda parent, title, text: calls.append((title, text))),
-        )
+        """_on_about opens an _AboutDialog (no longer a QMessageBox.about)."""
+        from craftgraph.qt_gui import _AboutDialog
+
+        captured: list = []
+
+        def recording(d):
+            captured.append(d)
+            return QtWidgets.QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(QtWidgets.QDialog, "exec", recording)
         window._on_about()
-        assert len(calls) == 1
-        title, text = calls[0]
-        assert "CraftGraph" in title
-        assert "0.1.0" in text
-        assert "CustomCraft3" in text
+        assert len(captured) == 1
+        assert isinstance(captured[0], _AboutDialog)
+        assert "CraftGraph" in captured[0].windowTitle()
+
+    def test_about_dialog_lists_libraries_with_pypi_links(self, qapp):
+        """The library list is a QTextBrowser with PyPI links for each entry."""
+        from craftgraph.qt_gui import _AboutDialog
+
+        dialog = _AboutDialog(version="9.9.9")
+        html = dialog._libs_browser.toHtml()
+        for _name, slug, _license in _AboutDialog.LIBRARIES:
+            assert f"https://pypi.org/project/{slug}/" in html, slug
+        # PySide6's LGPL note must be present (Qt is the only LGPL dep).
+        assert "LGPL" in html
+
+    def test_about_dialog_has_github_link(self, qapp):
+        """The body label contains the placeholder GitHub link for the project."""
+        from craftgraph.qt_gui import _AboutDialog
+
+        dialog = _AboutDialog(version="9.9.9")
+        assert _AboutDialog.GITHUB_URL.startswith("https://github.com/")
+        body_texts = [lbl.text() for lbl in dialog.findChildren(QtWidgets.QLabel)]
+        assert any(_AboutDialog.GITHUB_URL in t for t in body_texts)
+
+    def test_about_dialog_opens_links_externally(self, qapp):
+        """Both the body label and the library browser open links in the OS browser."""
+        from craftgraph.qt_gui import _AboutDialog
+
+        dialog = _AboutDialog(version="9.9.9")
+        assert dialog._libs_browser.openExternalLinks() is True
+        body_labels = [
+            lbl for lbl in dialog.findChildren(QtWidgets.QLabel)
+            if _AboutDialog.GITHUB_URL in lbl.text()
+        ]
+        assert body_labels
+        assert any(lbl.openExternalLinks() for lbl in body_labels)
 
     def test_help_menu_has_settings(self, window):
         menus = window.menuBar().findChildren(QtWidgets.QMenu)
@@ -328,6 +362,74 @@ class TestLayout:
 
     def test_status_bar_shows_ready(self, window):
         assert window.statusBar().currentMessage() == "Ready"
+
+
+class TestIndicatorStyling:
+    """Regression guard: checkbox / radio indicators must be theme-styled.
+
+    Without explicit ``QCheckBox::indicator`` rules, Qt falls back to the
+    OS accent color, which on Win11 personalization presets renders as
+    a bright pink fill that hides the check glyph.
+    """
+
+    def test_indicator_qss_covers_checkbox_and_radio(self):
+        from craftgraph.qt_gui import _indicator_qss
+
+        css = _indicator_qss()
+        assert "QCheckBox::indicator" in css
+        assert "QRadioButton::indicator" in css
+        assert ":checked" in css
+        assert ":hover" in css
+        assert ":disabled" in css
+
+    def test_indicator_qss_uses_provided_accent(self):
+        from craftgraph.qt_gui import _indicator_qss
+
+        css = _indicator_qss(accent="#abcdef")
+        assert "#abcdef" in css
+
+    def test_indicator_qss_embeds_check_glyph(self):
+        """Checked state must reference the on-disk SVG glyph.
+
+        Without an ``image:`` rule, Qt paints the indicator as a flat
+        filled square (no checkmark / no radio dot). Qt 6.11's QSS does
+        not parse ``data:`` URIs so we materialize the SVGs to the cache
+        directory and reference them by file path.
+        """
+        from pathlib import Path
+
+        from craftgraph.qt_gui import _indicator_glyph_paths, _indicator_qss
+
+        css = _indicator_qss()
+        assert "QCheckBox::indicator:checked" in css
+        assert "QRadioButton::indicator:checked" in css
+        checked_section = css.split("QCheckBox::indicator:checked")[1].split("}")[0]
+        radio_section = css.split("QRadioButton::indicator:checked")[1].split("}")[0]
+        assert "image: url(" in checked_section
+        assert "image: url(" in radio_section
+        # The glyph files actually exist on disk and parse as valid SVG.
+        check_path, dot_path = _indicator_glyph_paths()
+        for raw in (check_path, dot_path):
+            p = Path(raw)
+            assert p.is_file(), p
+            assert p.read_text(encoding="utf-8").startswith("<svg"), p
+
+    def test_main_window_stylesheet_includes_indicator_rules(self, window):
+        """The app-level stylesheet on the main window pins indicator colors."""
+        css = window.styleSheet()
+        assert "QCheckBox::indicator" in css, css
+        assert "QRadioButton::indicator" in css, css
+
+    def test_settings_dialog_stylesheet_includes_indicator_rules(self, window):
+        from craftgraph.qt_gui import _SettingsDialog
+
+        dialog = _SettingsDialog(parent=window)
+        try:
+            css = dialog.styleSheet()
+            assert "QCheckBox::indicator" in css, css
+            assert "QRadioButton::indicator" in css, css
+        finally:
+            dialog.deleteLater()
 
 
 # ---------------------------------------------------------------------------
@@ -6286,6 +6388,74 @@ class TestProcStatsWidget:
         assert "42" in text
         assert "117" in text or "118" in text  # 123_456_789 / (1024*1024) ~= 117.7
 
+    def test_diagnostic_widgets_hidden_when_perf_diagnostics_off(
+        self, qapp, qtbot, monkeypatch, tmp_path,
+    ):
+        """Release builds with the toggle off must hide diagnostic widgets.
+
+        Both ``_ProcStatsWidget`` (CPU%/RSS) and ``_hwnd_counter`` (HWND
+        label) are always parented to the status bar so a live runtime
+        toggle can flip them on without rebuilding the bar. With the
+        master toggle off, both must be invisible and their timers must
+        be stopped so they don't tick in the background.
+        """
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        monkeypatch.setattr(app_dirs, "perf_diagnostics_enabled", lambda: False)
+
+        win = make_test_window(qtbot)
+
+        # ``isHidden`` reflects the setVisible call without needing the
+        # widget to be mapped to the screen; isVisible would return False
+        # for any not-yet-shown widget regardless of the setVisible state.
+        assert win._proc_stats_widget.isHidden() is True
+        assert win._hwnd_counter.isHidden() is True
+        assert win._proc_stats_timer.isActive() is False
+        assert win._hwnd_counter_timer.isActive() is False
+        # Diagnostic menu actions must also be hidden.
+        for action in (
+            win._hwnd_counter_action, win._frame_overlay_action,
+            win._profile_panzoom_action, win._dump_hwnd_action,
+            win._dump_memory_action, win._perf_log_action,
+        ):
+            assert action.isVisible() is False, action.text()
+
+    def test_live_toggle_shows_diagnostic_widgets(
+        self, qapp, qtbot, monkeypatch, tmp_path,
+    ):
+        """Flipping perf_diagnostics on at runtime reveals the diagnostic UI.
+
+        Build a window with the toggle off, then call
+        ``_set_perf_diagnostics_active(True)`` and verify the widgets +
+        menu actions become visible and timers start. This is the path
+        the Settings dialog uses so a user does not need to restart.
+        """
+        from craftgraph import app_dirs
+
+        monkeypatch.setattr(app_dirs, "settings_path", lambda: tmp_path / "settings.json")
+        monkeypatch.setattr(app_dirs, "log_dir", lambda: tmp_path)
+        monkeypatch.setattr(app_dirs, "perf_diagnostics_enabled", lambda: False)
+
+        win = make_test_window(qtbot)
+        assert win._proc_stats_widget.isHidden() is True
+        assert win._hwnd_counter_action.isVisible() is False
+
+        win._set_perf_diagnostics_active(True)
+
+        # After enabling, the widget's hidden flag clears so it would
+        # paint as soon as the window is shown.
+        assert win._proc_stats_widget.isHidden() is False
+        assert win._proc_stats_timer.isActive() is True
+        assert win._hwnd_counter_timer.isActive() is True
+        for action in (
+            win._hwnd_counter_action, win._frame_overlay_action,
+            win._profile_panzoom_action, win._dump_hwnd_action,
+            win._dump_memory_action, win._perf_log_action,
+        ):
+            assert action.isVisible() is True, action.text()
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 Task 6: cooperative time-slicing in populate_graph
@@ -6825,7 +6995,7 @@ class TestProjectIssuesWindow:
         )
         assert "(1)" in cycle_section.text(0)
         row = cycle_section.child(0).text(0)
-        assert "->" in row or "→" in row, row
+        assert "->" in row, row
         assert "A" in row and "B" in row
 
     def test_unresolved_ingredient_renders(self, window, tmp_path) -> None:

@@ -34,10 +34,19 @@ def _make_widget(
         "on_open_folder": _noop,
         "on_open_project": _noop,
         "on_startup_toggle": _noop,
+        "on_clear_recent": _noop,
         "show_on_startup": True,
     }
     defaults.update(kwargs)
     return WelcomeWidget(recent_entries or [], **defaults)
+
+
+def _clear_button(widget: QtWidgets.QWidget) -> QtWidgets.QPushButton | None:
+    """Locate the 'Clear' button in the recent-projects header."""
+    for btn in widget.findChildren(QtWidgets.QPushButton):
+        if btn.text().lower().startswith("clear"):
+            return btn
+    return None
 
 
 class TestWelcomeConstruction:
@@ -197,3 +206,100 @@ class TestCallbacks:
         cb = widget.findChildren(QtWidgets.QCheckBox)[0]
         cb.setChecked(True)  # "Don't show" = checked
         assert toggled == [True]
+
+
+class TestClearRecent:
+    """The welcome screen exposes a one-click 'Clear' for the recent list."""
+
+    def test_clear_button_present_when_entries_exist(
+        self, qapp: QtWidgets.QApplication, tmp_path: object,
+    ) -> None:
+        d = tmp_path / "ModA"
+        d.mkdir()
+        widget = _make_widget(
+            qapp, recent_entries=_make_entries((str(d), "folder")),
+        )
+        btn = _clear_button(widget)
+        assert btn is not None
+        assert btn.isVisible() or btn.isEnabled()
+
+    def test_clear_button_absent_or_disabled_when_no_entries(
+        self, qapp: QtWidgets.QApplication,
+    ) -> None:
+        widget = _make_widget(qapp, recent_entries=[])
+        btn = _clear_button(widget)
+        # Either it is not rendered at all, or it is rendered + disabled.
+        assert btn is None or not btn.isEnabled()
+
+    def test_clear_button_fires_callback(
+        self, qapp: QtWidgets.QApplication, tmp_path: object,
+    ) -> None:
+        d = tmp_path / "ModB"
+        d.mkdir()
+        fired: list[bool] = []
+        widget = _make_widget(
+            qapp,
+            recent_entries=_make_entries((str(d), "folder")),
+            on_clear_recent=lambda: fired.append(True),
+        )
+        btn = _clear_button(widget)
+        assert btn is not None
+        btn.click()
+        assert fired == [True]
+
+    def test_clear_rebuilds_recents_to_empty_state(
+        self, qapp: QtWidgets.QApplication, tmp_path: object,
+    ) -> None:
+        """After Clear, the recent list re-renders as the empty-state message."""
+        d = tmp_path / "ModC"
+        d.mkdir()
+        widget = _make_widget(
+            qapp, recent_entries=_make_entries((str(d), "folder")),
+        )
+        btn = _clear_button(widget)
+        assert btn is not None
+        btn.click()
+        labels = widget.findChildren(QtWidgets.QLabel)
+        texts = [lb.text() for lb in labels]
+        assert any("No recent" in t for t in texts)
+
+
+class TestExternalLinks:
+    """Right-column links must be real, browser-openable hyperlinks."""
+
+    def _link_labels(self, widget: QtWidgets.QWidget) -> list[QtWidgets.QLabel]:
+        """Return only the QLabels that carry an ``<a href="...">`` body."""
+        return [
+            lb for lb in widget.findChildren(QtWidgets.QLabel)
+            if "<a href=" in lb.text()
+        ]
+
+    def test_each_link_opens_externally(self, qapp: QtWidgets.QApplication) -> None:
+        widget = _make_widget(qapp)
+        link_labels = self._link_labels(widget)
+        from craftgraph.welcome import _LINKS
+
+        assert len(link_labels) == len(_LINKS)
+        for lb in link_labels:
+            assert lb.openExternalLinks() is True, lb.text()
+
+    def test_links_use_real_http_urls(self, qapp: QtWidgets.QApplication) -> None:
+        """No leftover ``href="#"`` placeholders -- clicks must open the browser."""
+        widget = _make_widget(qapp)
+        for lb in self._link_labels(widget):
+            html = lb.text()
+            assert 'href="#"' not in html, html
+            assert 'href="https://' in html, html
+
+    def test_link_set_matches_module_constants(
+        self, qapp: QtWidgets.QApplication,
+    ) -> None:
+        """Each declared (label, url) pair from ``_LINKS`` is rendered exactly once."""
+        from craftgraph.welcome import _LINKS
+
+        widget = _make_widget(qapp)
+        rendered = [lb.text() for lb in self._link_labels(widget)]
+        for label, url in _LINKS:
+            assert any(label in html and url in html for html in rendered), (
+                f"missing link for ({label!r}, {url!r}) in {rendered!r}"
+            )

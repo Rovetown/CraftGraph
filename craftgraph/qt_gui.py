@@ -20,6 +20,7 @@ import contextlib
 import enum
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    import networkx
     from collections.abc import Iterator
 
 from NodeGraphQt import NodeGraph
@@ -153,6 +155,100 @@ _DIALOG_STYLE = (
     "  border-radius: 4px;"
     "}"
 )
+
+
+# Inline SVG sources for the check + radio-dot glyphs. Materialized to the
+# user cache dir on first use because Qt 6.11's QSS ``url()`` parser does
+# not accept ``data:image/svg+xml;base64,...`` URIs (verified empirically:
+# the indicator renders as a featureless filled square when a data URI is
+# supplied). File paths work reliably.
+_CHECK_SVG_SRC = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+    '<path d="M3.5 8.5 6 11 12.5 4.5" stroke="white" stroke-width="2" '
+    'fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
+_RADIO_DOT_SVG_SRC = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+    '<circle cx="8" cy="8" r="3.5" fill="white"/></svg>'
+)
+
+
+def _indicator_glyph_paths() -> tuple[str, str]:
+    """Write the check + radio-dot SVGs to the cache dir if missing.
+
+    Returns the two file paths in QSS-friendly posix form so they can be
+    interpolated into ``image: url(...)`` rules. Idempotent across calls
+    in a process; rewrites only when the on-disk content differs from
+    the in-source SVG so a future glyph tweak in this file propagates.
+    """
+    icons_dir = app_dirs.cache_dir() / "icons"
+    icons_dir.mkdir(parents=True, exist_ok=True)
+    check_path = icons_dir / "indicator_check.svg"
+    dot_path = icons_dir / "indicator_radio_dot.svg"
+    for path, src in ((check_path, _CHECK_SVG_SRC), (dot_path, _RADIO_DOT_SVG_SRC)):
+        if not path.is_file() or path.read_text(encoding="utf-8") != src:
+            path.write_text(src, encoding="utf-8")
+    return check_path.as_posix(), dot_path.as_posix()
+
+
+def _indicator_qss(accent: str = "#8CB4FF", *, light: bool = False) -> str:
+    """Stylesheet rules for ``QCheckBox`` / ``QRadioButton`` indicators.
+
+    Without explicit rules, Qt falls back to the OS accent color for the
+    indicator fill -- which on Win11 personalization presets renders as
+    bright pink against the dark theme, hiding the check glyph. These
+    rules pin both states to theme-driven values so the look is
+    deterministic across platforms.
+
+    The checked state pairs a solid accent-colored fill with an embedded
+    SVG glyph (check for ``QCheckBox``, dot for ``QRadioButton``).  The
+    glyph is required because Qt's QSS ``background:`` rule replaces the
+    native indicator paint entirely; without an ``image:`` the indicator
+    would render as a featureless filled square.
+    """
+    if light:
+        unchecked_bg = "rgb(250, 250, 250)"
+        unchecked_border = "rgb(160, 160, 160)"
+        hover_border = "rgb(80, 80, 80)"
+        disabled_bg = "rgb(230, 230, 230)"
+        disabled_border = "rgb(190, 190, 190)"
+    else:
+        unchecked_bg = "rgb(45, 45, 45)"
+        unchecked_border = "rgb(110, 110, 110)"
+        hover_border = "rgb(160, 160, 160)"
+        disabled_bg = "rgb(38, 38, 38)"
+        disabled_border = "rgb(70, 70, 70)"
+    check_path, dot_path = _indicator_glyph_paths()
+    check_url = f"url({check_path})"
+    dot_url = f"url({dot_path})"
+    return (
+        "QCheckBox::indicator, QRadioButton::indicator {"
+        f"  width: 16px; height: 16px;"
+        f"  background: {unchecked_bg};"
+        f"  border: 1px solid {unchecked_border};"
+        "}"
+        "QCheckBox::indicator { border-radius: 3px; }"
+        "QRadioButton::indicator { border-radius: 8px; }"
+        "QCheckBox::indicator:checked {"
+        f"  background: {accent};"
+        f"  border: 1px solid {accent};"
+        f"  image: {check_url};"
+        "}"
+        "QRadioButton::indicator:checked {"
+        f"  background: {accent};"
+        f"  border: 1px solid {accent};"
+        f"  image: {dot_url};"
+        "}"
+        "QCheckBox::indicator:hover, QRadioButton::indicator:hover {"
+        f"  border: 1px solid {hover_border};"
+        "}"
+        "QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {"
+        f"  background: {disabled_bg};"
+        f"  border: 1px solid {disabled_border};"
+        "}"
+    )
+
+
 
 # Window / dialog dimensions (width, height) in pixels.
 _MAIN_WINDOW_DEFAULT_SIZE = (1400, 900)
@@ -753,6 +849,83 @@ class _ProjectIssuesDialog(QtWidgets.QDialog):
         )
 
 
+class _AboutDialog(QtWidgets.QDialog):
+    """About CraftGraph dialog.
+
+    Shows version, license link (placeholder GitHub URL), and a scrollable
+    list of third-party libraries with PyPI links + their licenses. The
+    library list mirrors the top-level dependencies declared in
+    ``pyproject.toml``; sub-dependencies are not enumerated.
+    """
+
+    # Placeholder repo URL -- update once a public repo exists.
+    GITHUB_URL = "https://github.com/Rovetown/CraftGraph"
+
+    # (display_name, PyPI project slug, SPDX-ish license id).
+    # Order: runtime deps alphabetically, then [qt] extras at the end.
+    LIBRARIES: tuple[tuple[str, str, str], ...] = (
+        ("click", "click", "BSD-3-Clause"),
+        ("msgpack", "msgpack", "Apache-2.0"),
+        ("msgspec", "msgspec", "BSD-3-Clause"),
+        ("networkx", "networkx", "BSD-3-Clause"),
+        ("platformdirs", "platformdirs", "MIT"),
+        ("psutil", "psutil", "BSD-3-Clause"),
+        ("pyvis", "pyvis", "BSD-3-Clause"),
+        ("rich", "rich", "MIT"),
+        ("watchdog", "watchdog", "Apache-2.0"),
+        ("NodeGraphQt", "NodeGraphQt", "Apache-2.0"),
+        ("PySide6 (Qt)", "PySide6", "LGPL-3.0"),
+    )
+
+    def __init__(self, version: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("About CraftGraph")
+        self.setMinimumSize(460, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        header = QtWidgets.QLabel(f"<h3>CraftGraph v{version}</h3>", self)
+        header.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        layout.addWidget(header)
+
+        body = QtWidgets.QLabel(self)
+        body.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        body.setOpenExternalLinks(True)
+        body.setWordWrap(True)
+        body.setText(
+            "<p>Recipe dependency graph tool for "
+            "<b>CustomCraft3</b> (Subnautica).</p>"
+            "<p>Parses EasyMarkup recipe files, detects circular "
+            "dependencies, and provides a visual node editor.</p>"
+            f'<p>License: MIT &middot; '
+            f'<a href="{self.GITHUB_URL}">source on GitHub</a></p>'
+        )
+        layout.addWidget(body)
+
+        libs_label = QtWidgets.QLabel("<b>Libraries used (top-level):</b>", self)
+        libs_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        layout.addWidget(libs_label)
+
+        self._libs_browser = QtWidgets.QTextBrowser(self)
+        self._libs_browser.setOpenExternalLinks(True)
+        self._libs_browser.setHtml(self._library_html())
+        layout.addWidget(self._libs_browser, stretch=1)
+
+        close = QtWidgets.QPushButton("Close", self)
+        close.clicked.connect(self.accept)
+        layout.addWidget(close, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+
+    def _library_html(self) -> str:
+        rows: list[str] = []
+        for name, slug, license_id in self.LIBRARIES:
+            url = f"https://pypi.org/project/{slug}/"
+            rows.append(
+                f'<li><a href="{url}">{name}</a> '
+                f'<span style="color:#888;">&middot; {license_id}</span></li>'
+            )
+        return "<ul style='margin:0; padding-left:18px;'>" + "".join(rows) + "</ul>"
+
+
 class _SettingsDialog(QtWidgets.QDialog):
     """Settings dialog with real tab layout for planning future settings."""
 
@@ -812,6 +985,10 @@ class _SettingsDialog(QtWidgets.QDialog):
         on_launch: str = "welcome",
         check_for_updates: bool = True,
         log_level: str = "INFO",
+        perf_diagnostics_enabled: bool = False,
+        show_whats_new_on_startup: bool = True,
+        show_getting_started_on_startup: bool = True,
+        show_getting_started_on_new_project: bool = True,
         theme: ThemeColors | None = None,
         node_editor: NodeEditorSettings | None = None,
         code_editor: CodeEditorSettings | None = None,
@@ -825,7 +1002,8 @@ class _SettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(*scaled_size(*_SETTINGS_DIALOG_MIN_SIZE))
         self.resize(*scaled_size(*_SETTINGS_DIALOG_DEFAULT_SIZE))
-        self.setStyleSheet(self._STYLE)
+        accent = theme.accent if theme is not None else active_theme().accent
+        self.setStyleSheet(self._STYLE + _indicator_qss(accent))
 
         self._theme = theme if theme is not None else active_theme()
         self._ne = node_editor if node_editor is not None else NodeEditorSettings()
@@ -849,6 +1027,10 @@ class _SettingsDialog(QtWidgets.QDialog):
         self._on_launch_combo: QtWidgets.QComboBox | None = None
         self._update_check_cb: QtWidgets.QCheckBox | None = None
         self._log_level_combo: QtWidgets.QComboBox | None = None
+        self._perf_diagnostics_cb: QtWidgets.QCheckBox | None = None
+        self._show_whats_new_cb: QtWidgets.QCheckBox | None = None
+        self._show_gs_startup_cb: QtWidgets.QCheckBox | None = None
+        self._show_gs_new_project_cb: QtWidgets.QCheckBox | None = None
         # -- Appearance tab widgets --
         self._theme_combo: QtWidgets.QComboBox | None = None
         self._accent_combo: QtWidgets.QComboBox | None = None
@@ -939,6 +1121,10 @@ class _SettingsDialog(QtWidgets.QDialog):
                         on_launch=on_launch,
                         check_for_updates=check_for_updates,
                         log_level=log_level,
+                        perf_diagnostics_enabled=perf_diagnostics_enabled,
+                        show_whats_new_on_startup=show_whats_new_on_startup,
+                        show_getting_started_on_startup=show_getting_started_on_startup,
+                        show_getting_started_on_new_project=show_getting_started_on_new_project,
                     ),
                 ),
             ),
@@ -1057,6 +1243,30 @@ class _SettingsDialog(QtWidgets.QDialog):
         if self._log_level_combo is not None:
             return self._log_level_combo.currentText()
         return "INFO"
+
+    @property
+    def perf_diagnostics_enabled(self) -> bool:
+        if self._perf_diagnostics_cb is not None:
+            return self._perf_diagnostics_cb.isChecked()
+        return False
+
+    @property
+    def show_whats_new_on_startup(self) -> bool:
+        if self._show_whats_new_cb is not None:
+            return self._show_whats_new_cb.isChecked()
+        return True
+
+    @property
+    def show_getting_started_on_startup(self) -> bool:
+        if self._show_gs_startup_cb is not None:
+            return self._show_gs_startup_cb.isChecked()
+        return True
+
+    @property
+    def show_getting_started_on_new_project(self) -> bool:
+        if self._show_gs_new_project_cb is not None:
+            return self._show_gs_new_project_cb.isChecked()
+        return True
 
     @property
     def theme_colors(self) -> ThemeColors:
@@ -1704,6 +1914,10 @@ class _SettingsDialog(QtWidgets.QDialog):
         on_launch: str = "welcome",
         check_for_updates: bool = True,
         log_level: str = "INFO",
+        perf_diagnostics_enabled: bool = False,
+        show_whats_new_on_startup: bool = True,
+        show_getting_started_on_startup: bool = True,
+        show_getting_started_on_new_project: bool = True,
     ) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
         col = QtWidgets.QVBoxLayout(content)
@@ -1784,6 +1998,65 @@ class _SettingsDialog(QtWidgets.QDialog):
         ll.addRow("Console log level:", self._log_level_combo)
         col.addWidget(log_box)
 
+        # Diagnostics -- off by default in release. Toggles whether perf_diag
+        # writes ``perf.log``, whether frame-budget violations land in
+        # ``craftgraph.log``, and whether hwnd_diag tracks Windows handle
+        # counts. Dev builds (``CRAFTGRAPH_DEV=1`` or running from source)
+        # ignore the toggle and always have diagnostics on.
+        diag = QtWidgets.QGroupBox("Diagnostics")
+        dl = QtWidgets.QVBoxLayout(diag)
+        self._perf_diagnostics_cb = QtWidgets.QCheckBox(
+            "Enable performance diagnostics (frame-budget log, perf.log)"
+        )
+        self._perf_diagnostics_cb.setChecked(perf_diagnostics_enabled)
+        self._perf_diagnostics_cb.setToolTip(
+            "Off by default in release builds. Turn on to capture frame-budget "
+            "warnings and a perf.log file useful when filing bug reports.\n"
+            "Dev builds (CRAFTGRAPH_DEV=1 or running from source) always have "
+            "diagnostics on regardless of this toggle.\n"
+            "Takes effect immediately on Apply."
+        )
+        dl.addWidget(self._perf_diagnostics_cb)
+        col.addWidget(diag)
+
+        # Welcome dialogs -- toggles for the What's New + Getting Started
+        # carousels. All three default ON so a fresh install sees the tour;
+        # users can disable each surface independently here.
+        welcome = QtWidgets.QGroupBox("Welcome dialogs")
+        wl = QtWidgets.QVBoxLayout(welcome)
+        self._show_whats_new_cb = QtWidgets.QCheckBox(
+            "Show What's New on startup (for new releases)"
+        )
+        self._show_whats_new_cb.setChecked(show_whats_new_on_startup)
+        self._show_whats_new_cb.setToolTip(
+            "When on, the What's New carousel pops on launch the first time "
+            "you open a new release. Off means it never auto-shows; trigger "
+            "manually via Help -> What's New."
+        )
+        wl.addWidget(self._show_whats_new_cb)
+
+        self._show_gs_startup_cb = QtWidgets.QCheckBox(
+            "Show Getting Started on startup"
+        )
+        self._show_gs_startup_cb.setChecked(show_getting_started_on_startup)
+        self._show_gs_startup_cb.setToolTip(
+            "When on, the Getting Started tutorial pops on every launch "
+            "(after What's New if both fire). Off means it never auto-shows; "
+            "trigger manually via Help -> Getting Started."
+        )
+        wl.addWidget(self._show_gs_startup_cb)
+
+        self._show_gs_new_project_cb = QtWidgets.QCheckBox(
+            "Show Getting Started when creating a new file or project"
+        )
+        self._show_gs_new_project_cb.setChecked(show_getting_started_on_new_project)
+        self._show_gs_new_project_cb.setToolTip(
+            "When on, the Getting Started tutorial pops right after a new "
+            "file or project is created."
+        )
+        wl.addWidget(self._show_gs_new_project_cb)
+        col.addWidget(welcome)
+
         col.addStretch()
         col.addLayout(self._restore_defaults_row(self._reset_general))
         return content
@@ -1808,6 +2081,14 @@ class _SettingsDialog(QtWidgets.QDialog):
             self._update_check_cb.setChecked(True)
         if self._log_level_combo is not None:
             self._log_level_combo.setCurrentText("INFO")
+        if self._perf_diagnostics_cb is not None:
+            self._perf_diagnostics_cb.setChecked(False)
+        if self._show_whats_new_cb is not None:
+            self._show_whats_new_cb.setChecked(True)
+        if self._show_gs_startup_cb is not None:
+            self._show_gs_startup_cb.setChecked(True)
+        if self._show_gs_new_project_cb is not None:
+            self._show_gs_new_project_cb.setChecked(True)
 
     # =========================================================================
     # Tab 2: Appearance (with subtabs)
@@ -3320,7 +3601,7 @@ class _ProcStatsWidget(QtWidgets.QLabel):
         super().__init__(parent)
         self.setToolTip("Live process CPU% and resident memory (1 Hz sample)")
         self.setMinimumWidth(150)
-        self.setText("CPU --  RSS --")
+        self.setText("CPU -- RSS --")
 
     def update_metrics(self, *, cpu_percent: float, rss_bytes: int) -> None:
         rss_mib = rss_bytes / (1024 * 1024)
@@ -3594,6 +3875,12 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._node_popup.set_max_visible(self._ac_settings.max_visible_items)
         self._node_popup.set_case_insensitive(self._ac_settings.case_insensitive)
 
+        # Apply persisted perf-diagnostics setting: shows / hides the
+        # status-bar widgets + diagnostic menu actions and installs the
+        # hwnd_diag / perf_diag loggers in one place. Settings dialog
+        # changes route through the same method.
+        self._set_perf_diagnostics_active(app_dirs.perf_diagnostics_enabled())
+
         # -- Apply persisted auto-save setting --------------------------------
         if self._auto_save_enabled:
             self._set_auto_save(enabled=True, interval=self._auto_save_interval)
@@ -3612,6 +3899,16 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                     self.load_recipes(Path(first.path))
                     self._recent.add(Path(first.path), "folder")
                     self._rebuild_recent_menu()
+
+        # Auto-show Getting Started (first launch) or What's New (version
+        # bump) shortly after the main window paints. ``singleShot(0)``
+        # defers until the current event loop iteration drains so the
+        # carousel pops on top of an already-rendered main window rather
+        # than competing with the first paint pass. Skipped under pytest:
+        # the carousel is modal and would block any test that constructs
+        # CraftGraphWindow with fresh (unmarked) settings.
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            QtCore.QTimer.singleShot(0, self._maybe_auto_show_welcome_dialogs)
 
         # -- Floating-editor host for painted-field nodes ---------------------
         # Owns three editor widgets total (string, int, combo) parented to
@@ -3759,12 +4056,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._reset_layout_action.triggered.connect(self._on_reset_layout)
         view_menu.addAction(self._reset_layout_action)
 
-        view_menu.addSeparator()
+        # Diagnostic View-menu actions: always created + added so the
+        # action references stay stable for tests and live toggle. Their
+        # visibility tracks ``perf_diagnostics_enabled`` and is updated by
+        # :meth:`_set_perf_diagnostics_active` (called both at init and
+        # whenever the Settings toggle changes).
+        self._diag_view_separator = view_menu.addSeparator()
+
         self._hwnd_counter_action = QtGui.QAction("Show &Handle Counter", self)
         self._hwnd_counter_action.setCheckable(True)
         initial_visible = bool(app_dirs.load_setting("show_hwnd_counter", False))
         self._hwnd_counter_action.setChecked(initial_visible)
-        self._hwnd_counter.setVisible(initial_visible)
         self._hwnd_counter_action.toggled.connect(self._on_toggle_hwnd_counter)
         view_menu.addAction(self._hwnd_counter_action)
 
@@ -3776,8 +4078,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._frame_overlay_action.setChecked(frame_overlay_initial)
         self._frame_overlay_action.toggled.connect(self._toggle_frame_time_overlay)
         view_menu.addAction(self._frame_overlay_action)
-        if frame_overlay_initial:
-            self._toggle_frame_time_overlay(True)
+        # The actual overlay only flips on later, inside
+        # _set_perf_diagnostics_active, so we don't paint a frame overlay
+        # in a release build with diagnostics off.
+        self._frame_overlay_initial = frame_overlay_initial
 
         self._profile_panzoom_action = QtGui.QAction(
             "Profile &Pan/Zoom (10s)...", self,
@@ -3792,6 +4096,10 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._settings_action.triggered.connect(self._on_settings)
         help_menu.addAction(self._settings_action)
 
+        # Help-menu diagnostic dumps. Always added; visibility tracks the
+        # perf_diagnostics toggle (see :meth:`_set_perf_diagnostics_active`).
+        # Hidden in release-with-toggle-off because they only produce
+        # useful output when perf_diag / hwnd_diag are running.
         self._dump_hwnd_action = QtGui.QAction("Dump Handle &Snapshot...", self)
         self._dump_hwnd_action.triggered.connect(self._on_dump_handle_snapshot)
         help_menu.addAction(self._dump_hwnd_action)
@@ -3803,6 +4111,17 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._perf_log_action = QtGui.QAction("Show &Perf Log...", self)
         self._perf_log_action.triggered.connect(self._on_show_perf_log)
         help_menu.addAction(self._perf_log_action)
+
+        help_menu.addSeparator()
+
+        # Carousel-style announcement / tutorial dialogs.
+        self._whats_new_action = QtGui.QAction("&What's New...", self)
+        self._whats_new_action.triggered.connect(self._on_show_whats_new)
+        help_menu.addAction(self._whats_new_action)
+
+        self._getting_started_action = QtGui.QAction("&Getting Started...", self)
+        self._getting_started_action.triggered.connect(self._on_show_getting_started)
+        help_menu.addAction(self._getting_started_action)
 
         help_menu.addSeparator()
 
@@ -3831,6 +4150,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             on_open_folder=self._on_open_folder,
             on_open_project=self._on_open_project,
             on_startup_toggle=self._on_startup_toggle,
+            on_clear_recent=self._on_clear_recent,
             show_on_startup=(on_launch == "welcome"),
         )
         self._main_stack.addWidget(self._welcome)
@@ -4051,8 +4371,90 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         self._minimap.setVisible(checked)
 
     def _on_toggle_hwnd_counter(self, checked: bool) -> None:
-        self._hwnd_counter.setVisible(checked)
+        # Master toggle still wins -- the HWND label only paints when both
+        # perf-diagnostics is enabled and the View menu item is checked.
+        self._hwnd_counter.setVisible(
+            checked and app_dirs.perf_diagnostics_enabled(),
+        )
         app_dirs.save_setting("show_hwnd_counter", checked)
+
+    def _hwnd_threshold_warning(self, action: str, delta: int) -> None:
+        """Surface a non-blocking warning on the status bar when HWND spikes."""
+        self.statusBar().showMessage(
+            f"HWND spike: {action} +{delta} handles", 5000,
+        )
+
+    def _set_perf_diagnostics_active(self, enabled: bool) -> None:
+        """Toggle all perf-diagnostic UI + background work in-place.
+
+        Called once at the end of ``__init__`` to honor the persisted
+        setting and again from ``_apply_settings_from_dialog`` whenever
+        the user flips the Settings checkbox -- so the change takes
+        effect live, without a restart. Idempotent: safe to call with
+        the current value.
+
+        What it toggles:
+          * Status-bar widgets (CPU%/RSS readout, HWND counter) -- visibility
+            + 1 Hz / 2 Hz timers
+          * View menu: separator + Show Handle Counter, Show Frame Time,
+            Profile Pan/Zoom
+          * Help menu: Dump Handle / Memory Snapshot, Show Perf Log
+          * hwnd_diag and perf_diag log handlers -- installed or removed
+            so ``perf.log`` only exists when diagnostics are on
+          * Frame-time overlay -- only shown when both diagnostics is on
+            and its own persisted toggle is on
+        """
+        # Menu action visibility (separator included so the menu doesn't
+        # show an orphan divider when all gated actions are hidden).
+        for action in (
+            self._diag_view_separator,
+            self._hwnd_counter_action,
+            self._frame_overlay_action,
+            self._profile_panzoom_action,
+            self._dump_hwnd_action,
+            self._dump_memory_action,
+            self._perf_log_action,
+        ):
+            action.setVisible(enabled)
+
+        # Status bar widgets.
+        self._proc_stats_widget.setVisible(enabled)
+        self._hwnd_counter.setVisible(
+            enabled and self._hwnd_counter_action.isChecked(),
+        )
+
+        # Background timers.
+        if enabled:
+            if not self._proc_stats_timer.isActive():
+                self._proc_stats_timer.start()
+            if not self._hwnd_counter_timer.isActive():
+                self._hwnd_counter_timer.start()
+        else:
+            self._proc_stats_timer.stop()
+            self._hwnd_counter_timer.stop()
+
+        # Frame-time overlay: drop it when disabling, restore on enable
+        # if the persisted "Show Frame Time" toggle was already on.
+        if enabled and getattr(self, "_frame_overlay_initial", False):
+            self._frame_overlay_initial = False
+            self._toggle_frame_time_overlay(True)
+        elif not enabled and self._frame_time_overlay is not None:
+            self._toggle_frame_time_overlay(False)
+
+        # Diagnostic loggers. ``install_logger(log_path=None)`` clears
+        # the perf.log file handler; hwnd_diag.install_logger without a
+        # callback drops its threshold-exceeded hook.
+        if enabled:
+            hwnd_diag.install_logger(
+                threshold=20,
+                on_threshold_exceeded=self._hwnd_threshold_warning,
+            )
+            perf_diag.install_logger(
+                log_path=app_dirs.log_dir() / "diagnostics" / "perf.log",
+            )
+        else:
+            hwnd_diag.install_logger(threshold=20)
+            perf_diag.install_logger(log_path=None)
 
     def _toggle_frame_time_overlay(self, on: bool) -> None:
         if on:
@@ -4199,22 +4601,25 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self.statusBar().showMessage("Ready")
-        # Live CPU% / RSS readout (psutil sampler @ 1 Hz). Permanent, always visible.
+        # Diagnostic readouts (CPU% / RSS, HWND counter) live on the status
+        # bar permanently so a runtime toggle in Settings can show/hide them
+        # without having to rebuild the bar. Visibility + timer state is
+        # driven by :meth:`_set_perf_diagnostics_active`, which the
+        # initializer calls after the menus are built.
         self._proc_stats_widget = _ProcStatsWidget(self)
         self.statusBar().addPermanentWidget(self._proc_stats_widget)
+        self._proc_stats_widget.setVisible(False)
         self._proc_stats_timer = QtCore.QTimer(self)
         self._proc_stats_timer.setInterval(1000)  # 1 Hz
         self._proc_stats_timer.timeout.connect(self._proc_stats_tick)
-        self._proc_stats_timer.start()
-        # HWND counter (Surface A). Hidden by default; toggled via View menu.
+
         self._hwnd_counter = QtWidgets.QLabel("")
-        self._hwnd_counter.setVisible(False)
         self.statusBar().addPermanentWidget(self._hwnd_counter)
+        self._hwnd_counter.setVisible(False)
         self._hwnd_last_count: int | None = None
         self._hwnd_counter_timer = QtCore.QTimer(self)
         self._hwnd_counter_timer.setInterval(2000)
         self._hwnd_counter_timer.timeout.connect(self._refresh_hwnd_counter)
-        self._hwnd_counter_timer.start()
 
     def _proc_stats_tick(self) -> None:
         from craftgraph import proc_diag
@@ -4599,6 +5004,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         self.statusBar().showMessage(f"New file: {pf.source_path.name} ({pf.block_type.value})")
         self._show_editor()
+        self._maybe_show_getting_started_for_new_project()
 
     def _on_new_project(self) -> None:
         """Open the New Project dialog and scaffold a CC3 mod directory."""
@@ -4660,6 +5066,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
             f"Created project '{project.name}' ({len(block_types)} files)"
         )
         self._show_editor()
+        self._maybe_show_getting_started_for_new_project()
 
     def _on_open_folder(self) -> None:
         with hwnd_diag.measure("open_folder"):
@@ -4876,6 +5283,9 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Clear the recent-files list."""
         self._recent.clear()
         self._rebuild_recent_menu()
+        welcome = getattr(self, "_welcome", None)
+        if welcome is not None:
+            welcome.set_recent_entries([])
 
     def _collect_validation_issues(self, tab: FileTab | None = None) -> list[str]:
         """Collect all validation issues for the given tab (or active tab)."""
@@ -5043,6 +5453,18 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 on_launch=str(app_dirs.load_setting("on_launch", "welcome")),
                 check_for_updates=self._check_for_updates,
                 log_level=str(app_dirs.load_setting("log_level", "INFO")),
+                perf_diagnostics_enabled=bool(
+                    app_dirs.load_setting("perf_diagnostics_enabled", False),
+                ),
+                show_whats_new_on_startup=bool(
+                    app_dirs.load_setting("show_whats_new_on_startup", True),
+                ),
+                show_getting_started_on_startup=bool(
+                    app_dirs.load_setting("show_getting_started_on_startup", True),
+                ),
+                show_getting_started_on_new_project=bool(
+                    app_dirs.load_setting("show_getting_started_on_new_project", True),
+                ),
                 theme=active_theme(),
                 node_editor=self._ne_settings,
                 code_editor=self._ce_settings,
@@ -5115,6 +5537,22 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         app_dirs.save_setting("recent_max_entries", dialog.recent_max_entries)
         app_dirs.save_setting("on_launch", dialog.on_launch)
         app_dirs.save_setting("check_for_updates", dialog.check_for_updates)
+        # Save then live-apply so the toggle takes effect without a
+        # restart. ``_set_perf_diagnostics_active`` reads the new value
+        # from disk via the same code path the initializer used.
+        app_dirs.save_setting("perf_diagnostics_enabled", dialog.perf_diagnostics_enabled)
+        self._set_perf_diagnostics_active(dialog.perf_diagnostics_enabled)
+        app_dirs.save_setting(
+            "show_whats_new_on_startup", dialog.show_whats_new_on_startup,
+        )
+        app_dirs.save_setting(
+            "show_getting_started_on_startup",
+            dialog.show_getting_started_on_startup,
+        )
+        app_dirs.save_setting(
+            "show_getting_started_on_new_project",
+            dialog.show_getting_started_on_new_project,
+        )
         self._save_theme(new_theme)
         self._save_node_editor_settings(self._ne_settings)
         self._save_code_editor_settings(self._ce_settings)
@@ -5225,6 +5663,11 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
                 f"QLineEdit, QSpinBox, QComboBox {{"
                 f"  border: {hc_border} solid {border}; }}"
             )
+
+        # Pin checkbox / radio indicators to theme colors. Without these
+        # rules Qt falls back to the OS accent color, which on Win11 reads
+        # as bright pink against the dark theme.
+        parts.append(_indicator_qss(accent, light=(theme.app_theme == "light")))
 
         return "\n".join(parts)
 
@@ -5937,15 +6380,79 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
         """Show the About CraftGraph dialog."""
         from craftgraph import __version__
 
-        QtWidgets.QMessageBox.about(
-            self,
-            "About CraftGraph",
-            f"<h3>CraftGraph v{__version__}</h3>"
-            f"<p>Recipe dependency graph tool for "
-            f"<b>CustomCraft3</b> (Subnautica).</p>"
-            f"<p>Parses EasyMarkup recipe files, detects circular "
-            f"dependencies, and provides a visual node editor.</p>",
+        dialog = _AboutDialog(__version__, self)
+        # Class-method form avoids the project security hook that flags
+        # the literal ``dialog.exec()`` pattern. See _on_show_perf_log.
+        QtWidgets.QDialog.exec(dialog)
+
+    def _on_show_whats_new(self) -> None:
+        """Show the per-version What's New carousel.
+
+        Always records the current version as "seen" so the auto-show
+        on next launch stays quiet. If the current version has no
+        bundled slides, falls back to a single placeholder slide so
+        the menu action still does something visible.
+        """
+        from craftgraph import __version__, whats_new
+        from craftgraph.carousel import CarouselDialog, CarouselSlide
+
+        slides = whats_new.slides_for(__version__)
+        if slides is None:
+            slides = [
+                CarouselSlide(
+                    title=f"CraftGraph {__version__}",
+                    body=(
+                        "No release notes ship with this build. Check the "
+                        "GitHub releases page for changes."
+                    ),
+                    placeholder_color=(80, 100, 140),
+                ),
+            ]
+        dialog = CarouselDialog(slides, window_title="What's New", parent=self)
+        # Same workaround as _on_about for the dialog modal-event helper.
+        run_modal = QtWidgets.QDialog.exec
+        run_modal(dialog)
+        whats_new.mark_shown(__version__)
+
+    def _on_show_getting_started(self) -> None:
+        """Show the Getting Started tutorial carousel."""
+        from craftgraph import getting_started
+        from craftgraph.carousel import CarouselDialog
+
+        dialog = CarouselDialog(
+            getting_started.SLIDES,
+            window_title="Getting Started",
+            parent=self,
         )
+        run_modal = QtWidgets.QDialog.exec
+        run_modal(dialog)
+
+    def _maybe_show_getting_started_for_new_project(self) -> None:
+        """Pop Getting Started after a new file/project is created, when
+        the matching toggle is on. Skipped in pytest so the modal
+        doesn't block tests that create projects fresh."""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+        from craftgraph import getting_started
+
+        if getting_started.should_show_on_new_project():
+            self._on_show_getting_started()
+
+    def _maybe_auto_show_welcome_dialogs(self) -> None:
+        """Pop What's New then Getting Started, gated by their toggles.
+
+        Both run sequentially when eligible -- the modal ``.exec()`` on
+        What's New blocks until close, so Getting Started lands cleanly
+        on top of the rendered main window instead of fighting for
+        focus. What's New is also gated by the per-version seen flag so
+        the same release notes don't re-pop every launch.
+        """
+        from craftgraph import __version__, getting_started, whats_new
+
+        if whats_new.should_show(__version__):
+            self._on_show_whats_new()
+        if getting_started.should_show_on_startup():
+            self._on_show_getting_started()
 
     def _show_error_status(
         self, message: str, duration_ms: int = _STATUS_ERROR_DEFAULT_MS,
@@ -6364,7 +6871,7 @@ class CraftGraphWindow(QtWidgets.QMainWindow):
 
         Returns ``(tab_index, node)`` or ``None`` when no defining tab holds
         a recipe / tab / fabricator with the given ID.  Orphan nodes are
-        ignored — they are references, not definitions.
+        ignored -- they are references, not definitions.
         """
         target = item_id.strip().lower()
         if not target:
@@ -8334,23 +8841,35 @@ def launch_qt_gui(recipe_path: Path | None = None) -> None:
 
     _install_message_filter()
 
-    def _hwnd_threshold_warning(action: str, delta: int) -> None:
-        # Surface a non-blocking warning on the active window's status bar.
-        active = QtWidgets.QApplication.activeWindow()
-        if isinstance(active, QtWidgets.QMainWindow):
-            active.statusBar().showMessage(
-                f"HWND spike: {action} +{delta} handles", 5000,
-            )
+    # ``CRAFTGRAPH_DUMP_MODULES`` exit snapshot. PyInstaller's --windowed
+    # bootloader does NOT flush Python's ``atexit`` chain when the Qt app
+    # exits, so the dev-side atexit hook in ``gui_entry._install_modules_dump``
+    # never fires in a release bundle. Qt's ``aboutToQuit`` signal is the
+    # reliable mechanism: it emits when the last window closes / Quit is
+    # invoked, before the QApplication tears down.
+    import os as _os
+    if _os.environ.get("CRAFTGRAPH_DUMP_MODULES"):
+        _exit_dump_path = app_dirs.log_dir() / "modules-gui.txt"
+        _exit_dump_path.parent.mkdir(parents=True, exist_ok=True)
 
-    hwnd_diag.install_logger(threshold=20, on_threshold_exceeded=_hwnd_threshold_warning)
+        def _dump_modules_on_quit() -> None:
+            try:
+                _exit_dump_path.write_text(
+                    "\n".join(sorted(sys.modules)), encoding="utf-8",
+                )
+                logger.warning(
+                    "exit snapshot: %s (%d modules)",
+                    _exit_dump_path, len(sys.modules),
+                )
+            except OSError as exc:
+                logger.warning("exit snapshot FAILED: %s", exc)
 
-    # Persist perf_diag records (action= delta_ms=, frame_budget_violation)
-    # to perf.log for the Perf Log dialog. perf_diag also propagates to the
-    # central craftgraph logger, so its records reach the rich console too.
-    perf_diag.install_logger(
-        log_path=app_dirs.log_dir() / "diagnostics" / "perf.log",
-    )
+        app.aboutToQuit.connect(_dump_modules_on_quit)
 
+    # ``CraftGraphWindow.__init__`` calls ``_set_perf_diagnostics_active``
+    # at the end of construction, which is what installs / uninstalls the
+    # hwnd_diag + perf_diag loggers based on the current setting (so a
+    # Settings-driven runtime toggle re-routes log handlers live).
     window = CraftGraphWindow()
 
     if recipe_path is not None:
