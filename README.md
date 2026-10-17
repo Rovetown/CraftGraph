@@ -5,12 +5,12 @@ Recipe dependency graphs for [CustomCraft3](https://github.com/MrPurple6411/Prim
 Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects circular dependencies, visualizes as interactive HTML graph. Watches mod folder for changes, rebuilds automatically.
 
 <p align="center">
-  <sub>&darr; <i>Click to view full resolution</i> &darr;</sub>
-  <br><br>
-  <a href="craftgraph/data/assets/roadmap-vertical@4x.png">
-    <img src="craftgraph/data/assets/roadmap-vertical@4x.png" width="900"
-         alt="CraftGraph roadmap -- click for full resolution">
+  <a href="craftgraph/data/assets/screenshot-node-editor.png">
+    <img src="craftgraph/data/assets/screenshot-node-editor.png" width="900"
+         alt="The CraftGraph node editor: an AliasRecipes file open as connected nodes, the live EasyMarkup source beside it, and the ItemID reference panel">
   </a>
+  <br>
+  <sub><i>Node editor, live source view and ItemID reference, editing an AliasRecipes file</i></sub>
 </p>
 
 ## Features
@@ -19,6 +19,17 @@ Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects ci
 - **Detect** circular dependencies, report full cycle path
 - **Visualize** dependency graph as interactive HTML page with color-coded nodes
 - **Watch** recipe directory, auto-rebuild on every save
+
+## Roadmap
+
+<p align="center">
+  <sub>&darr; <i>Click to view full resolution</i> &darr;</sub>
+  <br><br>
+  <a href="craftgraph/data/assets/roadmap-vertical@4x.png">
+    <img src="craftgraph/data/assets/roadmap-vertical@4x.png" width="900"
+         alt="CraftGraph roadmap -- click for full resolution">
+  </a>
+</p>
 
 ## Installation
 
