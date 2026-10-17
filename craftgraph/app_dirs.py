@@ -3,7 +3,9 @@
 Uses ``platformdirs`` so that config, data, cache, and log files land in the
 OS-idiomatic location on every platform:
 
-- **Windows:** ``%APPDATA%\\CraftGraph`` (config), ``%LOCALAPPDATA%\\CraftGraph`` (cache/logs)
+- **Windows:** ``%LOCALAPPDATA%\\CraftGraph`` for everything (config + data +
+  cache + logs as subdirs). ``PlatformDirs`` is constructed with the default
+  ``roaming=False``, so the roaming ``%APPDATA%`` tree is never used.
 - **macOS:** ``~/Library/Application Support/CraftGraph``
 - **Linux:** ``~/.config/CraftGraph`` (config), ``~/.local/share/CraftGraph`` (data),
   ``~/.cache/CraftGraph`` (cache)
@@ -16,7 +18,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import sys
 from pathlib import Path
 
 from platformdirs import PlatformDirs
@@ -30,16 +34,64 @@ _APP_NAME = "CraftGraph"
 _dirs = PlatformDirs(_APP_NAME, appauthor=False, ensure_exists=False)
 
 
+# -- Build-mode detection ------------------------------------------------------
+
+
+_DEV_ENV_TRUE = frozenset({"1", "true", "yes", "on"})
+
+
+def is_dev() -> bool:
+    """Return True when running from source (dev) rather than a PyInstaller bundle.
+
+    Used to gate diagnostic features (frame-budget logs, paint timing, etc.)
+    that should not fire in a shipped binary. Two signals:
+
+    - ``CRAFTGRAPH_DEV`` env var forces the answer regardless of how the
+      app was launched. Accepts ``1`` / ``true`` / ``yes`` / ``on`` (case
+      insensitive). Useful for opting a release binary into dev diagnostics
+      when reproducing a bug, or for forcing dev-off in tests.
+    - ``sys.frozen`` is set by PyInstaller bundles. False = source install.
+
+    The env var takes precedence; on its absence the frozen attribute decides.
+    """
+    raw = os.environ.get("CRAFTGRAPH_DEV")
+    if raw is not None:
+        return raw.strip().lower() in _DEV_ENV_TRUE
+    return not getattr(sys, "frozen", False)
+
+
+def perf_diagnostics_enabled() -> bool:
+    """Return True when perf diagnostics (frame-budget logs, perf.log, etc.) should run.
+
+    Two paths:
+
+    - Dev builds: always on. ``is_dev() == True`` short-circuits to True so
+      developers see frame-budget warnings and ``perf.log`` records without
+      having to enable anything.
+    - Release builds: off by default. The user can opt in via Settings ->
+      General -> Diagnostics, which writes ``perf_diagnostics_enabled``
+      into ``settings.json``.
+
+    Loading the setting from disk on every check is fine -- it's a single
+    JSON read of a small file and the call sites are not in hot paths
+    (frame_tick happens at ~60 Hz at most; everything else is per-action).
+    """
+    if is_dev():
+        return True
+    return bool(load_setting("perf_diagnostics_enabled", False))
+
+
 # -- Public directory accessors ------------------------------------------------
 
 
 def config_dir() -> Path:
-    """User config directory (roaming on Windows).
+    """User config directory.
 
-    Stores settings, recent-files list, and other small user preferences
-    that should follow the user across machines on a domain.
+    Stores settings, the recent-files list, and other small user preferences.
 
-    - Windows: ``%APPDATA%/CraftGraph``
+    - Windows: ``%LOCALAPPDATA%/CraftGraph`` (``PlatformDirs`` defaults to
+      ``roaming=False``, so this is the Local AppData tree, not the
+      roaming ``%APPDATA%`` tree.)
     - macOS:   ``~/Library/Application Support/CraftGraph``
     - Linux:   ``~/.config/CraftGraph``
     """
@@ -47,9 +99,10 @@ def config_dir() -> Path:
 
 
 def data_dir() -> Path:
-    """User data directory (local).
+    """User data directory.
 
-    Stores larger persistent data that is machine-specific.
+    Stores larger persistent data. On Windows this is the same Local AppData
+    folder as ``config_dir()``; on Linux it is a separate path.
 
     - Windows: ``%LOCALAPPDATA%/CraftGraph``
     - macOS:   ``~/Library/Application Support/CraftGraph``
@@ -153,8 +206,6 @@ def save_setting(key: str, value: _SettingValue) -> None:
 
 def _icon_name() -> str:
     """Return the platform-appropriate icon filename."""
-    import sys
-
     if sys.platform == "win32":
         return "craftgraph.ico"
     if sys.platform == "darwin":

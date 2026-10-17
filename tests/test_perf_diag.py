@@ -58,6 +58,43 @@ def test_frame_under_budget_does_not_log(
     assert not any("frame_budget_violation" in r.message for r in caplog.records)
 
 
+def test_report_frame_is_noop_in_release_build(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    restore_frame_budget_logging,
+) -> None:
+    """Frame-budget warnings only fire when diagnostics are enabled.
+
+    Mocks :func:`craftgraph.app_dirs.perf_diagnostics_enabled` to ``False``
+    (the release-build default) so an over-budget frame would normally
+    trigger a WARNING; verifies the gate suppresses it.
+    """
+    from craftgraph import app_dirs
+
+    monkeypatch.setattr(app_dirs, "perf_diagnostics_enabled", lambda: False)
+    caplog.set_level(logging.WARNING, logger="craftgraph.perf_diag")
+    perf_diag.report_frame(frame_ms=200.0)
+    assert not any("frame_budget_violation" in r.message for r in caplog.records)
+
+
+def test_measure_is_silent_in_release_build(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``measure()`` still yields its snapshot but does not log when off.
+
+    Callers using ``with measure(...) as snap`` must keep working
+    regardless of whether diagnostics are enabled.
+    """
+    from craftgraph import app_dirs
+
+    monkeypatch.setattr(app_dirs, "perf_diagnostics_enabled", lambda: False)
+    caplog.set_level(logging.INFO, logger="craftgraph.perf_diag")
+    with measure("noop_action") as snap:
+        assert isinstance(snap, perf_diag.PerfSnapshot)
+    assert not any("action=noop_action" in r.message for r in caplog.records)
+
+
 # ---------------------------------------------------------------------------
 # install_logger
 # ---------------------------------------------------------------------------

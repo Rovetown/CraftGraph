@@ -1,10 +1,42 @@
-"""CLI entry points for CraftGraph."""
+"""CLI entry points for CraftGraph.
 
+Diagnostic: set ``CRAFTGRAPH_DUMP_MODULES=1`` in the environment before
+running any subcommand to dump every imported module name to
+``modules-cli.txt`` in the working directory at process exit. Mirror of
+the GUI-side dump in ``gui_entry.py``; together they feed Step 7 of the
+bundle size reduction plan (see TODO).
+"""
+
+import atexit
+import os
 import sys
 from pathlib import Path
 
 import click
 import networkx
+
+
+def _install_modules_dump() -> None:
+    """Register a ``sys.modules`` dump on exit when ``CRAFTGRAPH_DUMP_MODULES`` is set.
+
+    Writes one module name per line to ``modules-cli.txt`` in the current
+    working directory. No-op when unset; OSError on write is swallowed.
+    """
+    if not os.environ.get("CRAFTGRAPH_DUMP_MODULES"):
+        return
+
+    def _dump() -> None:
+        try:
+            Path("modules-cli.txt").write_text(
+                "\n".join(sorted(sys.modules)), encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    atexit.register(_dump)
+
+
+_install_modules_dump()
 
 from craftgraph import __version__
 from craftgraph.graph import NodeType, build_graph, classify_nodes, find_cycles
@@ -17,7 +49,31 @@ from craftgraph.parser import (
     validate_parsed_file,
 )
 from craftgraph.serializer import serialize_file
-from craftgraph.visualizer import generate_html
+
+
+def _load_generate_html():
+    """Import ``generate_html`` lazily so ``pyvis`` isn't required at CLI start.
+
+    Returns ``generate_html`` on success. On failure prints an install hint
+    via click and raises ``SystemExit(1)`` so callers can ``return`` after.
+
+    ``visualizer.py`` itself does the actual ``pyvis`` import lazily
+    inside ``generate_html()``, so importing the module never fails on
+    a pyvis-less install. We trigger an upfront ``import pyvis`` here
+    so the error lands in this friendly handler rather than as an
+    uncaught ``PyvisNotInstalledError`` deep in the call stack.
+    """
+    try:
+        import pyvis  # noqa: F401  -- existence check only
+        from craftgraph.visualizer import generate_html
+    except ImportError as exc:
+        click.echo(
+            f"Error: {exc}\n"
+            'Install with: pip install "craftgraph[visualizer]"',
+            err=True,
+        )
+        raise SystemExit(1) from exc
+    return generate_html
 
 
 @click.group()
@@ -159,6 +215,7 @@ def view(path: str, output: str | None, *, verbose: bool) -> None:
     _report_cycles(cycles)
 
     output_path = Path(output) if output else Path("craftgraph.html")
+    generate_html = _load_generate_html()
     result = generate_html(graph, output_path, cycles, open_browser=True)
     click.echo(f"Graph saved to {result}")
 
@@ -175,6 +232,7 @@ def watch(path: str, output: str | None, *, verbose: bool) -> None:
         raise SystemExit(1)
 
     output_path = Path(output) if output else Path("craftgraph.html")
+    generate_html = _load_generate_html()
     is_first_build = True
 
     def on_rebuild(

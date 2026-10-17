@@ -88,7 +88,19 @@ FRAME_BUDGET_MS = 33.0
 
 
 def report_frame(frame_ms: float, *, budget_ms: float = FRAME_BUDGET_MS) -> None:
-    """Log a WARNING when *frame_ms* exceeds *budget_ms*; no-op otherwise."""
+    """Log a WARNING when *frame_ms* exceeds *budget_ms*, when diagnostics are on.
+
+    Frame-budget warnings are a diagnostic signal aimed at developers and
+    advanced users: they pinpoint expensive paints during real interactive
+    use. In a release binary they would pollute ``craftgraph.log`` without
+    actionable value for the average user, so this no-ops unless
+    :func:`craftgraph.app_dirs.perf_diagnostics_enabled` returns True --
+    that is, either the build is dev or the user opted in via Settings.
+    """
+    from craftgraph import app_dirs
+
+    if not app_dirs.perf_diagnostics_enabled():
+        return
     if frame_ms > budget_ms:
         logger.warning(
             "frame_budget_violation frame_ms=%.3f budget_ms=%.3f",
@@ -99,22 +111,31 @@ def report_frame(frame_ms: float, *, budget_ms: float = FRAME_BUDGET_MS) -> None
 
 @contextmanager
 def measure(action: str) -> Iterator[PerfSnapshot]:
-    """Log wall-clock delta around a block.
+    """Log wall-clock delta around a block, when diagnostics are on.
 
     Emits one INFO line on exit::
 
         action=<action> delta_ms=<float>
+
+    No-ops in release builds where
+    :func:`craftgraph.app_dirs.perf_diagnostics_enabled` is False -- the
+    context still yields a snapshot so callers using ``with measure(..) as s``
+    keep working, but nothing is logged.
     """
+    from craftgraph import app_dirs
+
+    enabled = app_dirs.perf_diagnostics_enabled()
     before = PerfSnapshot.now(action=action)
     try:
         yield before
     finally:
-        after = PerfSnapshot.now(action=action)
-        logger.info(
-            "action=%s delta_ms=%.3f",
-            action,
-            after.delta_ms_since(before),
-        )
+        if enabled:
+            after = PerfSnapshot.now(action=action)
+            logger.info(
+                "action=%s delta_ms=%.3f",
+                action,
+                after.delta_ms_since(before),
+            )
 
 
 # ---------------------------------------------------------------------------

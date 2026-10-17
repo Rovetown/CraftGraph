@@ -85,3 +85,105 @@ def test_unwritable_log_dir_does_not_raise(tmp_path, monkeypatch):
     pkg = logging.getLogger("craftgraph")
     assert any(isinstance(h, RichHandler) for h in pkg.handlers)
     assert not any(isinstance(h, real_file_handler) for h in pkg.handlers)
+
+
+def test_cleanup_old_logs_drops_files_past_cutoff(tmp_path):
+    """Files mtime'd > max_age_days ago are deleted; recent ones survive."""
+    import os
+    import time
+
+    from craftgraph.log_setup import cleanup_old_logs
+
+    old_log = tmp_path / "craftgraph.log"
+    old_log.write_text("ancient", encoding="utf-8")
+    recent_log = tmp_path / "hwnd.log"
+    recent_log.write_text("yesterday", encoding="utf-8")
+    dump = tmp_path / "modules-gui.txt"
+    dump.write_text("dump", encoding="utf-8")
+    foreign = tmp_path / "user-notes.md"
+    foreign.write_text("user file", encoding="utf-8")
+
+    # Backdate the "old" files; leave the others at "now".
+    long_ago = time.time() - 30 * 86400
+    os.utime(old_log, (long_ago, long_ago))
+    os.utime(dump, (long_ago, long_ago))
+
+    removed = cleanup_old_logs(tmp_path, max_age_days=7)
+
+    assert removed == 2
+    assert not old_log.exists()
+    assert not dump.exists()
+    assert recent_log.exists()
+    # Files not matching the cleanup patterns are preserved even when stale.
+    foreign_long_ago = tmp_path / "stale-but-foreign.txt"
+    foreign_long_ago.write_text("stale", encoding="utf-8")
+    os.utime(foreign_long_ago, (long_ago, long_ago))
+    cleanup_old_logs(tmp_path, max_age_days=7)
+    assert foreign_long_ago.exists()
+    assert foreign.exists()
+
+
+def test_cleanup_old_logs_no_dir_is_noop(tmp_path):
+    """Missing log dir returns 0 and does not raise."""
+    from craftgraph.log_setup import cleanup_old_logs
+
+    missing = tmp_path / "does-not-exist"
+    assert cleanup_old_logs(missing) == 0
+
+
+def test_cleanup_old_logs_handles_diagnostics_subdir(tmp_path):
+    """Files under ``diagnostics/`` (perf.log) are also pruned when stale."""
+    import os
+    import time
+
+    from craftgraph.log_setup import cleanup_old_logs
+
+    (tmp_path / "diagnostics").mkdir()
+    perf = tmp_path / "diagnostics" / "perf.log"
+    perf.write_text("ancient perf data", encoding="utf-8")
+    long_ago = time.time() - 30 * 86400
+    os.utime(perf, (long_ago, long_ago))
+
+    cleanup_old_logs(tmp_path, max_age_days=7)
+    assert not perf.exists()
+
+
+def test_configure_logging_invokes_cleanup(tmp_path, monkeypatch):
+    """``configure_logging`` calls ``cleanup_old_logs`` for the target dir."""
+    import logging as _logging
+
+    from craftgraph import log_setup
+
+    seen: list[Path] = []
+    monkeypatch.setattr(
+        log_setup,
+        "cleanup_old_logs",
+        lambda d, **_kw: seen.append(d) or 0,
+    )
+    log_setup.configure_logging(level=_logging.INFO, log_dir=tmp_path)
+    assert seen == [tmp_path]
+
+
+def test_fallback_when_rich_is_missing(tmp_path, monkeypatch):
+    """When rich is not installed, install a stdlib StreamHandler instead.
+
+    Simulated by monkeypatching ``_import_rich`` to return the
+    all-``None`` sentinel that the real helper returns on ImportError.
+    """
+    from craftgraph import log_setup
+
+    monkeypatch.setattr(log_setup, "_import_rich", lambda: (None, None, None))
+    log_setup.configure_logging(level=logging.INFO, log_dir=tmp_path)
+
+    pkg = logging.getLogger("craftgraph")
+    rich_handlers = [h for h in pkg.handlers if isinstance(h, RichHandler)]
+    assert rich_handlers == []
+    # A bare StreamHandler is the fallback; FileHandler is a subclass of
+    # StreamHandler so filter it out before asserting.
+    stream_handlers = [
+        h for h in pkg.handlers
+        if isinstance(h, logging.StreamHandler)
+        and not isinstance(h, logging.FileHandler)
+    ]
+    assert len(stream_handlers) == 1
+    assert stream_handlers[0].level == logging.INFO

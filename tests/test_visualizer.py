@@ -74,3 +74,65 @@ def test_cycle_overrides_unlock_styling(tmp_path: Path) -> None:
 
     cycle_color = get_config().visualizer.cycle_edge_color
     assert cycle_color in html
+
+
+def test_visualizer_module_does_not_import_pyvis_at_top(tmp_path: Path) -> None:
+    """Importing ``craftgraph.visualizer`` must not pull pyvis into ``sys.modules``.
+
+    pyvis is now an optional dep, lazy-loaded inside ``generate_html``. CLI
+    subcommands that don't render HTML (``check``, ``export``) must remain
+    runnable on a pyvis-less install.
+    """
+    import sys
+
+    # If a previous test already loaded pyvis (e.g. via generate_html above),
+    # we can't unload it -- so this assertion only catches the regression on
+    # a clean run. Skip when pyvis is already in sys.modules from earlier.
+    if "pyvis" in sys.modules:
+        import pytest
+
+        pytest.skip("pyvis already loaded by an earlier test in this session")
+    # Re-import the module fresh and confirm pyvis stays unloaded.
+    import importlib
+
+    import craftgraph.visualizer as v
+
+    importlib.reload(v)
+    assert "pyvis" not in sys.modules
+
+
+def test_generate_html_raises_pyvis_not_installed_when_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Raise a friendly :class:`PyvisNotInstalledError` instead of a bare ImportError.
+
+    Simulates pyvis being missing by blocking the import. The error must
+    subclass ``ImportError`` so callers can ``except ImportError`` and
+    must carry an install-hint string the CLI prints verbatim.
+    """
+    import builtins
+    import sys
+
+    from craftgraph.graph import build_graph
+    from craftgraph.visualizer import PyvisNotInstalledError, generate_html
+
+    monkeypatch.setitem(sys.modules, "pyvis", None)
+    monkeypatch.setitem(sys.modules, "pyvis.network", None)
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("pyvis"):
+            raise ImportError(f"No module named {name!r}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    recipes = [ModifiedRecipe(item_id="A", ingredients=[Ingredient("B", 1)])]
+    graph = build_graph([_pf(recipes)])
+
+    import pytest
+
+    with pytest.raises(PyvisNotInstalledError) as excinfo:
+        generate_html(graph, tmp_path / "g.html")
+    assert "pip install" in str(excinfo.value)
+    assert issubclass(PyvisNotInstalledError, ImportError)

@@ -218,3 +218,61 @@ class TestNoQtImports:
         code = Path(source.origin).read_text(encoding="utf-8")
         assert "PySide6" not in code
         assert "NodeGraphQt" not in code
+
+
+class TestIsDev:
+    """``is_dev`` distinguishes source installs from PyInstaller bundles."""
+
+    def test_returns_true_when_running_from_source(self, monkeypatch) -> None:
+        """Without ``CRAFTGRAPH_DEV`` set, source installs (no sys.frozen) are dev."""
+        monkeypatch.delenv("CRAFTGRAPH_DEV", raising=False)
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        assert app_dirs.is_dev() is True
+
+    def test_returns_false_when_frozen(self, monkeypatch) -> None:
+        monkeypatch.delenv("CRAFTGRAPH_DEV", raising=False)
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        assert app_dirs.is_dev() is False
+
+    def test_env_var_forces_true(self, monkeypatch) -> None:
+        """``CRAFTGRAPH_DEV=1`` overrides ``sys.frozen=True``."""
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        for raw in ("1", "true", "TRUE", "yes", "on"):
+            monkeypatch.setenv("CRAFTGRAPH_DEV", raw)
+            assert app_dirs.is_dev() is True, raw
+
+    def test_env_var_forces_false(self, monkeypatch) -> None:
+        """``CRAFTGRAPH_DEV=0`` overrides a source install (no sys.frozen)."""
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        for raw in ("0", "false", "no", "off", ""):
+            monkeypatch.setenv("CRAFTGRAPH_DEV", raw)
+            assert app_dirs.is_dev() is False, raw
+
+
+class TestPerfDiagnosticsEnabled:
+    """``perf_diagnostics_enabled`` is True in dev OR when the setting is on."""
+
+    def test_dev_build_always_returns_true(self, monkeypatch) -> None:
+        monkeypatch.setattr(app_dirs, "is_dev", lambda: True)
+        # Even with the setting absent, dev short-circuits.
+        monkeypatch.setattr(
+            app_dirs, "load_setting", lambda _key, _default: False,
+        )
+        assert app_dirs.perf_diagnostics_enabled() is True
+
+    def test_release_build_default_is_false(self, monkeypatch) -> None:
+        """Fresh release install: setting is unset, helper returns False."""
+        monkeypatch.setattr(app_dirs, "is_dev", lambda: False)
+        monkeypatch.setattr(
+            app_dirs, "load_setting",
+            lambda key, default: default if key == "perf_diagnostics_enabled" else default,
+        )
+        assert app_dirs.perf_diagnostics_enabled() is False
+
+    def test_release_build_with_toggle_on(self, monkeypatch) -> None:
+        monkeypatch.setattr(app_dirs, "is_dev", lambda: False)
+        monkeypatch.setattr(
+            app_dirs, "load_setting",
+            lambda key, default: True if key == "perf_diagnostics_enabled" else default,
+        )
+        assert app_dirs.perf_diagnostics_enabled() is True

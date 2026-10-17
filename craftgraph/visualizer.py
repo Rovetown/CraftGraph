@@ -1,13 +1,28 @@
-"""Interactive HTML graph visualizer via Pyvis."""
+"""Interactive HTML graph visualizer via Pyvis.
+
+``pyvis`` is an optional runtime dependency: only the CLI ``view`` and
+``watch`` commands need it, and the bundled Qt binary never invokes
+them. The import is therefore deferred to inside :func:`generate_html`,
+where a missing install raises a clean :class:`PyvisNotInstalledError`
+the CLI can translate into a friendly message.
+"""
 
 import webbrowser
 from pathlib import Path
 
 import networkx
-from pyvis.network import Network
 
 from craftgraph.config import get_config
 from craftgraph.graph import NodeType, classify_nodes
+
+
+class PyvisNotInstalledError(ImportError):
+    """Raised when ``generate_html`` is called without pyvis installed.
+
+    Carries a human-readable install hint in ``args[0]`` so the CLI can
+    print it verbatim. Subclasses :class:`ImportError` so callers that
+    only want to skip the visualizer cleanly can ``except ImportError``.
+    """
 
 # -- Node styling constants ----------------------------------------------------
 
@@ -96,7 +111,19 @@ def generate_html(
     default web browser after saving.
 
     Returns the resolved output path.
+
+    Raises:
+        PyvisNotInstalledError: if ``pyvis`` is not importable. Install
+            with ``pip install craftgraph[visualizer]``.
     """
+    try:
+        from pyvis.network import Network
+    except ImportError as exc:
+        raise PyvisNotInstalledError(
+            "pyvis is required for HTML visualization but is not installed. "
+            'Install with: pip install "craftgraph[visualizer]"'
+        ) from exc
+
     net = Network(
         height="100vh",
         width="100%",
