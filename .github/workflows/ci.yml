@@ -52,10 +52,26 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      # PySide6 is a hard runtime dependency, so pytest-qt imports QtGui at
+      # collection time. The ubuntu runner image ships none of the GL/EGL/xkb
+      # libraries that import needs, and has no display either.
+      - name: Install Qt system libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libglib2.0-0 libdbus-1-3 \
+            libxkbcommon0 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xfixes0
+
       - name: Install dependencies
         run: uv sync
 
       - name: Run tests
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: uv run pytest -v
 
   smoke-no-dev:
@@ -75,8 +91,8 @@ jobs:
       - name: Sync runtime deps only
         run: uv sync --no-dev
 
-      - name: Smoke parse Tier A workload
-        run: uv run --no-dev python -c "from pathlib import Path; from craftgraph.parser import parse_directory; parse_directory(Path('craftgraph/cc3_reference_files/real-mod-examples')); print('smoke ok')"
+      - name: Smoke parse the committed fixture mod
+        run: uv run --no-dev python -c "from pathlib import Path; from craftgraph.parser import parse_directory; parse_directory(Path('tests/fixtures/mini_mod')); print('smoke ok')"
 
   build:
     name: Build (${{ matrix.os }})
