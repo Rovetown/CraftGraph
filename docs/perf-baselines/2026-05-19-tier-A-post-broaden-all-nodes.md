@@ -29,10 +29,10 @@ entirely in the paint path with zero per-field QWidget overhead.
 
 ## Methodology
 
-- `scripts/baseline_capture.py` — wall-clock from `time.perf_counter_ns()` around
+- `scripts/baseline_capture.py` -- wall-clock from `time.perf_counter_ns()` around
   `win.load_recipes(...)` + one `app.processEvents()`. HWND/widget snapshot via
   `craftgraph.hwnd_diag.take_snapshot()` before and after the load.
-- `scripts/baseline_cprofile.py` — cProfile from `prof.enable()` around the same
+- `scripts/baseline_cprofile.py` -- cProfile from `prof.enable()` around the same
   `load_recipes` call. Sorted by cumulative time; the relevant line is
   `_build_painted_registry` (95 calls, 260 ms cumulative).
 - Three independent runs for wall-clock; the resource counters were identical

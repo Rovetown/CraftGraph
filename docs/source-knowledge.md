@@ -2,7 +2,7 @@
 
 Doc covers writing recipe files for CustomCraft3 (CC3) Subnautica mod. Covers EasyMarkup syntax, all 10 block types, fields, validation, examples.
 
-Player tweaking recipes, modder building fabricator, dev on CraftGraph — guide got you.
+Player tweaking recipes, modder building fabricator, dev on CraftGraph -- guide got you.
 
 ---
 
@@ -38,7 +38,7 @@ Player tweaking recipes, modder building fabricator, dev on CraftGraph — guide
 
 ## What is CustomCraft3?
 
-CC3 — Subnautica mod by MrPurple6411. Customize crafting recipes, no code. Plain text files in EasyMarkup format, drop in mod folder, CC3 reads on game start.
+CC3 -- Subnautica mod by MrPurple6411. Customize crafting recipes, no code. Plain text files in EasyMarkup format, drop in mod folder, CC3 reads on game start.
 
 Can:
 - Change ingredients for existing recipes
@@ -87,7 +87,7 @@ ItemID:   Titanium  ;
 
 ### Blocks (Complex Values)
 
-Value w/ multiple key-value pairs — wrap in parentheses:
+Value w/ multiple key-value pairs -- wrap in parentheses:
 
 ```
 ComplexKey:
@@ -111,7 +111,7 @@ Comma-separated values on same key:
 LinkedItemIDs: Titanium, Gold, Silver;
 ```
 
-Lists of blocks — commas between entries, semicolon after last:
+Lists of blocks -- commas between entries, semicolon after last:
 
 ```
 Ingredients:
@@ -138,7 +138,7 @@ Values w/ spaces need double quotes:
 DisplayName: "Water Jug - 1 gallon";
 ```
 
-Single-word values — no quotes needed:
+Single-word values -- no quotes needed:
 
 ```
 DisplayName: Titanium;
@@ -146,7 +146,7 @@ DisplayName: Titanium;
 
 ### Escaping
 
-Special character in unquoted value — escape w/ `\`:
+Special character in unquoted value -- escape w/ `\`:
 
 ```
 SomeValue: Price\: 100;
@@ -178,7 +178,7 @@ Output always `YES` or `NO`.
 
 ### One Block Type Per File
 
-Each `.txt` file — exactly **one** primary block type. First non-comment content determines type.
+Each `.txt` file -- exactly **one** primary block type. First non-comment content determines type.
 
 Valid: File w/ only `ModifiedRecipes:` entries.
 Invalid: File w/ both `ModifiedRecipes:` and `AddedRecipes:` at top level.
@@ -257,7 +257,7 @@ ModifiedRecipe          (base: change existing recipes)
 
 **When to use:** Make existing item cheaper/more expensive, or add unlock conditions.
 
-**Important:** Only works w/ items already craftable in unmodded game. Non-craftable items — use AddedRecipe.
+**Important:** Only works w/ items already craftable in unmodded game. Non-craftable items -- use AddedRecipe.
 
 #### Fields
 
@@ -353,7 +353,7 @@ AddedRecipes:
 |-------|------|----------|---------|-------------|
 | DisplayName | string | Yes | "" | Name shown in-game (quote if spaces) |
 | Tooltip | string | Yes | "" | Description below name (quote if spaces) |
-| FunctionalID | string | No | None | Clone behavior of existing item. Without — item has no function. |
+| FunctionalID | string | No | None | Clone behavior of existing item. Without -- item has no function. |
 | SpriteItemID | string | No | None | Use existing item's icon |
 
 #### Example: New custom item
@@ -484,7 +484,7 @@ CustomFabricator = both item (must be built) and container (holds tabs/recipes).
 
 #### Nesting Structure
 
-CustomFabricator unique — contains other block types nested inside. Fabricator owns its tabs and recipes:
+CustomFabricator unique -- contains other block types nested inside. Fabricator owns its tabs and recipes:
 
 ```
 CustomFabricators:
@@ -564,7 +564,7 @@ CustomFabricator (ItemID: "MyFab")
 
 #### Ordering Rule
 
-**Parent tabs must be defined before child tabs in file.** Read top-to-bottom. Tab B child of Tab A — Tab A must appear first.
+**Parent tabs must be defined before child tabs in file.** Read top-to-bottom. Tab B child of Tab A -- Tab A must appear first.
 
 #### Example
 
@@ -616,9 +616,9 @@ CustomCraftingTabs:
 #### Constraints
 
 - `Copied` and `Hidden` cannot both be `YES`.
-- `Hidden: YES` — `OldPath` required, `NewPath` ignored.
-- `Copied: YES` — `NewPath` required, `OldPath` optional.
-- Neither — both `OldPath` and `NewPath` required (move).
+- `Hidden: YES` -- `OldPath` required, `NewPath` ignored.
+- `Copied: YES` -- `NewPath` required, `OldPath` optional.
+- Neither -- both `OldPath` and `NewPath` required (move).
 
 #### Examples
 
@@ -840,7 +840,7 @@ Two fields control recipe availability:
 Unlocks: DepletedReactorRod, AdvancedWiringKit;
 ```
 
-Player crafts/scans this item → **all listed items** unlock. Batch unlock: craft one, unlock many.
+Player crafts/scans this item -> **all listed items** unlock. Batch unlock: craft one, unlock many.
 
 ### UnlockedBy
 
@@ -1016,7 +1016,7 @@ ModifiedRecipes:
 
 ### Referencing tabs before they exist
 
-Recipe uses `Path: Fabricator/MyTab` but `MyTab` not defined yet — recipe fails silently. Define tabs first.
+Recipe uses `Path: Fabricator/MyTab` but `MyTab` not defined yet -- recipe fails silently. Define tabs first.
 
 ### Mixing block types in one file
 
@@ -1040,8 +1040,8 @@ Mutually exclusive on MovedRecipe. Both = invalid.
 
 ### Required value outside 1-25
 
-Ingredient `Required` must be 1-25. Outside range — silently clamped or rejected.
+Ingredient `Required` must be 1-25. Outside range -- silently clamped or rejected.
 
 ### Forgetting Path on AddedRecipe/AliasRecipe
 
-Unlike ModifiedRecipe (modifies in place), Added/Alias need `Path` to know fabricator placement. Without — recipe exists but player can't find it.
+Unlike ModifiedRecipe (modifies in place), Added/Alias need `Path` to know fabricator placement. Without -- recipe exists but player can't find it.

@@ -117,7 +117,7 @@ The pilot's acceptance gate requires ALL FOUR targets to hit:
 - [ ] FAIL: Widget count after Tier-A load 3156 (target <2700, pre 3145, delta +11)
 - [ ] FAIL: HWND USER after load 3273 (target <2900, pre 3272, delta +1)
 - [ ] FAIL: Folder-load wall-clock (Windows) 9288.6 ms (target <3000 ms, pre 4611.7 ms, delta +4676.9 ms / +101.4%)
-- [x] PASS: `_create_widget_for_field` cumtime 988 ms (target <1200 ms, pre 809 ms, delta +179 ms — already under target before the pilot due to lazy widgets, irrelevant indicator)
+- [x] PASS: `_create_widget_for_field` cumtime 988 ms (target <1200 ms, pre 809 ms, delta +179 ms -- already under target before the pilot due to lazy widgets, irrelevant indicator)
 
 **Verdict:** FAIL. Three of four targets missed. Only the `_create_widget_for_field` cProfile target is hit, and that one was already under the threshold pre-pilot (the task brief calls this metric "informational, not a meaningful gate" for the pilot).
 
@@ -137,7 +137,7 @@ The pilot's painted-fields path is gated by `type(self) is ModifiedRecipeNode` (
 
 The wall-clock regression (+4677 ms) is therefore not a measurement of the pilot saving anything (it didn't engage). The likely cause is the cumulative cost of the new infrastructure that runs on every node regardless of subclass:
 
-- New `_build_from_registry` override on the ModifiedRecipeNode class shows up as a new top-20 entry (1038 ms cumtime, 41 calls — fires for every recipe in `_create_recipe_node` because the override is on the base of the recipe chain).
+- New `_build_from_registry` override on the ModifiedRecipeNode class shows up as a new top-20 entry (1038 ms cumtime, 41 calls -- fires for every recipe in `_create_recipe_node` because the override is on the base of the recipe chain).
 - Added attribute lookups and `super()` chains (`type(self) is not ModifiedRecipeNode: super()._build_from_registry()` on every subclass instance build) add per-node overhead.
 - The Windows-platform wall-clock measurement is also more variable than the offscreen cProfile measurement; the three runs spread 8167 -> 9896 ms (range 1729 ms, ~21% of mean), so noise contributes to the gap, but every individual run exceeds the 4611 ms pre-pilot mean by at least 3.5 seconds.
 
@@ -145,7 +145,7 @@ The widget-count delta of +11 (3145 -> 3156) is consistent with the new instrume
 
 ## Caveat on cProfile target
 
-The `_create_widget_for_field <1200 ms` target was set against the post-Phase-2 baseline of 3392 ms (Windows platform). cProfile measurement is offscreen-only because the script uses `QT_QPA_PLATFORM=offscreen`. Under offscreen, lazy-widgets already prevented eager widget construction, so the pre-pilot cumtime was 809 ms — already inside the target before the pilot. The pilot's effect on `_create_widget_for_field` cumtime under cProfile is therefore informational, not a meaningful gate. The REAL acceptance signal lives in the three platform-relevant metrics: widget count, HWND, Windows wall-clock — all three FAILED.
+The `_create_widget_for_field <1200 ms` target was set against the post-Phase-2 baseline of 3392 ms (Windows platform). cProfile measurement is offscreen-only because the script uses `QT_QPA_PLATFORM=offscreen`. Under offscreen, lazy-widgets already prevented eager widget construction, so the pre-pilot cumtime was 809 ms -- already inside the target before the pilot. The pilot's effect on `_create_widget_for_field` cumtime under cProfile is therefore informational, not a meaningful gate. The REAL acceptance signal lives in the three platform-relevant metrics: widget count, HWND, Windows wall-clock -- all three FAILED.
 
 ## What to do next
 

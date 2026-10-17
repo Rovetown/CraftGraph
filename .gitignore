@@ -13,36 +13,80 @@ build/
 dist/
 *.spec
 
+# Test / profiling caches
+.pytest_cache/
+.hypothesis/
+.benchmarks/
+.ruff_cache/
+.mypy_cache/
+
 # Coverage artifacts
 .coverage
 .coverage.*
 htmlcov/
 coverage.xml
-.benchmarks/
 
-# IDE
+# IDE / editor
 .idea/
+.vscode/
+*.code-workspace
 
-# Claude Code and project-internal docs
-.claude/
-CLAUDE.md
-PLAN.md
-*.md
+# Credentials and secrets -- never commit any of these
+.env
+.env.*
+*.pem
+*.key
+*.ppk
+*.pfx
+*.p12
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+*.crt
+*.cer
+.netrc
+.npmrc
+.pypirc
+secrets.*
+credentials.*
+service-account*.json
+*.secret
+*_secret*
+*.token
+*_token*
 
-!README.md
-!docs/superpowers/specs/*.md
-!docs/superpowers/plans/*.md
+# Local machine state -- carries absolute paths, usernames, project history
+.craftgraph/
+# cProfile dumps embed the absolute capture path of every frame
+*.prof
+*.pstats
+# ...except the committed color-swatch fixture, which is coordinates only
+!scripts/color_swatch/.craftgraph/
+!scripts/color_swatch/.craftgraph/layout.json
+*.log
+logs/
+settings.local.json
+*.local.json
+.DS_Store
+Thumbs.db
+desktop.ini
 
+# Third-party CustomCraft3 reference sources (not ours to redistribute)
 craftgraph/cc3_reference_files/
 
 # Generated output
 craftgraph.html
 
+# Module-usage dumps (CRAFTGRAPH_DUMP_MODULES=1 diagnostic output).
+# The bundled GUI writes these into %LOCALAPPDATA%\CraftGraph\Logs (outside
+# the repo), but dev runs launched from here may land them at the repo root.
+modules-gui.txt
+modules-gui-startup.txt
+modules-cli.txt
+
 # Testing sandbox
 test_sandbox/
-
-# Brainstorming visual-companion scratch (mockups, session state)
-.superpowers/
 
 # Stray screen captures dropped at the repo root by Windows Snip & Sketch
 /Screenshot*.png

@@ -4,6 +4,15 @@ Recipe dependency graphs for [CustomCraft3](https://github.com/MrPurple6411/Prim
 
 Parses CC3's EasyMarkup `.txt` recipe files, builds dependency graph, detects circular dependencies, visualizes as interactive HTML graph. Watches mod folder for changes, rebuilds automatically.
 
+<p align="center">
+  <sub>&darr; <i>Click to view full resolution</i> &darr;</sub>
+  <br><br>
+  <a href="craftgraph/data/assets/roadmap-vertical@4x.png">
+    <img src="craftgraph/data/assets/roadmap-vertical@4x.png" width="900"
+         alt="CraftGraph roadmap -- click for full resolution">
+  </a>
+</p>
+
 ## Features
 
 - **Parse** all 10 CC3 block types (ModifiedRecipes, AddedRecipes, AliasRecipes, CustomFabricators, etc.)

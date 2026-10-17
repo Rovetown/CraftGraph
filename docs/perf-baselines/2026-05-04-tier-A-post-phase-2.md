@@ -59,7 +59,7 @@ profile.)
 
 ## Plan deviation: Task 5 (lazy widget construction)
 
-Task 5 from `docs/superpowers/plans/2026-05-04-perf-phase-2.md` -- defer
+Task 5 of the perf Phase 2 plan -- defer
 `_build_from_registry()` until first paint -- was implemented per spec, the
 plan's own tests passed, but the full regression suite produced (a) widespread
 test failures and (b) a Windows heap-corruption crash (`0xc0000374`). Root
