@@ -1039,6 +1039,13 @@ class TestRoundTripSynthetic:
 class TestRoundTripRealFiles:
     """Parse real CC3 reference files, serialize, re-parse, and verify equality."""
 
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not _REAL_MOD_EXAMPLES.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
+
     def test_big_filtered_water_roundtrip(self, tmp_path: Path) -> None:
         """Round-trip BigFilteredWater.txt (1 AddedRecipe)."""
         ref_file = _REAL_MOD_EXAMPLES / "BigFilteredWater.txt"

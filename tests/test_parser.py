@@ -1991,6 +1991,13 @@ _SAMPLE_FILES = _REF_DIR / "original-source" / "CustomCraft3" / "SampleFiles"
 class TestIntegrationSampleFiles:
     """Integration tests: parse official CC3 SampleFiles (all 10 block types)."""
 
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not _SAMPLE_FILES.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
+
     def test_modified_recipes(self) -> None:
         result = parse_file(_SAMPLE_FILES / "ModifiedRecipes_Samples.txt")
         assert result.block_type is BlockType.MODIFIED_RECIPES
@@ -2232,6 +2239,13 @@ class TestIntegrationAlchCustomFab:
 class TestIntegrationBigFilteredWater:
     """Integration test: parse BigFilteredWater.txt."""
 
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not _REAL_MOD_EXAMPLES.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
+
     _FILE = _REAL_MOD_EXAMPLES / "BigFilteredWater.txt"
 
     def test_file_exists(self) -> None:
@@ -2258,6 +2272,13 @@ class TestIntegrationBigFilteredWater:
 
 class TestIntegrationCustomFab3:
     """Integration test: parse customfab3.txt (Seamoth Parts Fabricator)."""
+
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not _REAL_MOD_EXAMPLES.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
 
     _FILE = _REAL_MOD_EXAMPLES / "customfab3.txt"
 
@@ -2342,6 +2363,13 @@ class TestIntegrationCustomFab3:
 
 class TestIntegrationCustomSizes:
     """Integration test: parse customsizze.txt."""
+
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not _REAL_MOD_EXAMPLES.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
 
     _FILE = _REAL_MOD_EXAMPLES / "customsizze.txt"
 

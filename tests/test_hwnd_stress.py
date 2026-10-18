@@ -75,6 +75,16 @@ SAMPLE_FOLDER = _SAMPLE_FILES_DIR / "EquipmentSalvage"
 # Second folder used by the multi-folder swap stress test.
 SAMPLE_FOLDER_B = _SAMPLE_FILES_DIR / "VModFabricator"
 
+# Those folders live in cc3_reference_files, gitignored third-party material
+# that no clean clone has. Appended here rather than above because the paths
+# have to exist first; pytest reads the final module attribute at collection.
+pytestmark.append(
+    pytest.mark.skipif(
+        not SAMPLE_FOLDER.is_dir(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
+)
+
 
 @pytest.fixture
 def window(qapp, qtbot, monkeypatch, tmp_path):

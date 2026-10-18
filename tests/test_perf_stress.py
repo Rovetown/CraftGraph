@@ -55,6 +55,13 @@ def _skip_if_no_stress(request: pytest.FixtureRequest) -> None:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows-first dev workflow")
 class TestTierAFolderLoad:
+    # cc3_reference_files is gitignored third-party material, absent from
+    # a clean clone: skip the whole class rather than fail it.
+    pytestmark = pytest.mark.skipif(
+        not TIER_A.exists(),
+        reason="reference files absent (cc3_reference_files is gitignored)",
+    )
+
     # Generous initial cap; tighten as Phase 1 wins land.
     REGRESSION_LIMIT_MS = 10_000.0
 
